@@ -14,6 +14,14 @@
 **Music Engine** is a modular, open-source live-coding music engine written in C#.  
 It combines **code, MIDI, patterns, and real-time audio** to enable flexible music production, live performance, and interactive audio programming.
 
+
+## The Music Engine Editor 
+
+The Editor Is Work In Progress 
+
+Git: https://github.com/watermann420/MusicEngineEditor
+
+
 ---
 
 ## Features
