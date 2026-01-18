@@ -72,3 +72,9 @@ Git: https://github.com/watermann420/MusicEngineEditor
 1. Clone the repository:
 ```bash
 git clone https://github.com/watermann420/MusicEngine.git
+
+
+##Plz Read:
+LICENSE
+CONTRIBUTING
+
