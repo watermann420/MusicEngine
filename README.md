@@ -69,7 +69,7 @@ Git: https://github.com/watermann420/MusicEngineEditor
 ---
 
 ## Plz Read
-LICENSE
+LICENSE &
 CONTRIBUTING
 
 ---
