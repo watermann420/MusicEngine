@@ -65,6 +65,13 @@ Git: https://github.com/watermann420/MusicEngineEditor
 - Patterns and songs as code → versionable, comparable, remixable  
 - Focused on stability, repairability, and studio-quality audio  
 
+
+##Plz Read:
+LICENSE
+CONTRIBUTING
+
+
+
 ---
 
 ## Installation
@@ -74,7 +81,4 @@ Git: https://github.com/watermann420/MusicEngineEditor
 git clone https://github.com/watermann420/MusicEngine.git
 
 
-##Plz Read:
-LICENSE
-CONTRIBUTING
 
