@@ -49,7 +49,7 @@ Git: https://github.com/watermann420/MusicEngineEditor
 - Support for future audio plugins  
 
 ### Livecoding & Modulation
-- Future minimalist External code editor  
+-  minimalist External code editor  
 - Real-time control of patterns and instruments  
 - Multithreading for smooth real-time modulation  
 - OnPlay hooks for audio, MIDI, and visual effects  
