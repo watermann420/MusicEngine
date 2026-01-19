@@ -61,6 +61,11 @@ public class ScriptGlobals
     public AudioEngine Engine { get; set; } = null!; // The audio engine instance
     public Sequencer Sequencer { get; set; } = null!; // The sequencer instance
 
+    private SimpleSynth? _synth; // Default synth instance
+
+    // Default synth - created on first access
+    public SimpleSynth Synth => _synth ??= CreateSynth();
+
     // Lowercase aliases for convenience
     public AudioEngine engine => Engine;
     public Sequencer sequencer => Sequencer;
@@ -72,7 +77,10 @@ public class ScriptGlobals
         Engine.AddSampleProvider(synth); // Add it to the audio engine
         return synth; // Return the created synth
     }
-    
+
+    // Creates a Pattern with the default Synth
+    public Pattern CreatePattern() => CreatePattern(Synth);
+
     // Creates a Pattern with reference to the sequencer
     // The pattern is NOT automatically added - call pattern.Play() to start it
     public Pattern CreatePattern(ISynth synth)
@@ -149,6 +157,8 @@ public class ScriptGlobals
     public void Start() => Sequencer.Start(); // Start the sequencer
     public void Stop() => Sequencer.Stop(); // Stop the sequencer
     public void SetBpm(double bpm) => Sequencer.Bpm = bpm; // Set the BPM of the sequencer
+    public void SetBPM(double bpm) => Sequencer.Bpm = bpm; // Alias for SetBpm
+    public double BPM { get => Sequencer.Bpm; set => Sequencer.Bpm = value; } // BPM property
     public void Skip(double beats) => Sequencer.Skip(beats); // Skip a number of beats in the sequencer 
 
     public void StartPattern(Pattern p) => p.Enabled = true; // Start a pattern
