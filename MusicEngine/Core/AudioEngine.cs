@@ -28,6 +28,10 @@ public class AudioEngine : IDisposable
     private readonly List<(int deviceIndex, int startNote, int endNote, ISynth synth, bool reversed)> _rangeMappings = new(); // Note Range Mappings
     private readonly List<FrequencyMidiMapping> _frequencyMappings = new(); // Frequency Analysis Mappings
     private readonly Dictionary<int, FrequencyAnalyzer> _inputAnalyzers = new(); // Input Analyzers
+    private readonly Dictionary<int, Action<float[]>> _fftHandlers = new(); // FFT event handlers for cleanup
+    private readonly Dictionary<int, EventHandler<WaveInEventArgs>> _dataHandlers = new(); // DataAvailable event handlers for cleanup
+    private readonly Dictionary<int, EventHandler<MidiInMessageEventArgs>> _midiHandlers = new(); // MIDI MessageReceived event handlers for cleanup
+    private readonly Dictionary<int, IWaveIn> _inputDevices = new(); // Input devices for handler cleanup
     private readonly MixingSampleProvider _mixer; // Main Mixer
     private readonly VolumeSampleProvider _masterVolume; // Master Volume Control
     private readonly WaveFormat _waveFormat; // Audio Format
@@ -139,7 +143,9 @@ public class AudioEngine : IDisposable
             if (_inputAnalyzers.ContainsKey(deviceIndex)) return; // Already capturing
 
             var analyzer = new FrequencyAnalyzer(Settings.FftSize, _waveFormat.SampleRate); // Create off a frequency analyzer
-            analyzer.FftCalculated += magnitudes => { // On FFT calculated
+
+            // Store the FFT handler for later cleanup
+            Action<float[]> fftHandler = magnitudes => { // On FFT calculated
                 lock (_frequencyMappings)
                 {
                     foreach (var mapping in _frequencyMappings) // Iterate frequency mappings
@@ -152,6 +158,8 @@ public class AudioEngine : IDisposable
                     }
                 }
             };
+            analyzer.FftCalculated += fftHandler;
+            _fftHandlers[deviceIndex] = fftHandler;
 
             try
             {
@@ -160,7 +168,9 @@ public class AudioEngine : IDisposable
                     DeviceNumber = deviceIndex, // Set device index
                     WaveFormat = new WaveFormat(_waveFormat.SampleRate, 16, 1) // Mono for analysis
                 };
-                waveIn.DataAvailable += (s, e) => { // On audio data available
+
+                // Store the DataAvailable handler for later cleanup
+                EventHandler<WaveInEventArgs> dataHandler = (s, e) => { // On audio data available
                     float[] samples = new float[e.BytesRecorded / 2]; // 16-bit audio
                     for (int i = 0; i < samples.Length; i++) // Convert byte data to float samples
                     {
@@ -168,6 +178,10 @@ public class AudioEngine : IDisposable
                     }
                     analyzer.AddSamples(samples, samples.Length); // Feed samples to analyzer
                 };
+                waveIn.DataAvailable += dataHandler;
+                _dataHandlers[deviceIndex] = dataHandler;
+                _inputDevices[deviceIndex] = waveIn;
+
                 waveIn.StartRecording(); // Start recording
                 _inputs.Add(waveIn); // Store input
                 _inputAnalyzers[deviceIndex] = analyzer; // Store analyzer
@@ -219,11 +233,13 @@ public class AudioEngine : IDisposable
             var name = MidiIn.DeviceInfo(i).ProductName; // Get device name
             Console.WriteLine($"Found MIDI Input [{i}]: {name}"); // Log found device
             _midiInputNames[i] = name; // Store device name
-            try 
+            try
             {
                 var midiIn = new MidiIn(i); // Create MIDI input
                 int deviceIndex = i; // Capture index for closure
-                midiIn.MessageReceived += (s, e) => {
+
+                // Store the MIDI MessageReceived handler for later cleanup
+                EventHandler<MidiInMessageEventArgs> midiHandler = (s, e) => {
                     if (e.MidiEvent is ControlChangeEvent ccEvent) // Handle Control Change events
                     {
                         lock (_midiMappings) // Lock for thread safety
@@ -262,7 +278,7 @@ public class AudioEngine : IDisposable
                                 }
                             }
                         }
-                        
+
                         lock (_transportMappings) // Lock for thread safety
                         {
                             foreach (var mapping in _transportMappings) // Iterate transport mappings
@@ -326,6 +342,9 @@ public class AudioEngine : IDisposable
                         }
                     }
                 };
+                midiIn.MessageReceived += midiHandler;
+                _midiHandlers[deviceIndex] = midiHandler;
+
                 midiIn.Start(); // Start MIDI input
                 _midiInputs.Add(midiIn); // Store MIDI input
             }
@@ -599,6 +618,37 @@ public class AudioEngine : IDisposable
         foreach (var input in _inputs) input.StopRecording(); // Stop all inputs
 
         System.Threading.Thread.Sleep(100); // Give it a moment to stop
+
+        // Unsubscribe FFT event handlers to prevent memory leaks
+        foreach (var kvp in _fftHandlers)
+        {
+            if (_inputAnalyzers.TryGetValue(kvp.Key, out var analyzer))
+            {
+                analyzer.FftCalculated -= kvp.Value;
+            }
+        }
+        _fftHandlers.Clear();
+
+        // Unsubscribe DataAvailable event handlers to prevent memory leaks
+        foreach (var kvp in _dataHandlers)
+        {
+            if (_inputDevices.TryGetValue(kvp.Key, out var waveIn))
+            {
+                waveIn.DataAvailable -= kvp.Value;
+            }
+        }
+        _dataHandlers.Clear();
+        _inputDevices.Clear();
+
+        // Unsubscribe MIDI MessageReceived event handlers to prevent memory leaks
+        for (int i = 0; i < _midiInputs.Count; i++)
+        {
+            if (_midiHandlers.TryGetValue(i, out var handler))
+            {
+                _midiInputs[i].MessageReceived -= handler;
+            }
+        }
+        _midiHandlers.Clear();
 
         foreach (var input in _inputs) input.Dispose(); // Dispose inputs
         foreach (var output in _outputs) output.Dispose(); // Dispose outputs

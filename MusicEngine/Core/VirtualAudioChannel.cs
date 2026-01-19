@@ -147,11 +147,11 @@ public class VirtualAudioChannel : IDisposable
 
                 try
                 {
-                    await _pipeServer.WaitForConnectionAsync(_cts.Token);
+                    await _pipeServer.WaitForConnectionAsync(_cts.Token).ConfigureAwait(false);
                     Console.WriteLine($"[VirtualChannel] Client connected to {_name}");
 
                     // Send wave format header
-                    await SendWaveHeader(_pipeServer);
+                    await SendWaveHeader(_pipeServer).ConfigureAwait(false);
 
                     // Stream audio
                     while (_pipeServer.IsConnected && _isRunning)
@@ -170,11 +170,11 @@ public class VirtualAudioChannel : IDisposable
                         {
                             var bytes = new byte[samples.Length * 4];
                             Buffer.BlockCopy(samples, 0, bytes, 0, bytes.Length);
-                            await _pipeServer.WriteAsync(bytes, _cts.Token);
+                            await _pipeServer.WriteAsync(bytes, _cts.Token).ConfigureAwait(false);
                         }
                         else
                         {
-                            await Task.Delay(10, _cts.Token);
+                            await Task.Delay(10, _cts.Token).ConfigureAwait(false);
                         }
                     }
                 }
@@ -210,7 +210,7 @@ public class VirtualAudioChannel : IDisposable
         writer.Write(_format.BitsPerSample);
 
         var header = ms.ToArray();
-        await stream.WriteAsync(header);
+        await stream.WriteAsync(header).ConfigureAwait(false);
     }
 
     public void Dispose()
