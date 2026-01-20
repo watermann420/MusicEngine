@@ -32,7 +32,7 @@ public static class Settings
     private static readonly object VstPathsLock = new();
 
     // Audio Settings
-    public static int SampleRate { get; set; } = 144100; // Standard CD quality
+    public static int SampleRate { get; set; } = 44100; // Standard CD quality (44.1 kHz)
     public static int BitRate { get; set; } = 32; // Typically for 16-bit, though we use float internally
     public static int Channels { get; set; } = 2; // Stereo by default and can be changed to mono if needed
 

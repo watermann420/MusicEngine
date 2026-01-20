@@ -1,21 +1,21 @@
 {
   "version": 2,
-  "dgSpecHash": "R6zpSSYV8js=",
+  "dgSpecHash": "j8UhfRk2FFs=",
   "success": true,
-  "projectFilePath": "C:\\Users\\water\\OneDrive\\Desktop\\MusicEngine\\MusicEngine.csproj",
+  "projectFilePath": "C:\\Users\\null\\RiderProjects\\MusicEngine\\MusicEngine.csproj",
   "expectedPackageFiles": [
-    "C:\\Users\\water\\.nuget\\packages\\microsoft.codeanalysis.analyzers\\3.11.0\\microsoft.codeanalysis.analyzers.3.11.0.nupkg.sha512",
-    "C:\\Users\\water\\.nuget\\packages\\microsoft.codeanalysis.common\\5.0.0\\microsoft.codeanalysis.common.5.0.0.nupkg.sha512",
-    "C:\\Users\\water\\.nuget\\packages\\microsoft.codeanalysis.csharp\\5.0.0\\microsoft.codeanalysis.csharp.5.0.0.nupkg.sha512",
-    "C:\\Users\\water\\.nuget\\packages\\microsoft.codeanalysis.csharp.scripting\\5.0.0\\microsoft.codeanalysis.csharp.scripting.5.0.0.nupkg.sha512",
-    "C:\\Users\\water\\.nuget\\packages\\microsoft.codeanalysis.scripting.common\\5.0.0\\microsoft.codeanalysis.scripting.common.5.0.0.nupkg.sha512",
-    "C:\\Users\\water\\.nuget\\packages\\naudio\\2.2.1\\naudio.2.2.1.nupkg.sha512",
-    "C:\\Users\\water\\.nuget\\packages\\naudio.asio\\2.2.1\\naudio.asio.2.2.1.nupkg.sha512",
-    "C:\\Users\\water\\.nuget\\packages\\naudio.core\\2.2.1\\naudio.core.2.2.1.nupkg.sha512",
-    "C:\\Users\\water\\.nuget\\packages\\naudio.midi\\2.2.1\\naudio.midi.2.2.1.nupkg.sha512",
-    "C:\\Users\\water\\.nuget\\packages\\naudio.wasapi\\2.2.1\\naudio.wasapi.2.2.1.nupkg.sha512",
-    "C:\\Users\\water\\.nuget\\packages\\naudio.winforms\\2.2.1\\naudio.winforms.2.2.1.nupkg.sha512",
-    "C:\\Users\\water\\.nuget\\packages\\naudio.winmm\\2.2.1\\naudio.winmm.2.2.1.nupkg.sha512"
+    "C:\\Users\\null\\.nuget\\packages\\microsoft.codeanalysis.analyzers\\3.11.0\\microsoft.codeanalysis.analyzers.3.11.0.nupkg.sha512",
+    "C:\\Users\\null\\.nuget\\packages\\microsoft.codeanalysis.common\\5.0.0\\microsoft.codeanalysis.common.5.0.0.nupkg.sha512",
+    "C:\\Users\\null\\.nuget\\packages\\microsoft.codeanalysis.csharp\\5.0.0\\microsoft.codeanalysis.csharp.5.0.0.nupkg.sha512",
+    "C:\\Users\\null\\.nuget\\packages\\microsoft.codeanalysis.csharp.scripting\\5.0.0\\microsoft.codeanalysis.csharp.scripting.5.0.0.nupkg.sha512",
+    "C:\\Users\\null\\.nuget\\packages\\microsoft.codeanalysis.scripting.common\\5.0.0\\microsoft.codeanalysis.scripting.common.5.0.0.nupkg.sha512",
+    "C:\\Users\\null\\.nuget\\packages\\naudio\\2.2.1\\naudio.2.2.1.nupkg.sha512",
+    "C:\\Users\\null\\.nuget\\packages\\naudio.asio\\2.2.1\\naudio.asio.2.2.1.nupkg.sha512",
+    "C:\\Users\\null\\.nuget\\packages\\naudio.core\\2.2.1\\naudio.core.2.2.1.nupkg.sha512",
+    "C:\\Users\\null\\.nuget\\packages\\naudio.midi\\2.2.1\\naudio.midi.2.2.1.nupkg.sha512",
+    "C:\\Users\\null\\.nuget\\packages\\naudio.wasapi\\2.2.1\\naudio.wasapi.2.2.1.nupkg.sha512",
+    "C:\\Users\\null\\.nuget\\packages\\naudio.winforms\\2.2.1\\naudio.winforms.2.2.1.nupkg.sha512",
+    "C:\\Users\\null\\.nuget\\packages\\naudio.winmm\\2.2.1\\naudio.winmm.2.2.1.nupkg.sha512"
   ],
   "logs": []
 }
