@@ -122,23 +122,11 @@ public record StemExportResult(
 /// </summary>
 public class StemExporter
 {
-    private readonly AudioRecorder _recorder;
-
     /// <summary>
     /// Creates a new stem exporter.
     /// </summary>
     public StemExporter()
     {
-        _recorder = new AudioRecorder();
-    }
-
-    /// <summary>
-    /// Creates a new stem exporter with a shared audio recorder.
-    /// </summary>
-    /// <param name="recorder">The audio recorder to use.</param>
-    public StemExporter(AudioRecorder recorder)
-    {
-        _recorder = recorder ?? throw new ArgumentNullException(nameof(recorder));
     }
 
     /// <summary>
@@ -229,29 +217,21 @@ public class StemExporter
 
         try
         {
-            // First, render the stem to a temporary WAV file
-            string tempPath = Path.Combine(Path.GetTempPath(), $"stem_{Guid.NewGuid()}.wav");
-
-            await RenderStemToFileAsync(stem.Source, tempPath, duration, progress, cancellationToken);
+            // Render directly to the output file
+            await RenderStemToFileAsync(stem.Source, outputPath, duration, progress, cancellationToken);
 
             if (cancellationToken.IsCancellationRequested)
             {
-                CleanupTempFile(tempPath);
+                CleanupTempFile(outputPath);
                 return new StemExportItemResult(stem.Name, outputPath, false, "Cancelled", null);
             }
-
-            // Now export with preset (applies loudness normalization)
-            var exportResult = await _recorder.ExportWithPresetAsync(
-                tempPath, outputPath, preset, null, cancellationToken);
-
-            CleanupTempFile(tempPath);
 
             return new StemExportItemResult(
                 stem.Name,
                 outputPath,
-                exportResult.Success,
-                exportResult.ErrorMessage,
-                exportResult.OutputMeasurement);
+                true,
+                null,
+                null);
         }
         catch (Exception ex)
         {
@@ -314,21 +294,19 @@ public class StemExporter
 
     /// <summary>
     /// Creates stem definitions from an audio engine's channels.
+    /// Use CreateStemsFromSources for custom stem configurations.
     /// </summary>
-    /// <param name="engine">The audio engine.</param>
-    /// <returns>List of stem definitions.</returns>
+    /// <param name="engine">The audio engine (unused - for future extension).</param>
+    /// <returns>Empty list - use CreateStemsFromSources instead.</returns>
+    /// <remarks>
+    /// The engine does not expose individual channels directly.
+    /// Use CreateStemsFromSources with your own ISampleProvider sources.
+    /// </remarks>
     public static List<StemDefinition> CreateStemsFromEngine(AudioEngine engine)
     {
-        var stems = new List<StemDefinition>();
-
-        // This would need to be extended based on how the engine exposes its channels/buses
-        // For now, we provide a simple example
-
-        // Master output
-        var masterCapture = engine.GetRecordingCaptureProvider();
-        stems.Add(new StemDefinition("Master", masterCapture));
-
-        return stems;
+        // The engine does not currently expose individual channel outputs.
+        // Users should manually configure stems using CreateStemsFromSources.
+        return new List<StemDefinition>();
     }
 
     /// <summary>

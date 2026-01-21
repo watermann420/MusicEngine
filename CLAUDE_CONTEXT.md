@@ -41,17 +41,27 @@ Zwei C# .NET 10 Projekte für Audio/Musik-Produktion:
 MusicEngine/
 ├── Core/
 │   ├── AudioEngine.cs          # Haupt-Audio-Engine mit Mixer
+│   ├── AudioEngineAsync.cs     # Async Extension Methods
+│   ├── AudioRecorder.cs        # Audio Recording zu WAV/MP3
+│   ├── WaveFileRecorder.cs     # Low-Level WAV Writer
+│   ├── RecordingFormat.cs      # Recording Format Enum
+│   ├── RecordingEventArgs.cs   # Recording Events
+│   ├── ExportPreset.cs         # Platform Export Presets
+│   ├── ExportTypes.cs          # Export Result/Progress Types
 │   ├── Sequencer.cs            # Pattern-Sequencing, BPM, Transport
 │   ├── Pattern.cs              # Note Events Container
 │   ├── SimpleSynth.cs          # Monophoner Synthesizer
 │   ├── PolySynth.cs            # Polyphoner Synthesizer mit Voice Stealing
 │   ├── SfzSampler.cs           # SFZ Sample Player
 │   ├── VstHost.cs              # VST Plugin Management
+│   ├── VstHostAsync.cs         # Async VST Operations
 │   ├── VstPlugin.cs            # VST2 Plugin Wrapper
 │   ├── Vst3Plugin.cs           # VST3 Plugin Wrapper
 │   ├── MidiExporter.cs         # MIDI File Export (.mid)
 │   ├── PatternTransform.cs     # Scale-Lock, Humanization, Groove
 │   ├── Session.cs              # Project Save/Load
+│   ├── SessionAsync.cs         # Async Session Operations
+│   ├── AsyncProgress.cs        # Progress Reporting Types
 │   ├── Settings.cs             # Global Settings
 │   ├── Guard.cs                # Argument Validation
 │   ├── MidiValidation.cs       # MIDI Value Validation
@@ -138,6 +148,24 @@ MusicEngineEditor/
   - Zoom X/Y, Loop-Bereich, Playhead
   - Keyboard Shortcuts (Del, Ctrl+A, Ctrl+D, 1/2/3, +/-)
 
+- [x] **Async Operations** - `AsyncProgress.cs`, `AudioEngineAsync.cs`, `VstHostAsync.cs`, `SessionAsync.cs`
+  - InitializeAsync() mit Progress Reporting
+  - ScanForPluginsAsync() für VST Plugin Suche
+  - LoadAsync()/SaveAsync() für Sessions
+  - CancellationToken Support durchgehend
+
+- [x] **Audio Recording** - `AudioRecorder.cs`, `WaveFileRecorder.cs`
+  - Recording von beliebigem ISampleProvider zu WAV/MP3
+  - Pause/Resume Support
+  - Progress Events mit Peak Level
+  - RecordingFormat Enum (Wav16Bit, Wav24Bit, Wav32BitFloat, Mp3_128/192/320kbps)
+  - ExportWithPresetAsync() für Platform-Export (YouTube, Spotify, etc.)
+
+- [x] **Export Presets** - `ExportPreset.cs`, `ExportTypes.cs`
+  - Platform-spezifische Presets (YouTube, Spotify, Apple Music, etc.)
+  - Loudness Normalization Settings (LUFS, True Peak)
+  - Custom Presets mit Format/SampleRate/BitDepth Optionen
+
 ## Build Status
 ```
 MusicEngine:       0 Fehler, 0 Warnungen
@@ -147,14 +175,10 @@ Tests:             136/136 bestanden
 
 ## Offene Features (Optional)
 
-### Mittel Priorität
-- [ ] Async Operations (InitializeAsync, ScanForPluginsAsync)
-- [ ] Extension System (ISynthExtension, IEffectExtension, Discovery)
-
 ### Niedrig Priorität
 - [ ] Memory Pooling (AudioBufferPool)
 - [ ] Undo/Redo System (Command Pattern)
-- [ ] Audio Recording (WAV/MP3 Export)
+- [ ] Extension System (ISynthExtension, IEffectExtension, Discovery)
 - [ ] Project Browser
 
 ## Wichtige Konventionen
@@ -211,24 +235,35 @@ var exporter = new MidiExporter();
 exporter.ExportPattern(pattern, "output.mid", 120);
 ```
 
-## Letzte Änderungen (Session vom 21.01.2026)
-1. MidiExporter.cs erstellt - MIDI File Export funktioniert
-2. PatternTransform.cs erstellt - Scale-Lock, Humanization, Groove
-3. LevelMeter Control erstellt - VU Meter für Editor
-4. SnippetService erstellt - 12 Code Snippets
-5. Diverse Build-Fehler behoben (NAudio Typen, WPF Shapes)
-6. Alle Warnungen behoben
-7. **Mixer View** komplett implementiert:
-   - MixerChannel.cs Model (mit MasterChannel)
-   - MixerChannelControl.xaml/.cs (Fader, Pan, M/S/R, LevelMeter)
-   - MixerViewModel.cs (8 Channels + Master, Commands)
-   - MixerView.xaml/.cs (Scrollbare Channel-Liste, Toolbar)
-8. **Piano Roll Editor** komplett implementiert:
-   - PianoRollNote.cs Model (MIDI Note Repräsentation)
-   - PianoRollViewModel.cs (Notes, Tools, Zoom, Grid, Commands)
-   - PianoKeyboard.xaml/.cs (Vertikale Klaviatur mit Mouse-Events)
-   - NoteCanvas.xaml/.cs (Note-Rendering, Mouse-Interaktion)
-   - PianoRollView.xaml/.cs (Kombiniert alles, Toolbar, Ruler)
+## Letzte Änderungen (Session vom 21.01.2026 - Fortsetzung)
+
+### Neue Features implementiert:
+
+9. **Async Operations** komplett implementiert:
+   - AsyncProgress.cs (InitializationProgress, VstScanProgress, SessionProgress)
+   - AudioEngineAsync.cs (Extension Methods für async AudioEngine)
+   - VstHostAsync.cs (ScanForPluginsAsync, LoadPluginAsync)
+   - SessionAsync.cs (LoadAsync, SaveAsync)
+
+10. **Audio Recording** komplett implementiert:
+    - AudioRecorder.cs (Haupt-Recording-Klasse mit Pause/Resume)
+    - WaveFileRecorder.cs (Low-Level WAV Writer)
+    - RecordingFormat.cs (Enum für Output-Formate)
+    - RecordingEventArgs.cs (Progress/Completed Events)
+    - ExportTypes.cs (ExportResult, ExportProgress, ExportPhase)
+
+11. **Fixes und Anpassungen:**
+    - StemExporter.cs angepasst (LoadFromEngine() für zukünftige Channel-Unterstützung)
+    - ExportViewModel/ExportDialog angepasst (statische ExportWithPresetAsync)
+    - WaveFileRecorder.FinalizeFile() statt Finalize() (Warnung behoben)
+    - Ungenutzte Recording-Events aus AudioEngine entfernt
+
+### Build Status nach Session:
+```
+MusicEngine:       0 Fehler, 0 Warnungen
+MusicEngineEditor: 0 Fehler, 0 Warnungen
+Tests:             136/136 bestanden
+```
 
 ---
 *Erstellt für Claude Code Terminal Kontext-Wiederherstellung*

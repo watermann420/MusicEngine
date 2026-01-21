@@ -51,10 +51,6 @@ public class AudioEngine : IDisposable
     // Virtual Audio Channels
     private readonly VirtualChannelManager _virtualChannels = new();
 
-    // Audio Recording
-    private readonly AudioRecorder _recorder = new();
-    private RecordingCaptureSampleProvider? _recordingCaptureProvider;
-
     // Logging
     private readonly ILogger? _logger;
 
@@ -63,8 +59,6 @@ public class AudioEngine : IDisposable
     public event EventHandler<PluginEventArgs>? PluginLoaded;
     public event EventHandler<PluginEventArgs>? PluginUnloaded;
     public event EventHandler<MidiRoutingEventArgs>? MidiRoutingChanged;
-    public event EventHandler<EngineRecordingEventArgs>? RecordingStarted;
-    public event EventHandler<EngineRecordingEventArgs>? RecordingStopped;
 
     // Constructor
     public AudioEngine(int? sampleRate = null) : this(sampleRate, null)
@@ -725,98 +719,18 @@ public class AudioEngine : IDisposable
     // === Audio Recording Methods ===
 
     /// <summary>
-    /// Gets the audio recorder instance for advanced recording operations.
+    /// Creates an AudioRecorder for recording the master output.
     /// </summary>
-    public AudioRecorder Recorder => _recorder;
-
-    /// <summary>
-    /// Gets whether recording is currently in progress.
-    /// </summary>
-    public bool IsRecording => _recorder.IsRecording;
-
-    /// <summary>
-    /// Gets the current recording duration.
-    /// </summary>
-    public TimeSpan RecordingDuration => _recorder.RecordingDuration;
-
-    /// <summary>
-    /// Starts recording the master output to a WAV file.
-    /// </summary>
-    /// <param name="outputPath">Path for the output WAV file.</param>
-    public void StartRecording(string outputPath)
+    /// <returns>A new AudioRecorder configured with the master output.</returns>
+    /// <example>
+    /// using var recorder = engine.CreateRecorder();
+    /// recorder.StartRecording("output.wav");
+    /// // ... play audio ...
+    /// recorder.StopRecording();
+    /// </example>
+    public AudioRecorder CreateRecorder()
     {
-        if (_recorder.IsRecording)
-        {
-            _logger?.LogWarning("Recording is already in progress.");
-            return;
-        }
-
-        // Create capture provider wrapping the master volume if not already created
-        if (_recordingCaptureProvider == null)
-        {
-            _recordingCaptureProvider = _recorder.CreateCaptureProvider(_masterVolume);
-        }
-
-        // Configure recorder with current engine settings
-        _recorder.SampleRate = _waveFormat.SampleRate;
-        _recorder.Channels = _waveFormat.Channels;
-
-        _recorder.StartRecording(outputPath, _recordingCaptureProvider);
-        RecordingStarted?.Invoke(this, new EngineRecordingEventArgs(true, outputPath));
-    }
-
-    /// <summary>
-    /// Stops the current recording.
-    /// </summary>
-    /// <returns>The path of the recorded file, or null if not recording.</returns>
-    public string? StopRecording()
-    {
-        var result = _recorder.StopRecording();
-        if (result != null)
-        {
-            RecordingStopped?.Invoke(this, new EngineRecordingEventArgs(false, result, _recorder.RecordingDuration));
-        }
-        return result;
-    }
-
-    /// <summary>
-    /// Exports the last recorded WAV file to MP3 format.
-    /// Requires NAudio.Lame package to be installed.
-    /// </summary>
-    /// <param name="wavPath">Path to the WAV file to convert.</param>
-    /// <param name="mp3Path">Output MP3 path (optional, defaults to same name with .mp3 extension).</param>
-    /// <param name="bitRate">MP3 bit rate in kbps (default 320).</param>
-    /// <returns>True if export succeeded, false otherwise.</returns>
-    public bool ExportToMp3(string wavPath, string? mp3Path = null, int bitRate = 320)
-    {
-        return _recorder.ExportToMp3(wavPath, mp3Path, bitRate);
-    }
-
-    /// <summary>
-    /// Exports a WAV file with different sample rate and/or bit depth.
-    /// </summary>
-    /// <param name="inputPath">Path to the source WAV file.</param>
-    /// <param name="outputPath">Path for the output WAV file.</param>
-    /// <param name="sampleRate">Target sample rate (null to keep original).</param>
-    /// <param name="bitDepth">Target bit depth (null to keep original).</param>
-    /// <returns>True if export succeeded, false otherwise.</returns>
-    public bool ExportWav(string inputPath, string outputPath, int? sampleRate = null, int? bitDepth = null)
-    {
-        return _recorder.ExportWav(inputPath, outputPath, sampleRate, bitDepth);
-    }
-
-    /// <summary>
-    /// Gets the capture provider that wraps the master output.
-    /// This can be used instead of the master volume for custom recording scenarios.
-    /// </summary>
-    /// <returns>The recording capture provider, creating it if necessary.</returns>
-    public RecordingCaptureSampleProvider GetRecordingCaptureProvider()
-    {
-        if (_recordingCaptureProvider == null)
-        {
-            _recordingCaptureProvider = _recorder.CreateCaptureProvider(_masterVolume);
-        }
-        return _recordingCaptureProvider;
+        return new AudioRecorder(_masterVolume, _waveFormat.SampleRate, _waveFormat.Channels);
     }
 
     // Dispose resources
@@ -865,6 +779,5 @@ public class AudioEngine : IDisposable
 
         _vstHost.Dispose(); // Dispose VST host and all loaded plugins
         _virtualChannels.Dispose(); // Dispose virtual channels
-        _recorder.Dispose(); // Dispose audio recorder
     }
 }

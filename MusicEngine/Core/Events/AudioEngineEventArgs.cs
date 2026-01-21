@@ -83,17 +83,6 @@ public class InitializationProgressEventArgs : EventArgs
 }
 
 /// <summary>
-/// Progress info for async operations.
-/// </summary>
-public class InitializationProgress
-{
-    public string Stage { get; set; } = "";
-    public int CurrentStep { get; set; }
-    public int TotalSteps { get; set; }
-    public string? Message { get; set; }
-}
-
-/// <summary>
 /// Progress info for VST scanning.
 /// </summary>
 public class VstScanProgressEventArgs : EventArgs
