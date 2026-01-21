@@ -4,6 +4,7 @@
 // Description: Common interface for VST2 and VST3 plugins.
 
 using System;
+using MusicEngine.Core.Automation;
 using NAudio.Wave;
 
 namespace MusicEngine.Core;
@@ -103,6 +104,26 @@ public interface IVstPlugin : ISynth, IDisposable
     /// Get the formatted parameter display string
     /// </summary>
     string GetParameterDisplay(int index);
+
+    /// <summary>
+    /// Get detailed information about a parameter
+    /// </summary>
+    /// <param name="index">Parameter index</param>
+    /// <returns>VstParameterInfo containing parameter details, or null if index is invalid</returns>
+    VstParameterInfo? GetParameterInfo(int index);
+
+    /// <summary>
+    /// Get information about all parameters
+    /// </summary>
+    /// <returns>Read-only list of all parameter info</returns>
+    IReadOnlyList<VstParameterInfo> GetAllParameterInfo();
+
+    /// <summary>
+    /// Check if a parameter can be automated
+    /// </summary>
+    /// <param name="index">Parameter index</param>
+    /// <returns>True if the parameter supports automation</returns>
+    bool CanParameterBeAutomated(int index);
 
     /// <summary>
     /// True if the plugin has an editor GUI

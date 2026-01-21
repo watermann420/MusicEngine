@@ -97,6 +97,9 @@ public class Sequencer : IDisposable
     private MidiClockSync? _midiClockSync;
     private bool _useMidiClockSync = false;
 
+    // Tempo and time signature tracking
+    private TempoTrack? _tempoTrack;
+
     // Event emission for visualization
     private readonly object _eventLock = new();
     private readonly List<MusicalEvent> _activeEvents = new(); // currently playing events
@@ -122,6 +125,9 @@ public class Sequencer : IDisposable
     /// <summary>Fired when BPM changes.</summary>
     public event EventHandler<ParameterChangedEventArgs>? BpmChanged;
 
+    /// <summary>Fired when time signature changes.</summary>
+    public event EventHandler<TimeSignatureChangedEventArgs>? TimeSignatureChanged;
+
     /// <summary>Fired when a pattern is added.</summary>
     public event EventHandler<Pattern>? PatternAdded;
 
@@ -137,11 +143,18 @@ public class Sequencer : IDisposable
     // Properties for BPM and current beat
     public double Bpm
     {
-        get => _bpm;
+        get => _tempoTrack != null ? _tempoTrack.GetTempoAt(_beatAccumulator) : _bpm;
         set
         {
             var oldBpm = _bpm;
             _bpm = Math.Max(1.0, value);
+
+            // Update tempo track default if available
+            if (_tempoTrack != null)
+            {
+                _tempoTrack.DefaultBpm = _bpm;
+            }
+
             if (Math.Abs(oldBpm - _bpm) > 0.001)
             {
                 _logger?.LogDebug("BPM changed from {OldBpm} to {NewBpm}", oldBpm, _bpm);
@@ -156,6 +169,9 @@ public class Sequencer : IDisposable
             }
         }
     }
+
+    /// <summary>Gets the effective BPM at the current position, accounting for tempo changes.</summary>
+    public double EffectiveBpm => _tempoTrack?.GetTempoAt(_beatAccumulator) ?? _bpm;
 
     // Current beat position in the sequencer
     public double CurrentBeat
@@ -263,6 +279,51 @@ public class Sequencer : IDisposable
     /// <summary>Gets the current average timing jitter in milliseconds.</summary>
     public double AverageTimingJitter => _averageTimingJitter;
 
+    /// <summary>Gets or sets the tempo track for advanced tempo and time signature control.</summary>
+    public TempoTrack? TempoTrack
+    {
+        get => _tempoTrack;
+        set
+        {
+            _tempoTrack = value;
+            if (_tempoTrack != null)
+            {
+                _tempoTrack.SampleRate = _sampleRate;
+                _bpm = _tempoTrack.DefaultBpm;
+                UpdateTimingParameters();
+            }
+        }
+    }
+
+    /// <summary>Gets the current time signature at the current position.</summary>
+    public TimeSignature CurrentTimeSignature =>
+        _tempoTrack?.GetTimeSignatureAtBeats(_beatAccumulator) ?? TimeSignature.Common;
+
+    /// <summary>Gets the current bar number (0-indexed).</summary>
+    public int CurrentBar => _tempoTrack?.BeatsToBar(_beatAccumulator) ?? (int)(_beatAccumulator / 4.0);
+
+    /// <summary>Gets the current beat within the current bar (0-indexed).</summary>
+    public double CurrentBeatInBar
+    {
+        get
+        {
+            if (_tempoTrack != null)
+            {
+                var (_, beat) = _tempoTrack.BeatsToBarBeat(_beatAccumulator);
+                return beat;
+            }
+            return _beatAccumulator % 4.0;
+        }
+    }
+
+    /// <summary>Gets the current position in seconds.</summary>
+    public double CurrentTimeSeconds => _tempoTrack?.BeatsToSeconds(_beatAccumulator) ??
+        (_beatAccumulator * 60.0 / _bpm);
+
+    /// <summary>Gets the current position in samples.</summary>
+    public long CurrentTimeSamples => _tempoTrack?.BeatsToSamples(_beatAccumulator) ??
+        (long)(CurrentTimeSeconds * _sampleRate);
+
     /// <summary>Gets the current jitter compensation value in milliseconds.</summary>
     public double JitterCompensation => _jitterCompensationMs;
 
@@ -328,6 +389,7 @@ public class Sequencer : IDisposable
     /// </summary>
     public Sequencer()
     {
+        _tempoTrack = new TempoTrack(_bpm, TimeSignature.Common, _sampleRate);
         UpdateTimingParameters();
     }
 
@@ -338,6 +400,30 @@ public class Sequencer : IDisposable
     public Sequencer(TimingPrecision precision) : this()
     {
         _timingPrecision = precision;
+        UpdateTimingParameters();
+    }
+
+    /// <summary>
+    /// Creates a new sequencer with a custom tempo track.
+    /// </summary>
+    /// <param name="tempoTrack">The tempo track to use.</param>
+    public Sequencer(TempoTrack tempoTrack) : this()
+    {
+        _tempoTrack = tempoTrack ?? throw new ArgumentNullException(nameof(tempoTrack));
+        _bpm = _tempoTrack.DefaultBpm;
+        _sampleRate = _tempoTrack.SampleRate;
+        UpdateTimingParameters();
+    }
+
+    /// <summary>
+    /// Creates a new sequencer with specified BPM and time signature.
+    /// </summary>
+    /// <param name="bpm">The initial tempo in BPM.</param>
+    /// <param name="timeSignature">The initial time signature.</param>
+    public Sequencer(double bpm, TimeSignature timeSignature) : this()
+    {
+        _bpm = Math.Max(1.0, bpm);
+        _tempoTrack = new TempoTrack(_bpm, timeSignature, _sampleRate);
         UpdateTimingParameters();
     }
 
@@ -847,6 +933,196 @@ public class Sequencer : IDisposable
         };
     }
 
+    #region Tempo and Time Signature Methods
+
+    /// <summary>
+    /// Adds a tempo change at the specified beat position.
+    /// </summary>
+    /// <param name="positionBeats">The position in beats (quarter notes).</param>
+    /// <param name="bpm">The tempo in BPM.</param>
+    public void AddTempoChange(double positionBeats, double bpm)
+    {
+        EnsureTempoTrack();
+        _tempoTrack!.AddTempoChange(positionBeats, bpm);
+        _logger?.LogDebug("Tempo change added: {Bpm} BPM at beat {Position}", bpm, positionBeats);
+    }
+
+    /// <summary>
+    /// Adds a tempo ramp between two positions.
+    /// </summary>
+    /// <param name="startBeats">The start position in beats.</param>
+    /// <param name="endBeats">The end position in beats.</param>
+    /// <param name="startBpm">The starting tempo.</param>
+    /// <param name="endBpm">The ending tempo.</param>
+    /// <param name="curve">The curve type (0 = linear).</param>
+    public void AddTempoRamp(double startBeats, double endBeats, double startBpm, double endBpm, double curve = 0.0)
+    {
+        EnsureTempoTrack();
+        _tempoTrack!.AddTempoRamp(startBeats, endBeats, startBpm, endBpm, curve);
+        _logger?.LogDebug("Tempo ramp added: {StartBpm}->{EndBpm} BPM from beat {Start} to {End}",
+            startBpm, endBpm, startBeats, endBeats);
+    }
+
+    /// <summary>
+    /// Adds a time signature change at the specified bar.
+    /// </summary>
+    /// <param name="bar">The bar number (0-indexed).</param>
+    /// <param name="timeSignature">The time signature.</param>
+    public void AddTimeSignatureChange(int bar, TimeSignature timeSignature)
+    {
+        EnsureTempoTrack();
+        var oldTimeSignature = _tempoTrack!.GetTimeSignatureAt(bar);
+        _tempoTrack.AddTimeSignatureChange(bar, timeSignature);
+        _logger?.LogDebug("Time signature change added: {TimeSignature} at bar {Bar}", timeSignature, bar);
+        TimeSignatureChanged?.Invoke(this, new TimeSignatureChangedEventArgs(bar, oldTimeSignature, timeSignature));
+    }
+
+    /// <summary>
+    /// Adds a time signature change at the specified bar.
+    /// </summary>
+    /// <param name="bar">The bar number (0-indexed).</param>
+    /// <param name="numerator">The time signature numerator.</param>
+    /// <param name="denominator">The time signature denominator.</param>
+    public void AddTimeSignatureChange(int bar, int numerator, int denominator)
+    {
+        AddTimeSignatureChange(bar, new TimeSignature(numerator, denominator));
+    }
+
+    /// <summary>
+    /// Gets the tempo at the specified position.
+    /// </summary>
+    /// <param name="positionBeats">The position in beats.</param>
+    /// <returns>The tempo in BPM.</returns>
+    public double GetTempoAt(double positionBeats)
+    {
+        return _tempoTrack?.GetTempoAt(positionBeats) ?? _bpm;
+    }
+
+    /// <summary>
+    /// Gets the time signature at the specified bar.
+    /// </summary>
+    /// <param name="bar">The bar number (0-indexed).</param>
+    /// <returns>The time signature.</returns>
+    public TimeSignature GetTimeSignatureAt(int bar)
+    {
+        return _tempoTrack?.GetTimeSignatureAt(bar) ?? TimeSignature.Common;
+    }
+
+    /// <summary>
+    /// Converts a position in beats to seconds.
+    /// </summary>
+    /// <param name="beats">The position in beats.</param>
+    /// <returns>The time in seconds.</returns>
+    public double BeatsToSeconds(double beats)
+    {
+        return _tempoTrack?.BeatsToSeconds(beats) ?? (beats * 60.0 / _bpm);
+    }
+
+    /// <summary>
+    /// Converts a time in seconds to beats.
+    /// </summary>
+    /// <param name="seconds">The time in seconds.</param>
+    /// <returns>The position in beats.</returns>
+    public double SecondsToBeats(double seconds)
+    {
+        return _tempoTrack?.SecondsToBeats(seconds) ?? (seconds * _bpm / 60.0);
+    }
+
+    /// <summary>
+    /// Converts a position in beats to samples.
+    /// </summary>
+    /// <param name="beats">The position in beats.</param>
+    /// <returns>The position in samples.</returns>
+    public long BeatsToSamples(double beats)
+    {
+        return _tempoTrack?.BeatsToSamples(beats) ?? (long)(BeatsToSeconds(beats) * _sampleRate);
+    }
+
+    /// <summary>
+    /// Converts a position in samples to beats.
+    /// </summary>
+    /// <param name="samples">The position in samples.</param>
+    /// <returns>The position in beats.</returns>
+    public double SamplesToBeats(long samples)
+    {
+        return _tempoTrack?.SamplesToBeats(samples) ?? SecondsToBeats((double)samples / _sampleRate);
+    }
+
+    /// <summary>
+    /// Converts a bar and beat position to beats (quarter notes).
+    /// </summary>
+    /// <param name="bar">The bar number (0-indexed).</param>
+    /// <param name="beat">The beat within the bar.</param>
+    /// <returns>The position in beats.</returns>
+    public double BarBeatToBeats(int bar, double beat)
+    {
+        return _tempoTrack?.BarBeatToBeats(bar, beat) ?? (bar * 4.0 + beat);
+    }
+
+    /// <summary>
+    /// Converts a position in beats to bar and beat.
+    /// </summary>
+    /// <param name="beats">The position in beats.</param>
+    /// <returns>A tuple of (bar, beat).</returns>
+    public (int Bar, double Beat) BeatsToBarBeat(double beats)
+    {
+        return _tempoTrack?.BeatsToBarBeat(beats) ?? ((int)(beats / 4.0), beats % 4.0);
+    }
+
+    /// <summary>
+    /// Gets the full musical position information at the specified beat position.
+    /// </summary>
+    /// <param name="beats">The position in beats.</param>
+    /// <returns>Complete position information.</returns>
+    public MusicalPosition GetMusicalPosition(double beats)
+    {
+        if (_tempoTrack != null)
+        {
+            return _tempoTrack.GetPositionFromBeats(beats);
+        }
+
+        // Fallback without tempo track
+        var (bar, beat) = BeatsToBarBeat(beats);
+        double seconds = BeatsToSeconds(beats);
+        long samples = (long)(seconds * _sampleRate);
+        return new MusicalPosition(bar, beat, beats, seconds, samples, TimeSignature.Common, _bpm);
+    }
+
+    /// <summary>
+    /// Gets the current musical position.
+    /// </summary>
+    /// <returns>Complete position information for the current position.</returns>
+    public MusicalPosition GetCurrentMusicalPosition()
+    {
+        return GetMusicalPosition(_beatAccumulator);
+    }
+
+    /// <summary>
+    /// Seeks to a specific bar and beat position.
+    /// </summary>
+    /// <param name="bar">The bar number (0-indexed).</param>
+    /// <param name="beat">The beat within the bar.</param>
+    public void SeekToBarBeat(int bar, double beat)
+    {
+        CurrentBeat = BarBeatToBeats(bar, beat);
+    }
+
+    /// <summary>
+    /// Seeks to a specific time in seconds.
+    /// </summary>
+    /// <param name="seconds">The time in seconds.</param>
+    public void SeekToSeconds(double seconds)
+    {
+        CurrentBeat = SecondsToBeats(seconds);
+    }
+
+    private void EnsureTempoTrack()
+    {
+        _tempoTrack ??= new TempoTrack(_bpm, TimeSignature.Common, _sampleRate);
+    }
+
+    #endregion
+
     public void Dispose()
     {
         if (_disposed) return;
@@ -930,5 +1206,27 @@ public class TimingStatistics
                $"Jitter: {AverageJitterMs:F3}ms, Compensation: {JitterCompensationMs:F3}ms, " +
                $"HiRes: {(HighResTimerActive ? "Active" : "Inactive")}, " +
                $"MIDI Clock: {(MidiClockActive ? "Active" : "Inactive")}";
+    }
+}
+
+/// <summary>
+/// Event arguments for time signature changes.
+/// </summary>
+public class TimeSignatureChangedEventArgs : EventArgs
+{
+    /// <summary>The bar where the time signature changed.</summary>
+    public int Bar { get; }
+
+    /// <summary>The previous time signature.</summary>
+    public TimeSignature OldTimeSignature { get; }
+
+    /// <summary>The new time signature.</summary>
+    public TimeSignature NewTimeSignature { get; }
+
+    public TimeSignatureChangedEventArgs(int bar, TimeSignature oldTimeSignature, TimeSignature newTimeSignature)
+    {
+        Bar = bar;
+        OldTimeSignature = oldTimeSignature;
+        NewTimeSignature = newTimeSignature;
     }
 }

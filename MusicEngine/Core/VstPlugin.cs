@@ -10,6 +10,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
+using MusicEngine.Core.Automation;
 using NAudio.Wave;
 
 
@@ -1030,6 +1031,78 @@ public class VstPlugin : IVstPlugin
             return label;
         }
         return "";
+    }
+
+    /// <summary>
+    /// Get detailed information about a parameter
+    /// </summary>
+    /// <param name="index">Parameter index</param>
+    /// <returns>VstParameterInfo containing parameter details, or null if index is invalid</returns>
+    public VstParameterInfo? GetParameterInfo(int index)
+    {
+        if (index < 0 || index >= _info.NumParameters)
+            return null;
+
+        string name = GetParameterName(index);
+        string label = GetParameterLabel(index);
+        float currentValue = GetParameterValue(index);
+        bool canAutomate = CanParameterBeAutomated(index);
+
+        return new VstParameterInfo
+        {
+            Index = index,
+            Name = name,
+            ShortName = name.Length > 8 ? name[..8] : name,
+            Label = label,
+            MinValue = 0f,
+            MaxValue = 1f,
+            DefaultValue = currentValue, // VST2 doesn't expose default, use current
+            StepCount = 0, // VST2 doesn't expose step count
+            IsAutomatable = canAutomate,
+            IsReadOnly = false,
+            ParameterId = (uint)index
+        };
+    }
+
+    /// <summary>
+    /// Get information about all parameters
+    /// </summary>
+    /// <returns>Read-only list of all parameter info</returns>
+    public IReadOnlyList<VstParameterInfo> GetAllParameterInfo()
+    {
+        var result = new List<VstParameterInfo>();
+        for (int i = 0; i < _info.NumParameters; i++)
+        {
+            var info = GetParameterInfo(i);
+            if (info != null)
+            {
+                result.Add(info);
+            }
+        }
+        return result.AsReadOnly();
+    }
+
+    /// <summary>
+    /// Check if a parameter can be automated
+    /// </summary>
+    /// <param name="index">Parameter index</param>
+    /// <returns>True if the parameter supports automation</returns>
+    public bool CanParameterBeAutomated(int index)
+    {
+        if (index < 0 || index >= _info.NumParameters)
+            return false;
+
+        if (_dispatcher != null && _pluginHandle != IntPtr.Zero)
+        {
+            lock (_lock)
+            {
+                IntPtr result = _dispatcher(_pluginHandle, (int)VstOpcode.CanBeAutomated, index, IntPtr.Zero, IntPtr.Zero, 0);
+                return result.ToInt32() != 0;
+            }
+        }
+
+        // Assume automatable if we can't query
+        return true;
     }
 
     #endregion

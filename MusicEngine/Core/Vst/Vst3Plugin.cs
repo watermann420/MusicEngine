@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
+using MusicEngine.Core.Automation;
 using NAudio.Wave;
 using MusicEngine.Core.Vst.Vst3.Interfaces;
 using MusicEngine.Core.Vst.Vst3.Presets;
@@ -1147,6 +1148,71 @@ public class Vst3Plugin : IVst3Plugin
                 SetParameterValue(paramIndex, value);
             }
         }
+    }
+
+    /// <summary>
+    /// Get detailed information about a parameter
+    /// </summary>
+    /// <param name="index">Parameter index</param>
+    /// <returns>VstParameterInfo containing parameter details, or null if index is invalid</returns>
+    public VstParameterInfo? GetParameterInfo(int index)
+    {
+        if (index < 0 || index >= _parameterInfoCache.Count)
+            return null;
+
+        var vst3Info = _parameterInfoCache[index];
+
+        return new VstParameterInfo
+        {
+            Index = index,
+            Name = vst3Info.Title,
+            ShortName = vst3Info.ShortTitle,
+            Label = vst3Info.Units,
+            MinValue = 0f,
+            MaxValue = 1f,
+            DefaultValue = (float)vst3Info.DefaultNormalizedValue,
+            StepCount = vst3Info.StepCount,
+            IsAutomatable = (vst3Info.Flags & Vst3ParameterFlags.CanAutomate) != 0,
+            IsReadOnly = (vst3Info.Flags & Vst3ParameterFlags.IsReadOnly) != 0,
+            IsWrapAround = (vst3Info.Flags & Vst3ParameterFlags.IsWrapAround) != 0,
+            IsList = (vst3Info.Flags & Vst3ParameterFlags.IsList) != 0,
+            IsProgramChange = (vst3Info.Flags & Vst3ParameterFlags.IsProgramChange) != 0,
+            IsBypass = (vst3Info.Flags & Vst3ParameterFlags.IsBypass) != 0,
+            UnitId = vst3Info.UnitId,
+            ParameterId = vst3Info.Id
+        };
+    }
+
+    /// <summary>
+    /// Get information about all parameters
+    /// </summary>
+    /// <returns>Read-only list of all parameter info</returns>
+    public IReadOnlyList<VstParameterInfo> GetAllParameterInfo()
+    {
+        var result = new List<VstParameterInfo>();
+        for (int i = 0; i < _parameterInfoCache.Count; i++)
+        {
+            var info = GetParameterInfo(i);
+            if (info != null)
+            {
+                result.Add(info);
+            }
+        }
+        return result.AsReadOnly();
+    }
+
+    /// <summary>
+    /// Check if a parameter can be automated
+    /// </summary>
+    /// <param name="index">Parameter index</param>
+    /// <returns>True if the parameter supports automation</returns>
+    public bool CanParameterBeAutomated(int index)
+    {
+        if (index < 0 || index >= _parameterInfoCache.Count)
+            return false;
+
+        var paramInfo = _parameterInfoCache[index];
+        return (paramInfo.Flags & Vst3ParameterFlags.CanAutomate) != 0;
     }
 
     #endregion
