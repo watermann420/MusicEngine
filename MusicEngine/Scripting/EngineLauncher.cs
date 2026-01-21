@@ -24,7 +24,7 @@ public static class EngineLauncher
         Console.WriteLine();
         Console.WriteLine("Initializing audio engine...");
 
-        using var engine = new AudioEngine(); // Create the audio engine
+        using var engine = new AudioEngine(sampleRate: null, logger: null); // Create the audio engine
         engine.Initialize(); // Initialize the audio engine (also scans VST plugins)
 
         Console.WriteLine();

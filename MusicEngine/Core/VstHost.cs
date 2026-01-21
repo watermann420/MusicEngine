@@ -11,6 +11,9 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
+using MusicEngine.Core.Events;
 using MusicEngine.Core.Vst.Vst3.Interfaces;
 using MusicEngine.Core.Vst.Vst3.Structures;
 using NAudio.Wave;
@@ -31,6 +34,17 @@ public class VstHost : IDisposable
     private readonly Dictionary<string, IVstPlugin> _loadedPlugins = new();
     private readonly object _lock = new();
     private bool _isDisposed;
+
+    // Logging
+    private readonly ILogger? _logger;
+
+    /// <summary>
+    /// Creates a new VstHost with logging support.
+    /// </summary>
+    public VstHost(ILogger? logger = null)
+    {
+        _logger = logger;
+    }
 
     // P/Invoke for VST3 plugin loading
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
@@ -114,12 +128,126 @@ public class VstHost : IDisposable
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Warning: Error scanning VST path '{basePath}': {ex.Message}");
+                    _logger?.LogWarning(ex, "Error scanning VST path '{Path}'", basePath);
                 }
             }
 
             return new List<VstPluginInfo>(_discoveredPlugins);
         }
+    }
+
+    /// <summary>
+    /// Asynchronously scans for VST plugins with progress reporting.
+    /// </summary>
+    public async Task<List<VstPluginInfo>> ScanForPluginsAsync(
+        IProgress<VstScanProgressEventArgs>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        return await Task.Run(() =>
+        {
+            lock (_lock)
+            {
+                _discoveredPlugins.Clear();
+                _discoveredVst3Plugins.Clear();
+
+                var searchPaths = new List<string>(Settings.VstPluginSearchPaths);
+                if (!string.IsNullOrEmpty(Settings.VstPluginPath))
+                {
+                    searchPaths.Insert(0, Settings.VstPluginPath);
+                }
+
+                int totalPaths = searchPaths.Count;
+                int currentPath = 0;
+
+                foreach (var basePath in searchPaths)
+                {
+                    currentPath++;
+
+                    if (!Directory.Exists(basePath)) continue;
+
+                    try
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+
+                        // Scan for VST2 plugins
+                        var dllFiles = Directory.GetFiles(basePath, "*.dll", SearchOption.AllDirectories);
+                        foreach (var file in dllFiles)
+                        {
+                            cancellationToken.ThrowIfCancellationRequested();
+
+                            progress?.Report(new VstScanProgressEventArgs(
+                                basePath,
+                                _discoveredPlugins.Count + _discoveredVst3Plugins.Count,
+                                totalPaths,
+                                Path.GetFileName(file)));
+
+                            var pluginInfo = ProbePlugin(file, false);
+                            if (pluginInfo != null)
+                            {
+                                _discoveredPlugins.Add(pluginInfo);
+                            }
+                        }
+
+                        // Scan for VST3 plugins
+                        var vst3Files = Directory.GetFiles(basePath, "*.vst3", SearchOption.AllDirectories);
+                        foreach (var file in vst3Files)
+                        {
+                            cancellationToken.ThrowIfCancellationRequested();
+
+                            var parentDir = Path.GetDirectoryName(file);
+                            if (parentDir != null && (parentDir.EndsWith("x86_64-win") || parentDir.EndsWith("Win64")))
+                            {
+                                continue;
+                            }
+
+                            progress?.Report(new VstScanProgressEventArgs(
+                                basePath,
+                                _discoveredPlugins.Count + _discoveredVst3Plugins.Count,
+                                totalPaths,
+                                Path.GetFileName(file)));
+
+                            var pluginInfo = ProbeVst3Plugin(file);
+                            if (pluginInfo != null)
+                            {
+                                _discoveredVst3Plugins.Add(pluginInfo);
+                            }
+                        }
+
+                        // Scan for VST3 bundles
+                        var vst3Dirs = Directory.GetDirectories(basePath, "*.vst3", SearchOption.AllDirectories);
+                        foreach (var dir in vst3Dirs)
+                        {
+                            cancellationToken.ThrowIfCancellationRequested();
+
+                            progress?.Report(new VstScanProgressEventArgs(
+                                basePath,
+                                _discoveredPlugins.Count + _discoveredVst3Plugins.Count,
+                                totalPaths,
+                                Path.GetFileName(dir)));
+
+                            var pluginInfo = ScanVst3Bundle(dir);
+                            if (pluginInfo != null)
+                            {
+                                _discoveredVst3Plugins.Add(pluginInfo);
+                            }
+                        }
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogWarning(ex, "Error scanning VST path '{Path}'", basePath);
+                    }
+                }
+
+                _logger?.LogInformation("VST scan complete: {Vst2Count} VST2, {Vst3Count} VST3 plugins found",
+                    _discoveredPlugins.Count, _discoveredVst3Plugins.Count);
+
+                return new List<VstPluginInfo>(_discoveredPlugins);
+            }
+        }, cancellationToken);
     }
 
     /// <summary>
@@ -214,7 +342,7 @@ public class VstHost : IDisposable
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Warning: Error scanning VST3 bundle '{bundlePath}': {ex.Message}");
+            _logger?.LogWarning(ex, "Error scanning VST3 bundle '{Path}'", bundlePath);
             return null;
         }
     }
@@ -361,7 +489,7 @@ public class VstHost : IDisposable
                             Category = classInfo2.Category ?? "",
                             SubCategories = classInfo2.SubCategories ?? "",
                             ClassFlags = classInfo2.ClassFlags,
-                            IsInstrument = Vst3PluginInfo.DetermineIsInstrument(classInfo2.Category, classInfo2.SubCategories),
+                            IsInstrument = Vst3PluginInfo.DetermineIsInstrument(classInfo2.Category ?? "", classInfo2.SubCategories ?? ""),
                             IsBundle = false,
                             NumInputs = 2,
                             NumOutputs = 2
@@ -403,7 +531,7 @@ public class VstHost : IDisposable
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Warning: Error probing VST3 plugin '{path}': {ex.Message}");
+            _logger?.LogWarning(ex, "Error probing VST3 plugin '{Path}'", path);
 
             // Cleanup on error
             try
@@ -509,7 +637,7 @@ public class VstHost : IDisposable
                 return LoadVst2Plugin(vst2Info);
             }
 
-            Console.WriteLine($"VST Plugin not found: {nameOrPath}");
+            _logger?.LogWarning("VST plugin not found: {NameOrPath}", nameOrPath);
             return null;
         }
     }
@@ -573,12 +701,12 @@ public class VstHost : IDisposable
             var plugin = new VstPlugin(info);
             info.IsLoaded = true;
             _loadedPlugins[info.Name] = plugin;
-            Console.WriteLine($"Loaded VST2 Plugin: {info.Name} ({(info.IsInstrument ? "Instrument" : "Effect")})");
+            _logger?.LogInformation("Loaded VST2 plugin: {Name} ({Type})", info.Name, info.IsInstrument ? "Instrument" : "Effect");
             return plugin;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Failed to load VST2 Plugin '{info.Name}': {ex.Message}");
+            _logger?.LogError(ex, "Failed to load VST2 plugin '{Name}'", info.Name);
             return null;
         }
     }
@@ -607,12 +735,12 @@ public class VstHost : IDisposable
             var plugin = new Vst3Plugin(pluginPath);
             info.IsLoaded = true;
             _loadedPlugins[info.Name] = plugin;
-            Console.WriteLine($"Loaded VST3 Plugin: {info.Name} ({(info.IsInstrument ? "Instrument" : "Effect")})");
+            _logger?.LogInformation("Loaded VST3 plugin: {Name} ({Type})", info.Name, info.IsInstrument ? "Instrument" : "Effect");
             return plugin;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Failed to load VST3 Plugin '{info.Name}': {ex.Message}");
+            _logger?.LogError(ex, "Failed to load VST3 plugin '{Name}'", info.Name);
             return null;
         }
     }
@@ -636,7 +764,7 @@ public class VstHost : IDisposable
         {
             if (index < 0 || index >= _discoveredPlugins.Count)
             {
-                Console.WriteLine($"Invalid VST2 plugin index: {index}");
+                _logger?.LogWarning("Invalid VST2 plugin index: {Index}", index);
                 return null;
             }
 
@@ -653,7 +781,7 @@ public class VstHost : IDisposable
         {
             if (index < 0 || index >= _discoveredVst3Plugins.Count)
             {
-                Console.WriteLine($"Invalid VST3 plugin index: {index}");
+                _logger?.LogWarning("Invalid VST3 plugin index: {Index}", index);
                 return null;
             }
 
@@ -714,7 +842,7 @@ public class VstHost : IDisposable
                 var vst3Info = _discoveredVst3Plugins.Find(p => p.Name == name);
                 if (vst3Info != null) vst3Info.IsLoaded = false;
 
-                Console.WriteLine($"Unloaded VST Plugin: {name}");
+                _logger?.LogInformation("Unloaded VST plugin: {Name}", name);
             }
         }
     }
@@ -842,7 +970,7 @@ public class VstHost : IDisposable
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error scanning for presets: {ex.Message}");
+            _logger?.LogError(ex, "Error scanning for presets");
         }
 
         return presets;
@@ -893,7 +1021,7 @@ public class VstHost : IDisposable
         var plugin = GetPlugin(pluginName);
         if (plugin == null)
         {
-            Console.WriteLine($"Plugin '{pluginName}' not loaded");
+            _logger?.LogWarning("Plugin '{Name}' not loaded", pluginName);
             return false;
         }
 
@@ -911,7 +1039,7 @@ public class VstHost : IDisposable
         var plugin = GetPlugin(pluginName);
         if (plugin == null)
         {
-            Console.WriteLine($"Plugin '{pluginName}' not loaded");
+            _logger?.LogWarning("Plugin '{Name}' not loaded", pluginName);
             return false;
         }
 
@@ -931,7 +1059,7 @@ public class VstHost : IDisposable
             var presets = presetPaths.ToList();
             if (presets.Count == 0)
             {
-                Console.WriteLine("No presets provided for bank creation");
+                _logger?.LogWarning("No presets provided for bank creation");
                 return false;
             }
 
@@ -979,12 +1107,12 @@ public class VstHost : IDisposable
             output.Position = sizePosition;
             writer.Write(SwapEndian((uint)(endPosition - 8)));
 
-            Console.WriteLine($"Created preset bank: {outputPath}");
+            _logger?.LogInformation("Created preset bank: {Path}", outputPath);
             return true;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error creating preset bank: {ex.Message}");
+            _logger?.LogError(ex, "Error creating preset bank");
             return false;
         }
     }
@@ -1013,7 +1141,7 @@ public class VstHost : IDisposable
         var plugin = GetPlugin(pluginName);
         if (plugin == null)
         {
-            Console.WriteLine($"Plugin '{pluginName}' not loaded");
+            _logger?.LogWarning("Plugin '{Name}' not loaded", pluginName);
             return parameters;
         }
 
@@ -1103,7 +1231,7 @@ public class VstHost : IDisposable
         var plugin = GetPlugin(pluginName);
         if (plugin == null)
         {
-            Console.WriteLine($"Plugin '{pluginName}' not loaded");
+            _logger?.LogWarning("Plugin '{Name}' not loaded", pluginName);
             return;
         }
 
@@ -1126,7 +1254,7 @@ public class VstHost : IDisposable
 
         if (source == null || dest == null)
         {
-            Console.WriteLine("Source or destination plugin not loaded");
+            _logger?.LogWarning("Source or destination plugin not loaded");
             return 0;
         }
 
@@ -1136,7 +1264,7 @@ public class VstHost : IDisposable
             dest.SetParameterValue(i, source.GetParameterValue(i));
         }
 
-        Console.WriteLine($"Copied {count} parameters from {sourcePluginName} to {destPluginName}");
+        _logger?.LogInformation("Copied {Count} parameters from {Source} to {Destination}", count, sourcePluginName, destPluginName);
         return count;
     }
 
@@ -1186,7 +1314,7 @@ public class VstHost : IDisposable
         var plugin = GetPlugin(pluginName);
         if (plugin == null)
         {
-            Console.WriteLine($"Plugin '{pluginName}' not loaded");
+            _logger?.LogWarning("Plugin '{Name}' not loaded", pluginName);
             return;
         }
 
@@ -1204,7 +1332,7 @@ public class VstHost : IDisposable
             plugin.SetParameterValue(i, value);
         }
 
-        Console.WriteLine($"Randomized {count} parameters for {pluginName}");
+        _logger?.LogInformation("Randomized {Count} parameters for {Name}", count, pluginName);
     }
 
     #endregion

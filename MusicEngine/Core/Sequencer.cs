@@ -9,6 +9,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
+using Microsoft.Extensions.Logging;
 
 
 namespace MusicEngine.Core;
@@ -100,6 +101,9 @@ public class Sequencer : IDisposable
     private readonly object _eventLock = new();
     private readonly List<MusicalEvent> _activeEvents = new(); // currently playing events
 
+    // Logging
+    private readonly ILogger? _logger;
+
     /// <summary>Fired when a note is triggered (NoteOn).</summary>
     public event EventHandler<MusicalEventArgs>? NoteTriggered;
 
@@ -140,6 +144,7 @@ public class Sequencer : IDisposable
             _bpm = Math.Max(1.0, value);
             if (Math.Abs(oldBpm - _bpm) > 0.001)
             {
+                _logger?.LogDebug("BPM changed from {OldBpm} to {NewBpm}", oldBpm, _bpm);
                 BpmChanged?.Invoke(this, new ParameterChangedEventArgs("Bpm", oldBpm, _bpm));
                 UpdateTimingParameters();
 
@@ -346,6 +351,22 @@ public class Sequencer : IDisposable
         UpdateTimingParameters();
     }
 
+    /// <summary>
+    /// Creates a new sequencer with logging support.
+    /// </summary>
+    public Sequencer(ILogger? logger) : this()
+    {
+        _logger = logger;
+    }
+
+    /// <summary>
+    /// Creates a new sequencer with specified timing precision and logging.
+    /// </summary>
+    public Sequencer(TimingPrecision precision, ILogger? logger) : this(precision)
+    {
+        _logger = logger;
+    }
+
     private void UpdateTimingParameters()
     {
         // Calculate samples per tick for audio-rate scheduling
@@ -387,6 +408,7 @@ public class Sequencer : IDisposable
             pattern.Sequencer = this; // Link pattern to sequencer for event emission
             _patterns.Add(pattern);
         }
+        _logger?.LogDebug("Pattern added: {PatternName}", pattern.Name);
         PatternAdded?.Invoke(this, pattern);
     }
 
@@ -405,6 +427,7 @@ public class Sequencer : IDisposable
         {
             _activeEvents.Clear();
         }
+        _logger?.LogDebug("All patterns cleared");
         PatternsCleared?.Invoke(this, EventArgs.Empty);
     }
 
@@ -421,6 +444,7 @@ public class Sequencer : IDisposable
                 _patterns[i].PatternIndex = i;
             }
         }
+        _logger?.LogDebug("Pattern removed: {PatternName}", pattern.Name);
         PatternRemoved?.Invoke(this, pattern);
     }
 
@@ -455,6 +479,7 @@ public class Sequencer : IDisposable
             _thread.Start();
         }
 
+        _logger?.LogInformation("Sequencer started at {Bpm} BPM", _bpm);
         PlaybackStarted?.Invoke(this, new PlaybackStateEventArgs(true, _beatAccumulator, _bpm));
     }
 
@@ -481,6 +506,7 @@ public class Sequencer : IDisposable
             _activeEvents.Clear();
         }
 
+        _logger?.LogInformation("Sequencer stopped at beat {Beat}", _beatAccumulator);
         PlaybackStopped?.Invoke(this, new PlaybackStateEventArgs(false, _beatAccumulator, _bpm));
     }
 
@@ -641,6 +667,7 @@ public class Sequencer : IDisposable
                 double jitterThreshold = expectedTickInterval * 100.0; // 10% in ms
                 if (Math.Abs(jitter) > jitterThreshold)
                 {
+                    _logger?.LogWarning("Timing jitter detected: {JitterMs:F3}ms (average: {AvgJitterMs:F3}ms)", jitter, _averageTimingJitter);
                     TimingJitterDetected?.Invoke(this, new TimingJitterEventArgs(
                         jitter, _averageTimingJitter, _beatAccumulator));
                 }

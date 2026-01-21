@@ -6,9 +6,15 @@
 
 using System;
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 using NAudio.Wave;
 using NAudio.Midi;
 using NAudio.Wave.SampleProviders;
+using Microsoft.Extensions.Logging;
+using MusicEngine.Core.Events;
+using MusicEngine.Infrastructure.Logging;
+using MusicEngine.Infrastructure.Memory;
 
 
 namespace MusicEngine.Core;
@@ -49,14 +55,33 @@ public class AudioEngine : IDisposable
     private readonly AudioRecorder _recorder = new();
     private RecordingCaptureSampleProvider? _recordingCaptureProvider;
 
+    // Logging
+    private readonly ILogger? _logger;
+
+    // Events for external subscribers
+    public event EventHandler<ChannelEventArgs>? ChannelAdded;
+    public event EventHandler<PluginEventArgs>? PluginLoaded;
+    public event EventHandler<PluginEventArgs>? PluginUnloaded;
+    public event EventHandler<MidiRoutingEventArgs>? MidiRoutingChanged;
+    public event EventHandler<EngineRecordingEventArgs>? RecordingStarted;
+    public event EventHandler<EngineRecordingEventArgs>? RecordingStopped;
+
     // Constructor
-    public AudioEngine(int? sampleRate = null)
+    public AudioEngine(int? sampleRate = null) : this(sampleRate, null)
     {
+    }
+
+    // Constructor with logging support
+    public AudioEngine(int? sampleRate = null, ILogger? logger = null)
+    {
+        _logger = logger;
         int rate = sampleRate ?? Settings.SampleRate; // Use provided or default sample rate
         _waveFormat = WaveFormat.CreateIeeeFloatWaveFormat(rate, Settings.Channels); // Create a wave format
         _mixer = new MixingSampleProvider(_waveFormat); // Initialize mixer
         _mixer.ReadFully = true; // Ensure continuous output
         _masterVolume = new VolumeSampleProvider(_mixer); // Master volume control
+
+        _logger?.LogInformation("AudioEngine initialized with sample rate {SampleRate}Hz", rate);
     }
     
     // MIDI Routing and Mapping Methods
@@ -189,11 +214,11 @@ public class AudioEngine : IDisposable
                 waveIn.StartRecording(); // Start recording
                 _inputs.Add(waveIn); // Store input
                 _inputAnalyzers[deviceIndex] = analyzer; // Store analyzer
-                Console.WriteLine($"Started capturing from Input Device [{deviceIndex}]"); // Log capture start
+                _logger?.LogDebug("Started capturing from Input Device [{Index}]", deviceIndex); // Log capture start
             }
             catch (Exception ex) // Handle exceptions
             {
-                Console.WriteLine($"Failed to start input capture for device {deviceIndex}: {ex.Message}");
+                _logger?.LogWarning(ex, "Failed to start input capture for device {Index}", deviceIndex);
             }
         }
     }
@@ -221,21 +246,21 @@ public class AudioEngine : IDisposable
         for (int i = 0; i < WaveOut.DeviceCount; i++)
         {
             var capabilities = WaveOut.GetCapabilities(i); // Get device capabilities
-            Console.WriteLine($"Found Output Device [{i}]: {capabilities.ProductName}"); // Log found device
+            _logger?.LogDebug("Found Output Device [{Index}]: {Name}", i, capabilities.ProductName); // Log found device
         }
 
         // Enumerate Audio Inputs
         for (int i = 0; i < WaveIn.DeviceCount; i++)
         {
             var capabilities = WaveIn.GetCapabilities(i); // Get device capabilities
-            Console.WriteLine($"Found Input Device [{i}]: {capabilities.ProductName}"); // Log found device
+            _logger?.LogDebug("Found Input Device [{Index}]: {Name}", i, capabilities.ProductName); // Log found device
         }
         
         // Enumerate MIDI Inputs
         for (int i = 0; i < MidiIn.NumberOfDevices; i++)
         {
             var name = MidiIn.DeviceInfo(i).ProductName; // Get device name
-            Console.WriteLine($"Found MIDI Input [{i}]: {name}"); // Log found device
+            _logger?.LogDebug("Found MIDI Input [{Index}]: {Name}", i, name); // Log found device
             _midiInputNames[i] = name; // Store device name
             try
             {
@@ -353,8 +378,8 @@ public class AudioEngine : IDisposable
                 _midiInputs.Add(midiIn); // Store MIDI input
             }
             catch (Exception ex)  // Handle exceptions
-            { 
-                Console.WriteLine($"Failed to open MIDI Input {i}: {ex.Message}");
+            {
+                _logger?.LogWarning(ex, "Failed to open MIDI Input {Index}", i);
             }
         }
 
@@ -362,7 +387,7 @@ public class AudioEngine : IDisposable
         for (int i = 0; i < MidiOut.NumberOfDevices; i++)
         {
             var name = MidiOut.DeviceInfo(i).ProductName; // Get device name
-            Console.WriteLine($"Found MIDI Output [{i}]: {name}"); // Log found device
+            _logger?.LogDebug("Found MIDI Output [{Index}]: {Name}", i, name); // Log found device
             _midiOutputNames[i] = name; // Store device name
             try
             {
@@ -371,12 +396,12 @@ public class AudioEngine : IDisposable
             }
             catch (Exception ex) // Handle exceptions
             {
-                Console.WriteLine($"Failed to open MIDI Output {i}: {ex.Message}");
+                _logger?.LogWarning(ex, "Failed to open MIDI Output {Index}", i);
             }
         }
 
         // Scan for VST Plugins
-        Console.WriteLine("\nScanning for VST Plugins...");
+        _logger?.LogDebug("Scanning for VST Plugins...");
         var vstPlugins = ScanVstPlugins();
         if (vstPlugins.Count > 0)
         {
@@ -384,10 +409,80 @@ public class AudioEngine : IDisposable
         }
         else
         {
-            Console.WriteLine("No VST plugins found in configured paths.");
+            _logger?.LogDebug("No VST plugins found in configured paths.");
         }
     }
-    
+
+    /// <summary>
+    /// Asynchronously initializes the audio engine with progress reporting.
+    /// </summary>
+    public async Task InitializeAsync(
+        IProgress<InitializationProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        await Task.Run(() =>
+        {
+            progress?.Report(new InitializationProgress { Stage = "Audio Output", CurrentStep = 1, TotalSteps = 5 });
+
+            // Setup default output
+            var output = new WaveOutEvent();
+            output.Init(_masterVolume);
+            output.Play();
+            _outputs.Add(output);
+
+            cancellationToken.ThrowIfCancellationRequested();
+            progress?.Report(new InitializationProgress { Stage = "Audio Devices", CurrentStep = 2, TotalSteps = 5 });
+
+            // Enumerate Audio Outputs
+            for (int i = 0; i < WaveOut.DeviceCount; i++)
+            {
+                var capabilities = WaveOut.GetCapabilities(i);
+                _logger?.LogDebug("Found Output Device [{Index}]: {Name}", i, capabilities.ProductName);
+            }
+
+            // Enumerate Audio Inputs
+            for (int i = 0; i < WaveIn.DeviceCount; i++)
+            {
+                var capabilities = WaveIn.GetCapabilities(i);
+                _logger?.LogDebug("Found Input Device [{Index}]: {Name}", i, capabilities.ProductName);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            progress?.Report(new InitializationProgress { Stage = "MIDI Devices", CurrentStep = 3, TotalSteps = 5 });
+
+            // Enumerate MIDI Inputs (simplified - the full MIDI setup remains in sync Initialize)
+            for (int i = 0; i < MidiIn.NumberOfDevices; i++)
+            {
+                var name = MidiIn.DeviceInfo(i).ProductName;
+                _logger?.LogDebug("Found MIDI Input [{Index}]: {Name}", i, name);
+                _midiInputNames[i] = name;
+            }
+
+            // Enumerate MIDI Outputs
+            for (int i = 0; i < MidiOut.NumberOfDevices; i++)
+            {
+                var name = MidiOut.DeviceInfo(i).ProductName;
+                _logger?.LogDebug("Found MIDI Output [{Index}]: {Name}", i, name);
+                _midiOutputNames[i] = name;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            progress?.Report(new InitializationProgress { Stage = "VST Plugins", CurrentStep = 4, TotalSteps = 5 });
+
+            // Scan for VST Plugins
+            _logger?.LogInformation("Scanning for VST Plugins...");
+            var vstPlugins = ScanVstPlugins();
+            if (vstPlugins.Count > 0)
+            {
+                _logger?.LogInformation("Found {Count} VST plugins", vstPlugins.Count);
+            }
+
+            progress?.Report(new InitializationProgress { Stage = "Complete", CurrentStep = 5, TotalSteps = 5 });
+            _logger?.LogInformation("AudioEngine initialization complete");
+
+        }, cancellationToken);
+    }
+
     // Process Note Events
     private void ProcessNoteEvent(NAudio.Midi.NoteEvent noteEvent, ISynth synth)
     {
@@ -496,6 +591,7 @@ public class AudioEngine : IDisposable
         if (plugin != null)
         {
             AddSampleProvider(plugin);
+            PluginLoaded?.Invoke(this, new PluginEventArgs(plugin));
         }
         return plugin;
     }
@@ -507,6 +603,7 @@ public class AudioEngine : IDisposable
         if (plugin != null)
         {
             AddSampleProvider(plugin);
+            PluginLoaded?.Invoke(this, new PluginEventArgs(plugin));
         }
         return plugin;
     }
@@ -529,7 +626,12 @@ public class AudioEngine : IDisposable
     // Unload a VST plugin
     public void UnloadVstPlugin(string name)
     {
+        var plugin = _vstHost.GetPlugin(name);
         _vstHost.UnloadPlugin(name);
+        if (plugin != null)
+        {
+            PluginUnloaded?.Invoke(this, new PluginEventArgs(plugin));
+        }
     }
 
     // Print discovered VST plugins
@@ -550,16 +652,17 @@ public class AudioEngine : IDisposable
         var resampled = provider.WaveFormat.SampleRate == _waveFormat.SampleRate // No resampling needed
             ? provider // Use as is
             : new WdlResamplingSampleProvider(provider, _waveFormat.SampleRate); // Resample to match engine sample rate
-        
+
         var volumeProvider = new VolumeSampleProvider(resampled); // Create volume control for the channel
-        
+
         lock (_channels) // Lock for thread safety
         {
             volumeProvider.Volume = 1.0f;  // Default volume
             _channels.Add(volumeProvider); // Add to the channel list
         }
-        
+
         _mixer.AddMixerInput(volumeProvider); // Add to mixer
+        ChannelAdded?.Invoke(this, new ChannelEventArgs(_channels.Count - 1));
     }
     
     // Set gain for a specific channel
@@ -640,7 +743,7 @@ public class AudioEngine : IDisposable
     {
         if (_recorder.IsRecording)
         {
-            Console.WriteLine("Recording is already in progress.");
+            _logger?.LogWarning("Recording is already in progress.");
             return;
         }
 
@@ -655,6 +758,7 @@ public class AudioEngine : IDisposable
         _recorder.Channels = _waveFormat.Channels;
 
         _recorder.StartRecording(outputPath, _recordingCaptureProvider);
+        RecordingStarted?.Invoke(this, new EngineRecordingEventArgs(true, outputPath));
     }
 
     /// <summary>
@@ -663,7 +767,12 @@ public class AudioEngine : IDisposable
     /// <returns>The path of the recorded file, or null if not recording.</returns>
     public string? StopRecording()
     {
-        return _recorder.StopRecording();
+        var result = _recorder.StopRecording();
+        if (result != null)
+        {
+            RecordingStopped?.Invoke(this, new EngineRecordingEventArgs(false, result, _recorder.RecordingDuration));
+        }
+        return result;
     }
 
     /// <summary>

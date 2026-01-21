@@ -9,6 +9,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
+using System.Threading.Tasks;
 
 
 namespace MusicEngine.Core;
@@ -449,6 +451,67 @@ public class Session
         }
 
         string json = File.ReadAllText(path);
+
+        var options = new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true,
+            Converters = { new JsonStringEnumConverter() }
+        };
+
+        var data = JsonSerializer.Deserialize<SessionData>(json, options);
+        if (data == null)
+        {
+            throw new InvalidDataException("Failed to deserialize session file.");
+        }
+
+        Data = data;
+        FilePath = path;
+        HasUnsavedChanges = false;
+        SessionLoaded?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Asynchronously saves the session to a JSON file.
+    /// </summary>
+    public async Task SaveAsync(string path, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            throw new ArgumentException("Path cannot be null or empty.", nameof(path));
+        }
+
+        Data.Metadata.ModifiedDate = DateTime.Now;
+
+        var directory = Path.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        string json = JsonSerializer.Serialize(Data, DefaultJsonOptions);
+        await File.WriteAllTextAsync(path, json, cancellationToken);
+
+        FilePath = path;
+        HasUnsavedChanges = false;
+        SessionSaved?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Asynchronously loads a session from a JSON file.
+    /// </summary>
+    public async Task LoadAsync(string path, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            throw new ArgumentException("Path cannot be null or empty.", nameof(path));
+        }
+
+        if (!File.Exists(path))
+        {
+            throw new FileNotFoundException("Session file not found.", path);
+        }
+
+        string json = await File.ReadAllTextAsync(path, cancellationToken);
 
         var options = new JsonSerializerOptions
         {

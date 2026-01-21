@@ -8,6 +8,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Microsoft.Extensions.Configuration;
+using MusicEngine.Infrastructure.Configuration;
 
 
 namespace MusicEngine.Core;
@@ -212,5 +214,59 @@ public static class Settings
         {
             _vstPluginSearchPaths = new List<string>(DefaultVstPluginSearchPaths);
         }
+    }
+
+    /// <summary>
+    /// Initializes settings from MusicEngineOptions configuration.
+    /// </summary>
+    /// <param name="options">The configuration options to apply.</param>
+    public static void Initialize(MusicEngineOptions options)
+    {
+        if (options == null)
+            return;
+
+        // Audio settings
+        if (options.Audio != null)
+        {
+            SampleRate = options.Audio.SampleRate;
+            BitRate = options.Audio.BitDepth;
+            Channels = options.Audio.Channels;
+        }
+
+        // MIDI settings
+        if (options.Midi != null)
+        {
+            MidiRefreshRateMs = options.Midi.RefreshRateMs;
+            MidiBufferSize = options.Midi.BufferSize;
+        }
+
+        // VST settings
+        if (options.Vst != null)
+        {
+            VstBufferSize = options.Vst.BufferSize;
+            VstProcessingTimeout = options.Vst.ProcessingTimeout;
+
+            if (options.Vst.SearchPaths != null && options.Vst.SearchPaths.Count > 0)
+            {
+                lock (VstPathsLock)
+                {
+                    _vstPluginSearchPaths = new List<string>(options.Vst.SearchPaths);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Initializes settings from an IConfiguration instance.
+    /// </summary>
+    /// <param name="configuration">The configuration to read from.</param>
+    public static void Initialize(IConfiguration configuration)
+    {
+        if (configuration == null)
+            return;
+
+        var options = new MusicEngineOptions();
+        configuration.GetSection(MusicEngineOptions.SectionName).Bind(options);
+        Initialize(options);
     }
 }
