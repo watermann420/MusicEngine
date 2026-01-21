@@ -7,7 +7,9 @@
 using System;
 using System.IO;
 using System.Threading;
+using System.Threading.Tasks;
 using NAudio.Wave;
+using NAudio.Wave.SampleProviders;
 
 
 namespace MusicEngine.Core;
@@ -697,6 +699,327 @@ public class AudioRecorder : IDisposable
         {
             _waveWriter?.Dispose();
             _waveWriter = null;
+        }
+    }
+
+    /// <summary>
+    /// Exports an audio file using the specified preset with loudness normalization.
+    /// This is a two-pass process: first measures loudness, then exports with normalization.
+    /// </summary>
+    /// <param name="inputPath">Path to the source audio file.</param>
+    /// <param name="outputPath">Path for the output file.</param>
+    /// <param name="preset">Export preset defining format and loudness settings.</param>
+    /// <param name="progress">Optional progress callback (0.0 to 1.0).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Export result with loudness measurements.</returns>
+    public async Task<ExportResult> ExportWithPresetAsync(
+        string inputPath,
+        string outputPath,
+        ExportPreset preset,
+        IProgress<ExportProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (!File.Exists(inputPath))
+        {
+            return new ExportResult(false, "Input file not found", null, null);
+        }
+
+        return await Task.Run(() =>
+        {
+            try
+            {
+                LoudnessMeasurement? sourceMeasurement = null;
+                LoudnessMeasurement? outputMeasurement = null;
+
+                // Phase 1: Measure source loudness if normalization is enabled
+                if (preset.NormalizeLoudness && preset.TargetLufs.HasValue)
+                {
+                    progress?.Report(new ExportProgress(ExportPhase.Analyzing, 0, "Analyzing source loudness..."));
+
+                    using var analyzeReader = new AudioFileReader(inputPath);
+                    sourceMeasurement = LoudnessAnalyzer.Measure(analyzeReader, p =>
+                    {
+                        if (cancellationToken.IsCancellationRequested) return;
+                        progress?.Report(new ExportProgress(ExportPhase.Analyzing, p * 0.3, $"Analyzing: {p * 100:F0}%"));
+                    });
+
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        return new ExportResult(false, "Export cancelled", sourceMeasurement, null);
+                    }
+
+                    progress?.Report(new ExportProgress(ExportPhase.Analyzing, 0.3,
+                        $"Source: {sourceMeasurement.IntegratedLoudness:F1} LUFS, {sourceMeasurement.TruePeak:F1} dBTP"));
+                }
+
+                // Phase 2: Export with normalization
+                progress?.Report(new ExportProgress(ExportPhase.Exporting, 0.3, "Exporting..."));
+
+                using var reader = new AudioFileReader(inputPath);
+                ISampleProvider exportSource = reader;
+
+                // Apply loudness normalization if enabled
+                if (preset.NormalizeLoudness && preset.TargetLufs.HasValue && sourceMeasurement != null)
+                {
+                    var normalizer = LoudnessNormalizer.CreateWithMeasuredLoudness(
+                        reader,
+                        sourceMeasurement.IntegratedLoudness,
+                        sourceMeasurement.TruePeak,
+                        preset.TargetLufs.Value,
+                        preset.MaxTruePeak ?? -1f);
+                    exportSource = normalizer;
+                }
+
+                // Resample if needed
+                if (preset.SampleRate != reader.WaveFormat.SampleRate)
+                {
+                    exportSource = new WdlResamplingSampleProvider(exportSource, preset.SampleRate);
+                }
+
+                // Create temp WAV file for intermediate processing
+                string tempPath = Path.Combine(Path.GetTempPath(), $"export_{Guid.NewGuid()}.wav");
+
+                try
+                {
+                    // Write to temp WAV
+                    var outputFormat = new WaveFormat(preset.SampleRate, preset.BitDepth, reader.WaveFormat.Channels);
+                    using (var writer = new WaveFileWriter(tempPath, outputFormat))
+                    {
+                        float[] buffer = new float[4096];
+                        int samplesRead;
+                        long totalSamples = 0;
+                        long estimatedSamples = (long)(reader.TotalTime.TotalSeconds * preset.SampleRate * reader.WaveFormat.Channels);
+
+                        while ((samplesRead = exportSource.Read(buffer, 0, buffer.Length)) > 0)
+                        {
+                            if (cancellationToken.IsCancellationRequested)
+                            {
+                                return new ExportResult(false, "Export cancelled", sourceMeasurement, null);
+                            }
+
+                            // Convert float samples to bytes based on bit depth
+                            byte[] byteBuffer = new byte[samplesRead * (preset.BitDepth / 8)];
+                            int bytesWritten = ConvertFloatToBytes(buffer, 0, samplesRead, byteBuffer, preset.BitDepth);
+                            writer.Write(byteBuffer, 0, bytesWritten);
+
+                            totalSamples += samplesRead;
+                            double exportProgress = 0.3 + (0.5 * Math.Min(1.0, (double)totalSamples / estimatedSamples));
+                            progress?.Report(new ExportProgress(ExportPhase.Exporting, exportProgress,
+                                $"Exporting: {(exportProgress - 0.3) / 0.5 * 100:F0}%"));
+                        }
+                    }
+
+                    // Convert to final format if not WAV
+                    bool formatSuccess = true;
+                    switch (preset.Format)
+                    {
+                        case AudioFormat.Mp3:
+                            progress?.Report(new ExportProgress(ExportPhase.Converting, 0.8, "Converting to MP3..."));
+                            formatSuccess = TryExportMp3WithLame(tempPath, outputPath, preset.BitRate ?? 320);
+                            break;
+
+                        case AudioFormat.Wav:
+                            File.Copy(tempPath, outputPath, overwrite: true);
+                            break;
+
+                        case AudioFormat.Flac:
+                            progress?.Report(new ExportProgress(ExportPhase.Converting, 0.8, "Converting to FLAC..."));
+                            // FLAC encoding would require additional library
+                            // For now, export as WAV
+                            File.Copy(tempPath, Path.ChangeExtension(outputPath, ".wav"), overwrite: true);
+                            Console.WriteLine("FLAC encoding not available, exported as WAV.");
+                            break;
+
+                        case AudioFormat.Ogg:
+                            progress?.Report(new ExportProgress(ExportPhase.Converting, 0.8, "Converting to OGG..."));
+                            // OGG encoding would require additional library
+                            // For now, export as WAV
+                            File.Copy(tempPath, Path.ChangeExtension(outputPath, ".wav"), overwrite: true);
+                            Console.WriteLine("OGG encoding not available, exported as WAV.");
+                            break;
+                    }
+
+                    if (!formatSuccess)
+                    {
+                        // Fallback to WAV if format conversion fails
+                        string wavOutput = Path.ChangeExtension(outputPath, ".wav");
+                        File.Copy(tempPath, wavOutput, overwrite: true);
+                        Console.WriteLine($"Format conversion failed, exported as WAV: {wavOutput}");
+                    }
+
+                    // Phase 3: Verify output loudness
+                    progress?.Report(new ExportProgress(ExportPhase.Verifying, 0.9, "Verifying output..."));
+
+                    string verifyPath = File.Exists(outputPath) ? outputPath : Path.ChangeExtension(outputPath, ".wav");
+                    if (File.Exists(verifyPath))
+                    {
+                        using var verifyReader = new AudioFileReader(verifyPath);
+                        outputMeasurement = LoudnessAnalyzer.Measure(verifyReader);
+                    }
+
+                    progress?.Report(new ExportProgress(ExportPhase.Complete, 1.0,
+                        outputMeasurement != null
+                            ? $"Complete: {outputMeasurement.IntegratedLoudness:F1} LUFS"
+                            : "Complete"));
+
+                    return new ExportResult(true, null, sourceMeasurement, outputMeasurement);
+                }
+                finally
+                {
+                    // Clean up temp file
+                    if (File.Exists(tempPath))
+                    {
+                        try { File.Delete(tempPath); } catch { }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                return new ExportResult(false, ex.Message, null, null);
+            }
+        }, cancellationToken);
+    }
+
+    /// <summary>
+    /// Exports an audio source using the specified preset.
+    /// </summary>
+    /// <param name="source">The audio source to export.</param>
+    /// <param name="outputPath">Path for the output file.</param>
+    /// <param name="preset">Export preset defining format and loudness settings.</param>
+    /// <param name="duration">Duration to export.</param>
+    /// <param name="progress">Optional progress callback.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Export result.</returns>
+    public async Task<ExportResult> ExportSourceWithPresetAsync(
+        ISampleProvider source,
+        string outputPath,
+        ExportPreset preset,
+        TimeSpan duration,
+        IProgress<ExportProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        return await Task.Run(() =>
+        {
+            try
+            {
+                // First, render to a temp file to measure loudness
+                string tempPath = Path.Combine(Path.GetTempPath(), $"render_{Guid.NewGuid()}.wav");
+
+                progress?.Report(new ExportProgress(ExportPhase.Rendering, 0, "Rendering audio..."));
+
+                var format = new WaveFormat(source.WaveFormat.SampleRate, 32, source.WaveFormat.Channels);
+                using (var writer = new WaveFileWriter(tempPath, format))
+                {
+                    float[] buffer = new float[4096];
+                    int samplesRead;
+                    long totalSamples = 0;
+                    long targetSamples = (long)(duration.TotalSeconds * source.WaveFormat.SampleRate * source.WaveFormat.Channels);
+
+                    while (totalSamples < targetSamples && (samplesRead = source.Read(buffer, 0, buffer.Length)) > 0)
+                    {
+                        if (cancellationToken.IsCancellationRequested)
+                        {
+                            return new ExportResult(false, "Export cancelled", null, null);
+                        }
+
+                        // Limit to remaining samples if needed
+                        int samplesToWrite = (int)Math.Min(samplesRead, targetSamples - totalSamples);
+                        writer.WriteSamples(buffer, 0, samplesToWrite);
+
+                        totalSamples += samplesToWrite;
+                        progress?.Report(new ExportProgress(ExportPhase.Rendering,
+                            0.3 * totalSamples / targetSamples,
+                            $"Rendering: {100.0 * totalSamples / targetSamples:F0}%"));
+                    }
+                }
+
+                // Now export with preset
+                var result = ExportWithPresetAsync(tempPath, outputPath, preset,
+                    new Progress<ExportProgress>(p =>
+                    {
+                        // Adjust progress to account for rendering phase
+                        double adjustedProgress = 0.3 + p.Progress * 0.7;
+                        progress?.Report(new ExportProgress(p.Phase, adjustedProgress, p.Message));
+                    }), cancellationToken).GetAwaiter().GetResult();
+
+                // Clean up temp file
+                try { File.Delete(tempPath); } catch { }
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                return new ExportResult(false, ex.Message, null, null);
+            }
+        }, cancellationToken);
+    }
+}
+
+/// <summary>
+/// Export progress phase.
+/// </summary>
+public enum ExportPhase
+{
+    /// <summary>Analyzing source loudness</summary>
+    Analyzing,
+    /// <summary>Rendering audio source</summary>
+    Rendering,
+    /// <summary>Exporting with normalization</summary>
+    Exporting,
+    /// <summary>Converting to target format</summary>
+    Converting,
+    /// <summary>Verifying output loudness</summary>
+    Verifying,
+    /// <summary>Export complete</summary>
+    Complete
+}
+
+/// <summary>
+/// Export progress information.
+/// </summary>
+/// <param name="Phase">Current export phase.</param>
+/// <param name="Progress">Progress value (0.0 to 1.0).</param>
+/// <param name="Message">Status message.</param>
+public record ExportProgress(ExportPhase Phase, double Progress, string Message);
+
+/// <summary>
+/// Result of an export operation.
+/// </summary>
+/// <param name="Success">Whether the export succeeded.</param>
+/// <param name="ErrorMessage">Error message if failed.</param>
+/// <param name="SourceMeasurement">Loudness measurement of the source.</param>
+/// <param name="OutputMeasurement">Loudness measurement of the output.</param>
+public record ExportResult(
+    bool Success,
+    string? ErrorMessage,
+    LoudnessMeasurement? SourceMeasurement,
+    LoudnessMeasurement? OutputMeasurement)
+{
+    /// <summary>
+    /// Gets a summary of the export result.
+    /// </summary>
+    public string Summary
+    {
+        get
+        {
+            if (!Success)
+            {
+                return $"Export failed: {ErrorMessage}";
+            }
+
+            var sb = new System.Text.StringBuilder("Export successful");
+
+            if (SourceMeasurement != null)
+            {
+                sb.Append($"\nSource: {SourceMeasurement.IntegratedLoudness:F1} LUFS, {SourceMeasurement.TruePeak:F1} dBTP");
+            }
+
+            if (OutputMeasurement != null)
+            {
+                sb.Append($"\nOutput: {OutputMeasurement.IntegratedLoudness:F1} LUFS, {OutputMeasurement.TruePeak:F1} dBTP");
+            }
+
+            return sb.ToString();
         }
     }
 }
