@@ -173,13 +173,33 @@ MusicEngineEditor: 0 Fehler, 0 Warnungen
 Tests:             136/136 bestanden
 ```
 
-## Offene Features (Optional)
+- [x] **Undo/Redo System** - `Core/UndoRedo/`
+  - IUndoableCommand Interface mit Execute/Undo/Redo
+  - UndoManager mit History Stack (max 100 Einträge)
+  - CompositeCommand für Batch-Operationen
+  - PropertyChangeCommand, AddItemCommand, RemoveItemCommand, MoveItemCommand
+  - Merge-Support für aufeinanderfolgende Änderungen
 
-### Niedrig Priorität
-- [ ] Memory Pooling (AudioBufferPool)
-- [ ] Undo/Redo System (Command Pattern)
-- [ ] Extension System (ISynthExtension, IEffectExtension, Discovery)
-- [ ] Project Browser
+- [x] **Extension System** - `Core/Extensions/`
+  - ISynthExtension und IEffectExtension Interfaces
+  - ExtensionParameter mit Min/Max/Default/Unit
+  - ExtensionManager für Discovery und Registration
+  - SynthExtensionAttribute und EffectExtensionAttribute
+  - ExtensionContext für Engine-Zugriff
+
+- [x] **Memory Pooling** - `Infrastructure/Memory/`
+  - IAudioBufferPool Interface
+  - AudioBufferPool mit ArrayPool<T>
+  - RentedBuffer<T> für automatische Rückgabe
+
+- [x] **Project Browser** - `Views/ProjectBrowserView.xaml`
+  - ProjectInfo Model mit Metadaten
+  - ProjectBrowserViewModel mit Search/Sort/Filter
+  - Favoriten-Support
+  - Recent Projects Liste
+  - Duplicate/Delete/Open in Explorer
+
+## Alle Features abgeschlossen!
 
 ## Wichtige Konventionen
 
@@ -237,26 +257,33 @@ exporter.ExportPattern(pattern, "output.mid", 120);
 
 ## Letzte Änderungen (Session vom 21.01.2026 - Fortsetzung)
 
-### Neue Features implementiert:
+### Session Teil 1 - Async & Recording:
 
-9. **Async Operations** komplett implementiert:
-   - AsyncProgress.cs (InitializationProgress, VstScanProgress, SessionProgress)
-   - AudioEngineAsync.cs (Extension Methods für async AudioEngine)
-   - VstHostAsync.cs (ScanForPluginsAsync, LoadPluginAsync)
-   - SessionAsync.cs (LoadAsync, SaveAsync)
+9. **Async Operations** komplett implementiert
+10. **Audio Recording** komplett implementiert
+11. **Fixes und Anpassungen** für StemExporter, ExportViewModel
 
-10. **Audio Recording** komplett implementiert:
-    - AudioRecorder.cs (Haupt-Recording-Klasse mit Pause/Resume)
-    - WaveFileRecorder.cs (Low-Level WAV Writer)
-    - RecordingFormat.cs (Enum für Output-Formate)
-    - RecordingEventArgs.cs (Progress/Completed Events)
-    - ExportTypes.cs (ExportResult, ExportProgress, ExportPhase)
+### Session Teil 2 - Alle offenen Features:
 
-11. **Fixes und Anpassungen:**
-    - StemExporter.cs angepasst (LoadFromEngine() für zukünftige Channel-Unterstützung)
-    - ExportViewModel/ExportDialog angepasst (statische ExportWithPresetAsync)
-    - WaveFileRecorder.FinalizeFile() statt Finalize() (Warnung behoben)
-    - Ungenutzte Recording-Events aus AudioEngine entfernt
+12. **Undo/Redo System** komplett implementiert:
+    - Core/UndoRedo/IUndoableCommand.cs
+    - Core/UndoRedo/UndoManager.cs (mit Events, History, Batch-Support)
+    - Core/UndoRedo/CompositeCommand.cs (UndoBatch für gruppierte Operationen)
+    - Core/UndoRedo/Commands.cs (DelegateCommand, PropertyChangeCommand, etc.)
+
+13. **Extension System** erweitert:
+    - Core/Extensions/IExtension.cs (IExtensionContext, ExtensionContext)
+    - Bestehende ISynthExtension, IEffectExtension, ExtensionManager bereits vorhanden
+
+14. **Memory Pooling** bereits vorhanden:
+    - Infrastructure/Memory/IAudioBufferPool.cs
+    - Infrastructure/Memory/AudioBufferPool.cs
+    - Infrastructure/Memory/RentedBuffer.cs
+
+15. **Project Browser** komplett implementiert:
+    - Models/ProjectInfo.cs (mit Metadaten, Formatierung, JSON-Parsing)
+    - ViewModels/ProjectBrowserViewModel.cs (Search, Sort, Filter, Favorites)
+    - Views/ProjectBrowserView.xaml/.cs (Dark Theme UI, Converters)
 
 ### Build Status nach Session:
 ```
