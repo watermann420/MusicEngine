@@ -869,7 +869,12 @@ public class AudioRecorder : IDisposable
                     // Clean up temp file
                     if (File.Exists(tempPath))
                     {
-                        try { File.Delete(tempPath); } catch { }
+                        try { File.Delete(tempPath); }
+                        catch (IOException ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"Failed to delete temp file '{tempPath}': {ex.Message}");
+                            // Continue execution - temp file cleanup is non-critical
+                        }
                     }
                 }
             }
@@ -943,7 +948,12 @@ public class AudioRecorder : IDisposable
                     }), cancellationToken).GetAwaiter().GetResult();
 
                 // Clean up temp file
-                try { File.Delete(tempPath); } catch { }
+                try { File.Delete(tempPath); }
+                catch (IOException ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Failed to delete temp file '{tempPath}': {ex.Message}");
+                    // Continue execution - temp file cleanup is non-critical
+                }
 
                 return result;
             }

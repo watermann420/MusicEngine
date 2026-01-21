@@ -286,7 +286,11 @@ public class HighResolutionTimer : IDisposable
                 TimeEndPeriod(1);
                 _highResolutionMode = false;
             }
-            catch { }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to restore Windows timer resolution: {ex.Message}");
+                // Continue execution - timer cleanup is non-critical during disposal
+            }
         }
     }
 

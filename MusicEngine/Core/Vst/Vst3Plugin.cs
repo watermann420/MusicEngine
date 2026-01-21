@@ -4,12 +4,14 @@
 // Description: VST3 Plugin wrapper implementing full VST3 hosting.
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using NAudio.Wave;
 using MusicEngine.Core.Vst.Vst3.Interfaces;
+using MusicEngine.Core.Vst.Vst3.Presets;
 using MusicEngine.Core.Vst.Vst3.Structures;
 
 namespace MusicEngine.Core;
@@ -109,8 +111,8 @@ public class Vst3Plugin : IVst3Plugin
     private int _currentPresetIndex;
     private string _currentPresetName = "";
 
-    // MIDI event queue
-    private readonly Queue<MidiEventData> _midiEventQueue = new();
+    // MIDI event queue (thread-safe for multi-threaded access)
+    private readonly ConcurrentQueue<MidiEventData> _midiEventQueue = new();
     private readonly List<(int note, int velocity)> _activeNotes = new();
 
     // Unit info
@@ -1197,16 +1199,13 @@ public class Vst3Plugin : IVst3Plugin
     /// </summary>
     public void SendControlChange(int channel, int controller, int value)
     {
-        lock (_lock)
+        _midiEventQueue.Enqueue(new MidiEventData
         {
-            _midiEventQueue.Enqueue(new MidiEventData
-            {
-                DeltaFrames = 0,
-                Status = (byte)(0xB0 | (channel & 0x0F)),
-                Data1 = (byte)Math.Clamp(controller, 0, 127),
-                Data2 = (byte)Math.Clamp(value, 0, 127)
-            });
-        }
+            DeltaFrames = 0,
+            Status = (byte)(0xB0 | (channel & 0x0F)),
+            Data1 = (byte)Math.Clamp(controller, 0, 127),
+            Data2 = (byte)Math.Clamp(value, 0, 127)
+        });
     }
 
     /// <summary>
@@ -1214,17 +1213,14 @@ public class Vst3Plugin : IVst3Plugin
     /// </summary>
     public void SendPitchBend(int channel, int value)
     {
-        lock (_lock)
+        int clampedValue = Math.Clamp(value, 0, 16383);
+        _midiEventQueue.Enqueue(new MidiEventData
         {
-            int clampedValue = Math.Clamp(value, 0, 16383);
-            _midiEventQueue.Enqueue(new MidiEventData
-            {
-                DeltaFrames = 0,
-                Status = (byte)(0xE0 | (channel & 0x0F)),
-                Data1 = (byte)(clampedValue & 0x7F),
-                Data2 = (byte)((clampedValue >> 7) & 0x7F)
-            });
-        }
+            DeltaFrames = 0,
+            Status = (byte)(0xE0 | (channel & 0x0F)),
+            Data1 = (byte)(clampedValue & 0x7F),
+            Data2 = (byte)((clampedValue >> 7) & 0x7F)
+        });
     }
 
     /// <summary>
@@ -1232,16 +1228,13 @@ public class Vst3Plugin : IVst3Plugin
     /// </summary>
     public void SendProgramChange(int channel, int program)
     {
-        lock (_lock)
+        _midiEventQueue.Enqueue(new MidiEventData
         {
-            _midiEventQueue.Enqueue(new MidiEventData
-            {
-                DeltaFrames = 0,
-                Status = (byte)(0xC0 | (channel & 0x0F)),
-                Data1 = (byte)Math.Clamp(program, 0, 127),
-                Data2 = 0
-            });
-        }
+            DeltaFrames = 0,
+            Status = (byte)(0xC0 | (channel & 0x0F)),
+            Data1 = (byte)Math.Clamp(program, 0, 127),
+            Data2 = 0
+        });
     }
 
     #endregion
@@ -1366,25 +1359,154 @@ public class Vst3Plugin : IVst3Plugin
     #region IVstPlugin Implementation - Presets
 
     /// <summary>
-    /// Load a preset file
+    /// Load a preset file (.vstpreset format)
     /// </summary>
+    /// <param name="path">Path to the .vstpreset file</param>
+    /// <returns>True if the preset was loaded successfully</returns>
     public bool LoadPreset(string path)
     {
-        // VST3 preset loading would use the vstpreset format
-        // This is a placeholder - full implementation would parse the file
-        Console.WriteLine($"LoadPreset not yet implemented for VST3: {path}");
-        return false;
+        if (string.IsNullOrEmpty(path))
+            return false;
+
+        if (!File.Exists(path))
+        {
+            Console.WriteLine($"Preset file not found: {path}");
+            return false;
+        }
+
+        if (_component == null)
+        {
+            Console.WriteLine("Cannot load preset: plugin component is not initialized");
+            return false;
+        }
+
+        try
+        {
+            // Read the preset file
+            var presetReader = new VstPresetReader();
+            var presetData = presetReader.Read(path);
+
+            // Verify the preset is for this plugin
+            if (presetData.ClassId != _classId)
+            {
+                Console.WriteLine($"Preset class ID mismatch. Expected: {_classId}, Got: {presetData.ClassId}");
+                return false;
+            }
+
+            // Load component state (processor state)
+            if (presetData.ComponentState != null && presetData.ComponentState.Length > 0)
+            {
+                using var componentStream = new Vst3BStream(presetData.ComponentState);
+                int result = _component.SetState(componentStream.NativePtr);
+                if (result != (int)Vst3Result.Ok)
+                {
+                    Console.WriteLine($"Failed to set component state. Result: {result}");
+                    return false;
+                }
+
+                // Also notify the edit controller about the component state
+                if (_editController != null)
+                {
+                    componentStream.Reset();
+                    _editController.SetComponentState(componentStream.NativePtr);
+                }
+            }
+
+            // Load controller state
+            if (_editController != null && presetData.ControllerState != null && presetData.ControllerState.Length > 0)
+            {
+                using var controllerStream = new Vst3BStream(presetData.ControllerState);
+                int result = _editController.SetState(controllerStream.NativePtr);
+                if (result != (int)Vst3Result.Ok)
+                {
+                    Console.WriteLine($"Warning: Failed to set controller state. Result: {result}");
+                    // Controller state failure is not critical, continue
+                }
+            }
+
+            // Update preset name
+            _currentPresetName = presetData.Name ?? Path.GetFileNameWithoutExtension(path);
+
+            Console.WriteLine($"Loaded preset: {_currentPresetName}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading preset '{path}': {ex.Message}");
+            return false;
+        }
     }
 
     /// <summary>
-    /// Save current state to a preset file
+    /// Save current state to a preset file (.vstpreset format)
     /// </summary>
+    /// <param name="path">Path for the .vstpreset file</param>
+    /// <returns>True if the preset was saved successfully</returns>
     public bool SavePreset(string path)
     {
-        // VST3 preset saving would use the vstpreset format
-        // This is a placeholder - full implementation would create the file
-        Console.WriteLine($"SavePreset not yet implemented for VST3: {path}");
-        return false;
+        if (string.IsNullOrEmpty(path))
+            return false;
+
+        if (_component == null)
+        {
+            Console.WriteLine("Cannot save preset: plugin component is not initialized");
+            return false;
+        }
+
+        try
+        {
+            var presetData = new VstPresetData
+            {
+                ClassId = _classId,
+                Name = !string.IsNullOrEmpty(_currentPresetName) ? _currentPresetName : Path.GetFileNameWithoutExtension(path)
+            };
+
+            // Get component state (processor state)
+            using (var componentStream = new Vst3BStream())
+            {
+                int result = _component.GetState(componentStream.NativePtr);
+                if (result == (int)Vst3Result.Ok)
+                {
+                    presetData.ComponentState = componentStream.ToArray();
+                }
+                else
+                {
+                    Console.WriteLine($"Warning: Failed to get component state. Result: {result}");
+                }
+            }
+
+            // Get controller state
+            if (_editController != null)
+            {
+                using var controllerStream = new Vst3BStream();
+                int result = _editController.GetState(controllerStream.NativePtr);
+                if (result == (int)Vst3Result.Ok)
+                {
+                    presetData.ControllerState = controllerStream.ToArray();
+                }
+                // Controller state is optional, don't warn if it fails
+            }
+
+            // Ensure we have at least some state data to save
+            if ((presetData.ComponentState == null || presetData.ComponentState.Length == 0) &&
+                (presetData.ControllerState == null || presetData.ControllerState.Length == 0))
+            {
+                Console.WriteLine("Warning: No state data available to save");
+                return false;
+            }
+
+            // Write the preset file
+            var presetWriter = new VstPresetWriter();
+            presetWriter.Write(path, presetData);
+
+            Console.WriteLine($"Saved preset to: {path}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving preset '{path}': {ex.Message}");
+            return false;
+        }
     }
 
     /// <summary>

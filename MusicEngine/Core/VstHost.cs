@@ -414,7 +414,11 @@ public class VstHost : IDisposable
                     FreeLibrary(moduleHandle);
                 }
             }
-            catch { }
+            catch (Exception cleanupEx)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to cleanup VST3 plugin resources for '{path}': {cleanupEx.Message}");
+                // Continue execution - cleanup failure is non-critical, we'll return basic info anyway
+            }
 
             return CreateBasicVst3Info(path);
         }
@@ -581,8 +585,8 @@ public class VstHost : IDisposable
 
     /// <summary>
     /// Load a VST3 plugin from its info.
-    /// Note: Full VST3 plugin wrapper implementation requires Vst3Plugin class.
-    /// This method creates a VstPlugin wrapper for basic compatibility.
+    /// Creates a Vst3Plugin instance with full VST3 support including
+    /// audio processing, parameter management, and GUI support.
     /// </summary>
     private IVstPlugin? LoadVst3Plugin(Vst3PluginInfo info)
     {
@@ -599,28 +603,8 @@ public class VstHost : IDisposable
                 ? info.ResolvedPath
                 : info.Path;
 
-            // Create a VstPluginInfo wrapper to use with VstPlugin
-            // This provides basic compatibility until full Vst3Plugin is implemented
-            var compatInfo = new VstPluginInfo
-            {
-                Name = info.Name,
-                Path = pluginPath,
-                Vendor = info.Vendor,
-                Version = info.Version,
-                UniqueId = info.ClassId.GetHashCode(),
-                IsInstrument = info.IsInstrument,
-                IsLoaded = false,
-                NumInputs = info.NumInputs,
-                NumOutputs = info.NumOutputs,
-                NumParameters = info.NumParameters
-            };
-
-            // TODO: When full Vst3Plugin class is implemented, use:
-            // var plugin = new Vst3Plugin(info);
-
-            // For now, create a VstPlugin wrapper (works for many VST3 plugins)
-            // Note: Some VST3-specific features won't be available
-            var plugin = new VstPlugin(compatInfo);
+            // Create a proper Vst3Plugin instance for full VST3 support
+            var plugin = new Vst3Plugin(pluginPath);
             info.IsLoaded = true;
             _loadedPlugins[info.Name] = plugin;
             Console.WriteLine($"Loaded VST3 Plugin: {info.Name} ({(info.IsInstrument ? "Instrument" : "Effect")})");

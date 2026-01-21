@@ -5,6 +5,7 @@
 
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -230,7 +231,7 @@ public class VstPlugin : IVstPlugin
     private readonly WaveFormat _waveFormat;
     private readonly object _lock = new();
     private readonly List<(int note, int velocity)> _activeNotes = new();
-    private readonly Queue<VstMidiEventInternal> _midiEventQueue = new();
+    private readonly ConcurrentQueue<VstMidiEventInternal> _midiEventQueue = new();
     private IntPtr _pluginHandle = IntPtr.Zero;
     private IntPtr _moduleHandle = IntPtr.Zero;
     private bool _isDisposed;
@@ -804,16 +805,13 @@ public class VstPlugin : IVstPlugin
     /// </summary>
     public void SendControlChange(int channel, int controller, int value)
     {
-        lock (_lock)
+        _midiEventQueue.Enqueue(new VstMidiEventInternal
         {
-            _midiEventQueue.Enqueue(new VstMidiEventInternal
-            {
-                DeltaFrames = 0,
-                Status = (byte)(0xB0 | (channel & 0x0F)),
-                Data1 = (byte)Math.Clamp(controller, 0, 127),
-                Data2 = (byte)Math.Clamp(value, 0, 127)
-            });
-        }
+            DeltaFrames = 0,
+            Status = (byte)(0xB0 | (channel & 0x0F)),
+            Data1 = (byte)Math.Clamp(controller, 0, 127),
+            Data2 = (byte)Math.Clamp(value, 0, 127)
+        });
     }
 
     /// <summary>
@@ -821,17 +819,14 @@ public class VstPlugin : IVstPlugin
     /// </summary>
     public void SendPitchBend(int channel, int value)
     {
-        lock (_lock)
+        int clampedValue = Math.Clamp(value, 0, 16383);
+        _midiEventQueue.Enqueue(new VstMidiEventInternal
         {
-            int clampedValue = Math.Clamp(value, 0, 16383);
-            _midiEventQueue.Enqueue(new VstMidiEventInternal
-            {
-                DeltaFrames = 0,
-                Status = (byte)(0xE0 | (channel & 0x0F)),
-                Data1 = (byte)(clampedValue & 0x7F),
-                Data2 = (byte)((clampedValue >> 7) & 0x7F)
-            });
-        }
+            DeltaFrames = 0,
+            Status = (byte)(0xE0 | (channel & 0x0F)),
+            Data1 = (byte)(clampedValue & 0x7F),
+            Data2 = (byte)((clampedValue >> 7) & 0x7F)
+        });
     }
 
     /// <summary>
@@ -839,16 +834,13 @@ public class VstPlugin : IVstPlugin
     /// </summary>
     public void SendProgramChange(int channel, int program)
     {
-        lock (_lock)
+        _midiEventQueue.Enqueue(new VstMidiEventInternal
         {
-            _midiEventQueue.Enqueue(new VstMidiEventInternal
-            {
-                DeltaFrames = 0,
-                Status = (byte)(0xC0 | (channel & 0x0F)),
-                Data1 = (byte)Math.Clamp(program, 0, 127),
-                Data2 = 0
-            });
-        }
+            DeltaFrames = 0,
+            Status = (byte)(0xC0 | (channel & 0x0F)),
+            Data1 = (byte)Math.Clamp(program, 0, 127),
+            Data2 = 0
+        });
     }
 
     #endregion
@@ -1547,7 +1539,7 @@ public class VstPlugin : IVstPlugin
     /// </summary>
     private void ProcessMidiEvents()
     {
-        if (_midiEventQueue.Count == 0) return;
+        if (_midiEventQueue.IsEmpty) return;
 
         if (_dispatcher != null && _pluginHandle != IntPtr.Zero)
         {
@@ -1567,10 +1559,8 @@ public class VstPlugin : IVstPlugin
                 int eventOffset = 8 + IntPtr.Size;
                 int dataOffset = eventsSize;
 
-                while (_midiEventQueue.Count > 0)
+                while (_midiEventQueue.TryDequeue(out var evt))
                 {
-                    var evt = _midiEventQueue.Dequeue();
-
                     // Create MIDI event struct
                     var midiEvent = new VstMidiEventStruct
                     {
