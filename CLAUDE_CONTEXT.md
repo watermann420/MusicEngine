@@ -559,16 +559,16 @@ MusicEngineEditor: 0 Fehler, 0 Warnungen
 
 22. **Debug-Output in AudioEngine.Initialize()** (22.01.2026):
 - Schrittweise Console.WriteLine Ausgaben hinzugefügt:
-  - Step 1: Creating WaveOutEvent
-  - Step 2: Initializing output device
-  - Step 3: Starting playback
-  - Step 4: Enumerating audio outputs (mit Device-Namen)
-  - Step 5: Enumerating audio inputs (mit Device-Namen)
-  - Step 6: Enumerating MIDI inputs (mit Device-Namen)
-  - Step 7: Enumerating MIDI outputs (mit Device-Namen)
-  - Step 8: Scanning for VST plugins
-  - Initialization complete!
-- Hilft beim Identifizieren, welcher Schritt den AccessViolationException verursacht
+  - Step 1-8 mit Device-Namen für Audio, MIDI und VST
+- **Ergebnis:** Crash passiert bei Step 8 (VST Scanning)
+
+23. **Debug-Output in VstHost.ScanForPlugins()** (22.01.2026):
+- Detaillierte Ausgabe für jeden Scan-Schritt:
+  - Welche Pfade werden gescannt
+  - Anzahl gefundener DLL/VST3 Dateien
+  - **Welches Plugin gerade geprobed wird** (zeigt problematisches Plugin)
+  - Erfolgreich erkannte Plugins
+- Der letzte "Probing..." Output vor dem Crash zeigt das problematische Plugin
 
 ### Build Status nach Session Teil 5:
 ```

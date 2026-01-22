@@ -84,24 +84,38 @@ public class VstHost : IDisposable
                 searchPaths.Insert(0, Settings.VstPluginPath);
             }
 
+            Console.WriteLine($"[VstHost] Scanning {searchPaths.Count} VST path(s)...");
+
             foreach (var basePath in searchPaths)
             {
-                if (!Directory.Exists(basePath)) continue;
+                if (!Directory.Exists(basePath))
+                {
+                    Console.WriteLine($"[VstHost]   Path not found: {basePath}");
+                    continue;
+                }
+
+                Console.WriteLine($"[VstHost]   Scanning: {basePath}");
 
                 try
                 {
                     // Scan for VST2 plugins (.dll)
-                    foreach (var file in Directory.GetFiles(basePath, "*.dll", SearchOption.AllDirectories))
+                    var dllFiles = Directory.GetFiles(basePath, "*.dll", SearchOption.AllDirectories);
+                    Console.WriteLine($"[VstHost]     Found {dllFiles.Length} DLL file(s)");
+                    foreach (var file in dllFiles)
                     {
+                        Console.WriteLine($"[VstHost]       Probing VST2: {Path.GetFileName(file)}");
                         var pluginInfo = ProbePlugin(file, false);
                         if (pluginInfo != null)
                         {
+                            Console.WriteLine($"[VstHost]         -> Valid VST2: {pluginInfo.Name}");
                             _discoveredPlugins.Add(pluginInfo);
                         }
                     }
 
                     // Scan for VST3 single-file plugins (.vst3 files)
-                    foreach (var file in Directory.GetFiles(basePath, "*.vst3", SearchOption.AllDirectories))
+                    var vst3Files = Directory.GetFiles(basePath, "*.vst3", SearchOption.AllDirectories);
+                    Console.WriteLine($"[VstHost]     Found {vst3Files.Length} VST3 file(s)");
+                    foreach (var file in vst3Files)
                     {
                         // Skip files inside bundle directories (we'll handle bundles separately)
                         var parentDir = Path.GetDirectoryName(file);
@@ -110,29 +124,37 @@ public class VstHost : IDisposable
                             continue;
                         }
 
+                        Console.WriteLine($"[VstHost]       Probing VST3 file: {Path.GetFileName(file)}");
                         var pluginInfo = ProbeVst3Plugin(file);
                         if (pluginInfo != null)
                         {
+                            Console.WriteLine($"[VstHost]         -> Valid VST3: {pluginInfo.Name}");
                             _discoveredVst3Plugins.Add(pluginInfo);
                         }
                     }
 
                     // Scan for VST3 bundle directories (*.vst3 folders)
-                    foreach (var dir in Directory.GetDirectories(basePath, "*.vst3", SearchOption.AllDirectories))
+                    var vst3Dirs = Directory.GetDirectories(basePath, "*.vst3", SearchOption.AllDirectories);
+                    Console.WriteLine($"[VstHost]     Found {vst3Dirs.Length} VST3 bundle(s)");
+                    foreach (var dir in vst3Dirs)
                     {
+                        Console.WriteLine($"[VstHost]       Probing VST3 bundle: {Path.GetFileName(dir)}");
                         var pluginInfo = ScanVst3Bundle(dir);
                         if (pluginInfo != null)
                         {
+                            Console.WriteLine($"[VstHost]         -> Valid VST3: {pluginInfo.Name}");
                             _discoveredVst3Plugins.Add(pluginInfo);
                         }
                     }
                 }
                 catch (Exception ex)
                 {
+                    Console.WriteLine($"[VstHost]     ERROR: {ex.Message}");
                     _logger?.LogWarning(ex, "Error scanning VST path '{Path}'", basePath);
                 }
             }
 
+            Console.WriteLine($"[VstHost] Scan complete: {_discoveredPlugins.Count} VST2, {_discoveredVst3Plugins.Count} VST3");
             return new List<VstPluginInfo>(_discoveredPlugins);
         }
     }
