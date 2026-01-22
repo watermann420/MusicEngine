@@ -78,7 +78,7 @@ public class EffectConfig
     /// <summary>Unique identifier for this effect.</summary>
     public string Id { get; set; } = Guid.NewGuid().ToString();
 
-    /// <summary>Type of effect (e.g., "ReverbEffect", "DelayEffect", "CompressorEffect").</summary>
+    /// <summary>Type of effect (e.g., "ReverbEffect", "DelayEffect", "CompressorEffect", "VstEffect").</summary>
     public string Type { get; set; } = "";
 
     /// <summary>Display name for the effect.</summary>
@@ -92,6 +92,27 @@ public class EffectConfig
 
     /// <summary>Parameter values for the effect.</summary>
     public Dictionary<string, object> Parameters { get; set; } = new();
+
+    /// <summary>Whether this is a VST effect.</summary>
+    public bool IsVstEffect { get; set; }
+
+    /// <summary>Path to the VST plugin file (for VST effects).</summary>
+    public string? VstPath { get; set; }
+
+    /// <summary>VST format ("VST2" or "VST3").</summary>
+    public string VstFormat { get; set; } = "";
+
+    /// <summary>VST plugin state data (for restoring plugin state).</summary>
+    public byte[]? VstState { get; set; }
+
+    /// <summary>Slot index in the channel's effect chain.</summary>
+    public int SlotIndex { get; set; }
+
+    /// <summary>Effect category (e.g., "Dynamics", "Time-Based", "Modulation", "VST").</summary>
+    public string Category { get; set; } = "";
+
+    /// <summary>Effect color for visual representation.</summary>
+    public string EffectColor { get; set; } = "#6B7280";
 }
 
 

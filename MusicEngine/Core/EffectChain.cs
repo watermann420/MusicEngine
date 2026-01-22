@@ -117,6 +117,154 @@ public class EffectChain : ISampleProvider
     }
 
     /// <summary>
+    /// Adds a VST effect plugin to the end of the chain.
+    /// </summary>
+    /// <param name="plugin">The VST plugin to add (must be an effect, not an instrument).</param>
+    /// <returns>The created VstEffectAdapter.</returns>
+    /// <exception cref="ArgumentNullException">Thrown if plugin is null.</exception>
+    /// <exception cref="ArgumentException">Thrown if plugin is an instrument.</exception>
+    public VstEffectAdapter AddVstEffect(IVstPlugin plugin)
+    {
+        if (plugin == null)
+            throw new ArgumentNullException(nameof(plugin));
+
+        if (plugin.IsInstrument)
+            throw new ArgumentException("Cannot add instrument plugin as an effect.", nameof(plugin));
+
+        lock (_lock)
+        {
+            // Determine the source for this effect
+            ISampleProvider effectSource = _effects.Count == 0 ? _source : _effects[^1];
+
+            // Create the adapter with the source
+            var adapter = new VstEffectAdapter(plugin, effectSource);
+            _effects.Add(adapter);
+            return adapter;
+        }
+    }
+
+    /// <summary>
+    /// Inserts a VST effect plugin at the specified index.
+    /// Note: This rebuilds the source chain for subsequent effects.
+    /// </summary>
+    /// <param name="index">The index to insert at.</param>
+    /// <param name="plugin">The VST plugin to insert (must be an effect, not an instrument).</param>
+    /// <returns>The created VstEffectAdapter.</returns>
+    /// <exception cref="ArgumentNullException">Thrown if plugin is null.</exception>
+    /// <exception cref="ArgumentException">Thrown if plugin is an instrument.</exception>
+    public VstEffectAdapter InsertVstEffect(int index, IVstPlugin plugin)
+    {
+        if (plugin == null)
+            throw new ArgumentNullException(nameof(plugin));
+
+        if (plugin.IsInstrument)
+            throw new ArgumentException("Cannot add instrument plugin as an effect.", nameof(plugin));
+
+        lock (_lock)
+        {
+            index = Math.Clamp(index, 0, _effects.Count);
+
+            // Determine the source for this effect
+            ISampleProvider effectSource = index == 0 ? _source : _effects[index - 1];
+
+            // Create the adapter with the source
+            var adapter = new VstEffectAdapter(plugin, effectSource);
+            _effects.Insert(index, adapter);
+
+            // Rebuild source chain for subsequent effects
+            RebuildSourceChain(index + 1);
+
+            return adapter;
+        }
+    }
+
+    /// <summary>
+    /// Rebuilds the source chain starting from the specified index.
+    /// This ensures each effect's source points to the previous effect in the chain.
+    /// </summary>
+    /// <param name="startIndex">The index to start rebuilding from.</param>
+    private void RebuildSourceChain(int startIndex)
+    {
+        for (int i = startIndex; i < _effects.Count; i++)
+        {
+            ISampleProvider newSource = i == 0 ? _source : _effects[i - 1];
+
+            if (_effects[i] is VstEffectAdapter vstAdapter)
+            {
+                vstAdapter.SetSource(newSource);
+            }
+            // Note: Built-in effects typically don't support dynamic source reassignment
+            // They would need to be recreated if we want to support full reordering
+        }
+    }
+
+    /// <summary>
+    /// Moves an effect from one position to another in the chain.
+    /// </summary>
+    /// <param name="fromIndex">The current index of the effect.</param>
+    /// <param name="toIndex">The target index for the effect.</param>
+    /// <returns>True if the move was successful.</returns>
+    public bool MoveEffect(int fromIndex, int toIndex)
+    {
+        lock (_lock)
+        {
+            if (fromIndex < 0 || fromIndex >= _effects.Count ||
+                toIndex < 0 || toIndex >= _effects.Count ||
+                fromIndex == toIndex)
+            {
+                return false;
+            }
+
+            var effect = _effects[fromIndex];
+            _effects.RemoveAt(fromIndex);
+            _effects.Insert(toIndex, effect);
+
+            // Rebuild the source chain from the minimum affected index
+            int rebuildFrom = Math.Min(fromIndex, toIndex);
+            RebuildSourceChain(rebuildFrom);
+
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Gets a VST effect adapter at the specified index.
+    /// </summary>
+    /// <param name="index">The index of the effect.</param>
+    /// <returns>The VstEffectAdapter if the effect at that index is a VST effect, null otherwise.</returns>
+    public VstEffectAdapter? GetVstEffect(int index)
+    {
+        lock (_lock)
+        {
+            if (index >= 0 && index < _effects.Count)
+            {
+                return _effects[index] as VstEffectAdapter;
+            }
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Gets all VST effect adapters in the chain.
+    /// </summary>
+    /// <returns>List of VST effect adapters.</returns>
+    public List<VstEffectAdapter> GetVstEffects()
+    {
+        lock (_lock)
+        {
+            var vstEffects = new List<VstEffectAdapter>();
+            foreach (var effect in _effects)
+            {
+                if (effect is VstEffectAdapter vstAdapter)
+                {
+                    vstEffects.Add(vstAdapter);
+                }
+            }
+            return vstEffects;
+        }
+    }
+
+    /// <summary>
     /// Inserts an effect at the specified index.
     /// Note: This rebuilds the chain to maintain correct routing.
     /// </summary>

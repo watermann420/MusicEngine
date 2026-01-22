@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "dgSpecHash": "d2UhUIix8SE=",
+  "dgSpecHash": "DXoljJqPL2k=",
   "success": true,
   "projectFilePath": "C:\\Users\\null\\RiderProjects\\MusicEngine\\MusicEngine.Tests\\MusicEngine.Tests.csproj",
   "expectedPackageFiles": [
@@ -11,6 +11,7 @@
     "C:\\Users\\null\\.nuget\\packages\\microsoft.codeanalysis.common\\5.0.0\\microsoft.codeanalysis.common.5.0.0.nupkg.sha512",
     "C:\\Users\\null\\.nuget\\packages\\microsoft.codeanalysis.csharp\\5.0.0\\microsoft.codeanalysis.csharp.5.0.0.nupkg.sha512",
     "C:\\Users\\null\\.nuget\\packages\\microsoft.codeanalysis.csharp.scripting\\5.0.0\\microsoft.codeanalysis.csharp.scripting.5.0.0.nupkg.sha512",
+    "C:\\Users\\null\\.nuget\\packages\\microsoft.codeanalysis.netanalyzers\\8.0.0\\microsoft.codeanalysis.netanalyzers.8.0.0.nupkg.sha512",
     "C:\\Users\\null\\.nuget\\packages\\microsoft.codeanalysis.scripting.common\\5.0.0\\microsoft.codeanalysis.scripting.common.5.0.0.nupkg.sha512",
     "C:\\Users\\null\\.nuget\\packages\\microsoft.codecoverage\\17.11.0\\microsoft.codecoverage.17.11.0.nupkg.sha512",
     "C:\\Users\\null\\.nuget\\packages\\microsoft.extensions.configuration\\9.0.0\\microsoft.extensions.configuration.9.0.0.nupkg.sha512",

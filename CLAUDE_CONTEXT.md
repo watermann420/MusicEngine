@@ -581,4 +581,289 @@ Code-Warnings:     0 (vorher: CS0169, CS0067, MVVMTK0034)
 ```
 
 ---
+
+## 🔄 OFFENE FEATURES - Implementierungsplan
+
+### Feature 1: VST auf Mixer Channels ✅ ABGESCHLOSSEN (22.01.2026)
+**Ziel:** VST Plugins als Insert-Effects auf Mixer Channels verwenden
+
+**Engine (MusicEngine):**
+- [x] `VstEffectAdapter.cs` - IVstPlugin als IEffect wrappen
+- [x] `EffectChain.cs` erweitert mit AddVstEffect, InsertVstEffect, MoveEffect
+- [x] `Session.cs` erweitert mit VST State Persistenz
+
+**Editor (MusicEngineEditor):**
+- [x] `MixerChannelControl.xaml` erweitert mit Effect Slots
+- [x] `VstEffectSelectorDialog.xaml` - Plugin Browser mit Kategorien
+- [x] `EffectSlotControl.xaml` - Kompaktes Slot UI
+- [x] `MixerEffectService.cs` - Bridge zwischen Engine und Editor
+- [x] `EffectSlot.cs` erweitert mit VST Properties
+
+**Implementierte Dateien:** 10 neue/geänderte Dateien
+
+---
+
+### Feature 2: Arrangement View Vervollständigung (~30% offen)
+**Ziel:** Vollständige Timeline mit Clips, Regions, Markers
+
+**Engine:**
+- [ ] `Arrangement.cs` erweitern:
+  - `List<AudioClip> AudioClips`
+  - `List<MidiClip> MidiClips`
+  - `List<Marker> Markers`
+  - `List<Region> Regions`
+- [ ] `AudioClip.cs`:
+  - `string FilePath`
+  - `double StartPosition, Length`
+  - `double FadeIn, FadeOut`
+  - `float Gain`
+  - `bool IsMuted, IsLocked`
+- [ ] `MidiClip.cs`:
+  - `Pattern Pattern`
+  - `double StartPosition`
+  - `int TrackIndex`
+
+**Editor:**
+- [ ] `ArrangementView.xaml` erweitern:
+  - Audio Clip Rendering (Waveform in Clip)
+  - MIDI Clip Rendering (Piano Roll Preview)
+  - Clip Drag & Drop
+  - Clip Resize (Trim)
+  - Split Tool
+  - Marker Track
+- [ ] `ClipControl.xaml`:
+  - Clip Header (Name, Color)
+  - Resize Handles
+  - Fade Handles
+
+**Geschätzte Dateien:** 6-8 neue/geänderte Dateien
+
+---
+
+### Feature 3: Audio Clip Editing (MEDIUM Priority)
+**Ziel:** Grundlegende Audio-Bearbeitung innerhalb von Clips
+
+**Engine:**
+- [ ] `AudioClipEditor.cs`:
+  - `Trim(double start, double end)`
+  - `Normalize()`
+  - `Reverse()`
+  - `FadeIn(double duration, FadeType type)`
+  - `FadeOut(double duration, FadeType type)`
+  - `SetGain(float gain)`
+  - `TimeStretch(double factor)` (optional, komplex)
+- [ ] `FadeType.cs` Enum: Linear, Exponential, SCurve, Logarithmic
+
+**Editor:**
+- [ ] `AudioClipEditorView.xaml`:
+  - Waveform mit Selection
+  - Fade Curve Editor
+  - Gain Slider
+  - Normalize Button
+  - Reverse Button
+- [ ] Context Menu auf Clips:
+  - Edit, Split, Duplicate, Delete
+  - Bounce to New Clip
+
+**Geschätzte Dateien:** 4-6 neue/geänderte Dateien
+
+---
+
+### Feature 4: Automation Lanes (Audio) (~50% offen)
+**Ziel:** Automation für Volume, Pan und Plugin-Parameter
+
+**Engine:**
+- [ ] `AutomationLane.cs` erweitern:
+  - Support für `MixerChannel` Parameter
+  - Support für `IVstPlugin` Parameter
+  - `ParameterTarget` (Channel/Plugin + ParameterIndex)
+- [ ] `AutomationCurve.cs`:
+  - Verschiedene Interpolations-Modi
+  - `GetValueAt(double position)`
+  - `AddPoint(double position, float value, CurveType type)`
+
+**Editor:**
+- [ ] `AutomationLaneControl.xaml` erweitern:
+  - Parameter Selector (Volume, Pan, Plugin Params)
+  - Multiple Lanes pro Track
+  - Show/Hide Toggle
+  - Curve Type Selector (Linear, Bezier, Step)
+- [ ] Automation Recording:
+  - Arm Button für Automation
+  - Touch/Latch/Write Modes
+
+**Geschätzte Dateien:** 4-5 neue/geänderte Dateien
+
+---
+
+### Feature 5: Plugin Preset Management (~20% offen)
+**Ziel:** Vollständiges Preset-System für VST Plugins
+
+**Engine:**
+- [ ] `PresetManager.cs`:
+  - `SavePreset(IVstPlugin plugin, string name, string category)`
+  - `LoadPreset(IVstPlugin plugin, string presetPath)`
+  - `GetPresetsForPlugin(string pluginId)`
+  - `DeletePreset(string presetPath)`
+  - Preset Format: JSON mit Base64 Plugin State
+- [ ] `Preset.cs`:
+  - `string Name, Category, Author`
+  - `byte[] PluginState`
+  - `Dictionary<string, float> ParameterValues`
+  - `DateTime Created, Modified`
+
+**Editor:**
+- [ ] `PresetBrowserView.xaml` erweitern:
+  - Kategorien-Baum
+  - Favoriten
+  - Search mit Tags
+  - Preview (wenn möglich)
+- [ ] `PresetSaveDialog.xaml`:
+  - Name, Category, Tags Input
+  - Overwrite Warning
+
+**Geschätzte Dateien:** 4-5 neue/geänderte Dateien
+
+---
+
+### Feature 6: Stem Export (~10% offen)
+**Ziel:** Export einzelner Tracks/Stems als separate Dateien
+
+**Engine:**
+- [ ] `StemExporter.cs` erweitern:
+  - `ExportAllStems(string outputFolder, ExportSettings settings)`
+  - `ExportStem(MixerChannel channel, string outputPath)`
+  - `ExportBusses(string outputFolder)`
+  - Progress Reporting
+- [ ] `ExportSettings.cs`:
+  - `bool IncludeMaster`
+  - `bool IncludeBusses`
+  - `bool SeparateEffects` (Dry + Wet)
+  - `NamingScheme` (TrackName, TrackNumber, Custom)
+
+**Editor:**
+- [ ] `StemExportDialog.xaml`:
+  - Track Selection (Checkboxes)
+  - Output Folder Picker
+  - Format Selection
+  - Naming Options
+  - Progress Bar
+
+**Geschätzte Dateien:** 3-4 neue/geänderte Dateien
+
+---
+
+## Prioritäts-Reihenfolge für Implementierung
+
+1. ~~**VST auf Mixer Channels**~~ ✅ ABGESCHLOSSEN (22.01.2026)
+2. **Arrangement View** - Grundlage für professionelles Arbeiten
+3. **Automation Lanes** - Ergänzt Mixer & Arrangement
+4. **Audio Clip Editing** - Grundlegende Bearbeitung
+5. **Plugin Preset Management** - Quality of Life
+6. **Stem Export** - Fast fertig, schnell abschließbar
+
+**Gesamt geschätzte neue/geänderte Dateien:** ~25-30 (vorher ~35-40)
+**Geschätzter Projektfortschritt:** ~85% DAW-Basis (vorher ~75%)
+
+---
+
+### Session Teil 6 - VST Effects auf Mixer Channels (22.01.2026):
+
+25. **VST Effects auf Mixer Channels komplett implementiert**:
+
+**Engine (MusicEngine):**
+- **VstEffectAdapter.cs** (NEU) - `Core/VstEffectAdapter.cs`
+  - Adapter der IVstPlugin als IEffect wrapppt
+  - Dry/Wet Mix, Bypass, Parameter-Zugriff
+  - State Save/Load für Presets
+  - Editor Window Handling
+  - Thread-safe Read() Implementation
+
+- **EffectChain.cs** erweitert:
+  - `AddVstEffect(IVstPlugin plugin)` - Fügt VST Effect hinzu
+  - `InsertVstEffect(int index, IVstPlugin plugin)` - Fügt an Position ein
+  - `MoveEffect(int fromIndex, int toIndex)` - Reordering
+  - `GetVstEffect(int index)` - VST Adapter abrufen
+  - `GetVstEffects()` - Alle VST Adapters
+  - `RebuildSourceChain()` - Source Chain nach Reorder neu aufbauen
+
+- **Session.cs** erweitert - `EffectConfig`:
+  - `IsVstEffect` - Kennzeichnung als VST Effect
+  - `VstPath` - Pfad zur Plugin-Datei
+  - `VstFormat` - "VST2" oder "VST3"
+  - `VstState` - Plugin State als byte[]
+  - `SlotIndex` - Position in der Effect Chain
+  - `Category` - Effect Kategorie
+  - `EffectColor` - Farbe für UI
+
+**Editor (MusicEngineEditor):**
+- **EffectSlot.cs** erweitert - `Models/EffectSlot.cs`:
+  - `IsVstEffect` - Kennzeichnung als VST
+  - `VstPluginPath` - Plugin-Pfad
+  - `VstFormat` - Format String
+  - `VstState` - State für Serialisierung
+  - `VstPlugin` - Plugin Referenz (JsonIgnore)
+  - `VstAdapter` - Adapter Referenz (JsonIgnore)
+  - `TypeBadge` - "VST2"/"VST3"/"INT"
+  - `LoadVstEffect()` - Lädt VST in Slot
+  - `SaveVstState()` / `RestoreVstState()`
+
+- **EffectSlotControl.xaml/.cs** (NEU) - `Controls/EffectSlotControl.xaml`
+  - Kompaktes 24px Slot Control
+  - Farb-Indikator (Kategorie-basiert, lila für VST)
+  - Effect Name mit Strikethrough bei Bypass
+  - Type Badge (VST2/VST3/INT)
+  - Bypass [B] und Edit [E] Buttons
+  - [+] Button wenn leer
+  - Kontextmenü: Remove, Bypass, Move Up/Down
+  - Doppelklick zum Hinzufügen/Bearbeiten
+  - Events: AddEffectRequested, EditEffectRequested, etc.
+
+- **MixerChannelControl.xaml** erweitert:
+  - Neue Row für Effect Slots (zwischen Name und M/S/R)
+  - FX Header mit Bypass All Toggle
+  - ItemsControl für EffectSlots (max 4 sichtbar)
+  - Effekt-Anzahl Anzeige
+
+- **VstEffectSelectorDialog.xaml/.cs** (NEU) - `Views/Dialogs/`
+  - Such-Box mit Clear Button
+  - Kategorien: All, Dynamics, EQ, Time-Based, Modulation, Distortion, VST, Built-in
+  - Plugin-Liste mit Name, Vendor, Format Badge
+  - Recent Plugins Sektion
+  - 24 Built-in Effects integriert
+  - VST2/VST3 Plugin Discovery
+  - Filter: Nur Effects (keine Instrumente)
+  - Doppelklick zum Auswählen
+
+- **MixerEffectService.cs** (NEU) - `Services/MixerEffectService.cs`
+  - `AddVstEffectAsync()` - Lädt VST und fügt hinzu
+  - `RemoveEffect()` - Entfernt und disposed Effect
+  - `ReorderEffects()` - Ändert Reihenfolge
+  - `SetBypass()` - Bypass Toggle
+  - `OpenPluginEditor()` - Öffnet Plugin UI Window
+  - `SaveChannelEffectStates()` / `RestoreChannelEffectStates()`
+  - Thread-safe mit Dispatcher Integration
+
+### Build Status nach Session Teil 6:
+```
+MusicEngine:       0 Fehler, 1 Warnung (NetAnalyzers Version)
+MusicEngineEditor: 0 Fehler, 3 Warnungen (NetAnalyzers Version)
+Tests:             530 bestanden, 6 fehlgeschlagen (vorbestehend)
+```
+
+### Neue Dateien (Session Teil 6):
+- `MusicEngine/Core/VstEffectAdapter.cs`
+- `MusicEngineEditor/Controls/EffectSlotControl.xaml`
+- `MusicEngineEditor/Controls/EffectSlotControl.xaml.cs`
+- `MusicEngineEditor/Views/Dialogs/VstEffectSelectorDialog.xaml`
+- `MusicEngineEditor/Views/Dialogs/VstEffectSelectorDialog.xaml.cs`
+- `MusicEngineEditor/Services/MixerEffectService.cs`
+
+### Geänderte Dateien (Session Teil 6):
+- `MusicEngine/Core/EffectChain.cs`
+- `MusicEngine/Core/Session.cs`
+- `MusicEngineEditor/Models/EffectSlot.cs`
+- `MusicEngineEditor/Controls/MixerChannelControl.xaml`
+
+---
 *Erstellt für Claude Code Terminal Kontext-Wiederherstellung*
