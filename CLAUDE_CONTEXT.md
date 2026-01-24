@@ -1417,8 +1417,8 @@ MusicEngineEditor: 0 Fehler, 2 Warnungen (nur NetAnalyzers)
 |--------|--------|--------------|
 | ~~Transient Shaper~~ | ✅ Fertig | Attack/Sustain-Kontrolle für Drums |
 | ~~DeEsser~~ | ✅ Fertig | Sibilanten-Reduktion |
-| **Dynamic EQ** | TODO | Frequenzabhängige Kompression |
-| **Spectral Gate** | TODO | Frequenzselektives Gating |
+| ~~Dynamic EQ~~ | ✅ Fertig | Frequenzabhängige Kompression |
+| ~~Spectral Gate~~ | ✅ Fertig | Frequenzselektives Gating |
 | ~~Shimmer Reverb~~ | ✅ Fertig | Pitch-verschobene Reverb-Tails |
 | ~~Reverse Reverb~~ | ✅ Fertig | Pre-Delay Reverb-Effekt |
 | ~~Auto-Pan~~ | ✅ Fertig | LFO-gesteuertes Stereo-Panning |
@@ -1439,10 +1439,10 @@ MusicEngineEditor: 0 Fehler, 2 Warnungen (nur NetAnalyzers)
 | Feature | Status | Beschreibung |
 |---------|--------|--------------|
 | **Time Stretching** | TODO | Echtzeit-Tempoänderung |
-| **Pitch Shifter** | TODO | Echtzeit-Tonhöhenverschiebung |
+| ~~Pitch Shifter~~ | ✅ Fertig | Phase Vocoder Pitch Shifting |
 | **Audio-to-MIDI** | TODO | Konvertiert Audio zu MIDI-Noten |
-| **Chord Detection** | TODO | Echtzeit-Akkorderkennung |
-| **Key Detection** | TODO | Tonart-Erkennung aus Audio |
+| ~~Chord Detection~~ | ✅ Fertig | Echtzeit-Akkorderkennung |
+| ~~Key Detection~~ | ✅ Fertig | Krumhansl-Schmuckler Algorithmus |
 | **Noise Reduction** | TODO | Spektrale Subtraktion |
 | **Declipping** | TODO | Audio-Restauration |
 | **Sample Rate Converter** | TODO | Hochqualitatives Resampling |
@@ -1495,18 +1495,19 @@ MusicEngineEditor: 0 Fehler, 2 Warnungen (nur NetAnalyzers)
 5. ~~MIDI Effects~~ ✅
 6. ~~OSC Support~~ ✅
 
-**Advanced (Nächste Priorität):**
-1. Dynamic EQ
-2. Spectral Gate
-3. Pitch Shifter
-4. Chord/Key Detection
-5. Ableton Link
+**Advanced - ALLE FERTIG ✅:**
+1. ~~Dynamic EQ~~ ✅
+2. ~~Spectral Gate~~ ✅
+3. ~~Pitch Shifter~~ ✅
+4. ~~Chord Detection~~ ✅
+5. ~~Key Detection~~ ✅
 
-**Research/Long-term:**
+**Research/Long-term (Nächste Priorität):**
 1. Time Stretching
 2. Audio-to-MIDI
-3. macOS/Linux Port
-4. Plugin Format Export
+3. Ableton Link
+4. macOS/Linux Port
+5. Plugin Format Export
 
 ---
 
@@ -1516,13 +1517,13 @@ MusicEngineEditor: 0 Fehler, 2 Warnungen (nur NetAnalyzers)
 - SimpleSynth, PolySynth, FMSynth, GranularSynth, WavetableSynth, AdvancedSynth, PhysicalModeling
 - VectorSynth (NEU), NoiseGenerator (NEU)
 
-**Effekte (35+):**
-- Dynamics: Compressor, MultibandCompressor, SideChainCompressor, Gate, Limiter, TransientShaper (NEU), DeEsser (NEU)
-- Time-Based: Reverb, EnhancedReverb, ConvolutionReverb, ShimmerReverb (NEU), ReverseReverb (NEU), Delay, EnhancedDelay
-- Modulation: Chorus, EnhancedChorus, Flanger, Phaser, Tremolo, Vibrato, AutoPan (NEU)
+**Effekte (40+):**
+- Dynamics: Compressor, MultibandCompressor, SideChainCompressor, Gate, Limiter, TransientShaper, DeEsser, DynamicEQ (NEU), SpectralGate (NEU)
+- Time-Based: Reverb, EnhancedReverb, ConvolutionReverb, ShimmerReverb, ReverseReverb, Delay, EnhancedDelay
+- Modulation: Chorus, EnhancedChorus, Flanger, Phaser, Tremolo, Vibrato, AutoPan
 - Distortion: Distortion, Bitcrusher, TapeSaturation
 - Filters: Filter, ParametricEQ
-- Special: Exciter, StereoWidener, Vocoder, RingModulator, TapeStop (NEU)
+- Special: Exciter, StereoWidener, Vocoder, RingModulator, TapeStop, PitchShifter (NEU)
 
 **Audio-Features:**
 - VST2/VST3 Hosting mit vollständigen VST3 COM-Interfaces
@@ -1538,6 +1539,8 @@ MusicEngineEditor: 0 Fehler, 2 Warnungen (nur NetAnalyzers)
 - EnhancedPeakDetector (True Peak ITU-R BS.1770)
 - TempoDetector, TransientDetector
 - GoniometerDataProvider (Vectorscope)
+- ChordDetector (NEU) - Akkorderkennung mit Template Matching
+- KeyDetector (NEU) - Krumhansl-Schmuckler, Camelot Notation
 
 **MIDI & Sequencing:**
 - MIDI Import/Export
@@ -1677,6 +1680,66 @@ MusicEngineEditor: 0 Fehler, 2 Warnungen
 - **Effekte:** 35+ (vorher 25+) - +10 neue
 - **MIDI Features:** +MidiEffects, +EuclideanRhythm, +ScaleQuantizer
 - **Integration:** +OSC Support
+
+---
+
+### Session Teil 12 - Advanced Features (24.01.2026):
+
+48. **Advanced Features implementiert (5 Features)**:
+
+**Neue Effekte:**
+- `Core/Effects/Filters/DynamicEQEffect.cs` - Dynamic EQ
+  - 6 Bänder mit individueller Dynamik
+  - Filter Types: Peak, LowShelf, HighShelf, LowPass, HighPass
+  - Pro Band: Frequency, Gain, Q, Threshold, Ratio, Attack, Release, Range
+  - Presets: DeEsser, BassControl, VocalPresence, Mastering
+
+- `Core/Effects/Dynamics/SpectralGateEffect.cs` - Spectral Gate
+  - FFT-basiertes frequenzselektives Gating (512-4096 FFT)
+  - Threshold Modi: Global, FrequencyCurve, Adaptive
+  - Attack, Release, Hold, Range, Lookahead
+  - Frequency Range Selection
+  - Presets: NoiseReduction, LowPassGate, Creative, Aggressive
+
+- `Core/Effects/Special/PitchShifterEffect.cs` - Pitch Shifter
+  - Phase Vocoder Algorithmus
+  - Semitones (-24 bis +24), Cents (-100 bis +100)
+  - Formant Preservation (Cepstral Smoothing)
+  - Quality Modes: Fast (1024), Normal (2048), HighQuality (4096)
+  - Presets: VocalCorrection, OctaveUp/Down, Chipmunk, DeepVoice, HarmonyFifth
+
+**Neue Analyse-Features:**
+- `Core/Analysis/ChordDetector.cs` - Akkorderkennung
+  - FFT-basierte Chromagram-Berechnung
+  - Template Matching mit Cosine Similarity
+  - 25+ Chord Templates (Triads, 7ths, Extended)
+  - Bass Note Detection für Inversionen
+  - Events: ChordChanged, ChordAnalyzed
+
+- `Core/Analysis/KeyDetector.cs` - Tonart-Erkennung
+  - Krumhansl-Schmuckler Algorithmus
+  - Key Profiles: Krumhansl, Temperley, Albrecht-Shanahan, Simple
+  - Camelot Wheel Notation (für DJs)
+  - Related Keys Suggestions
+  - Key Change Detection über Zeit
+
+---
+
+### Build Status nach Session Teil 12:
+```
+MusicEngine:       0 Fehler, 4 Warnungen
+```
+
+### Neue Dateien (Session Teil 12): 5 Dateien
+- `Core/Effects/Filters/DynamicEQEffect.cs`
+- `Core/Effects/Dynamics/SpectralGateEffect.cs`
+- `Core/Effects/Special/PitchShifterEffect.cs`
+- `Core/Analysis/ChordDetector.cs`
+- `Core/Analysis/KeyDetector.cs`
+
+### Aktualisierte Feature-Zählung (Session 12):
+- **Effekte:** 40+ (vorher 35+) - +DynamicEQ, +SpectralGate, +PitchShifter
+- **Analyse:** +ChordDetector, +KeyDetector
 
 ---
 
