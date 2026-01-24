@@ -181,7 +181,7 @@ public class VstHostTests : IDisposable
         _vstHost.ScanForPlugins();
 
         // The partial match should find the plugin in discovered list
-        var info = _vstHost.DiscoveredPlugins.Find(p => p.Name.Contains("Synth", StringComparison.OrdinalIgnoreCase));
+        var info = _vstHost.DiscoveredPlugins.FirstOrDefault(p => p.Name.Contains("Synth", StringComparison.OrdinalIgnoreCase));
 
         info.Should().NotBeNull();
     }
@@ -547,7 +547,7 @@ public class VstHostTests : IDisposable
     [Fact]
     public async Task ScanForPluginsAsync_EmptyDirectory_ReturnsEmptyList()
     {
-        var result = await _vstHost.ScanForPluginsAsync();
+        var result = await _vstHost.ScanForPluginsAsync((IProgress<MusicEngine.Core.Progress.VstScanProgress>?)null);
 
         result.Should().BeEmpty();
     }
@@ -558,7 +558,7 @@ public class VstHostTests : IDisposable
         VstTestHelper.CreateDummyVstDll(_tempDirectory, "AsyncPlugin1.dll");
         VstTestHelper.CreateDummyVstDll(_tempDirectory, "AsyncPlugin2.dll");
 
-        var result = await _vstHost.ScanForPluginsAsync();
+        var result = await _vstHost.ScanForPluginsAsync((IProgress<MusicEngine.Core.Progress.VstScanProgress>?)null);
 
         result.Should().HaveCount(2);
     }
@@ -570,7 +570,7 @@ public class VstHostTests : IDisposable
         using var cts = new CancellationTokenSource();
         cts.Cancel();
 
-        var action = async () => await _vstHost.ScanForPluginsAsync(cancellationToken: cts.Token);
+        var action = async () => await _vstHost.ScanForPluginsAsync((IProgress<MusicEngine.Core.Progress.VstScanProgress>?)null, cts.Token);
 
         await action.Should().ThrowAsync<OperationCanceledException>();
     }

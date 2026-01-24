@@ -42,6 +42,7 @@ public class MockVstPlugin : IVstPlugin
     public int NumAudioOutputs { get; set; } = 2;
     public int SampleRate { get; set; } = 44100;
     public int BlockSize { get; set; } = 512;
+    public int LatencySamples { get; set; } = 0;
     public float MasterVolume
     {
         get => _masterVolume;
