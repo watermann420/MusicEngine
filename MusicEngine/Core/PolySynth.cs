@@ -8,6 +8,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using NAudio.Wave;
+using MusicEngine.Core.Presets;
 
 
 namespace MusicEngine.Core;
@@ -81,8 +82,13 @@ internal class Voice
 /// <summary>
 /// Polyphonic synthesizer with configurable voice count and voice stealing.
 /// </summary>
-public class PolySynth : ISynth
+public class PolySynth : ISynth, IPresetProvider
 {
+    // Thread-safe random for noise generation - avoids allocations in audio thread
+    [ThreadStatic]
+    private static Random? _threadLocalRandom;
+    private static Random ThreadSafeRandom => _threadLocalRandom ??= new Random(Environment.TickCount ^ Thread.CurrentThread.ManagedThreadId);
+
     private readonly Voice[] _voices;
     private readonly WaveFormat _waveFormat;
     private readonly object _lock = new();
@@ -434,7 +440,7 @@ public class PolySynth : ISynth
             WaveType.Triangle => phase < Math.PI
                 ? (float)(2.0 * (phase / Math.PI) - 1.0)
                 : (float)(3.0 - 2.0 * (phase / Math.PI)),
-            WaveType.Noise => (float)(new Random().NextDouble() * 2.0 - 1.0),
+            WaveType.Noise => (float)(ThreadSafeRandom.NextDouble() * 2.0 - 1.0),
             _ => 0
         };
     }
@@ -561,4 +567,69 @@ public class PolySynth : ISynth
         // Fall back to oldest if no same note found
         return FindOldestVoice();
     }
+
+    #region IPresetProvider Implementation
+
+    /// <summary>
+    /// Event raised when preset parameters change.
+    /// </summary>
+    public event EventHandler? PresetChanged;
+
+    /// <summary>
+    /// Gets the current synth state as preset data.
+    /// </summary>
+    /// <returns>Dictionary of parameter names to values.</returns>
+    public Dictionary<string, object> GetPresetData()
+    {
+        return new Dictionary<string, object>
+        {
+            ["waveform"] = (float)Waveform,
+            ["cutoff"] = Cutoff,
+            ["resonance"] = Resonance,
+            ["volume"] = Volume,
+            ["attack"] = (float)Attack,
+            ["decay"] = (float)Decay,
+            ["sustain"] = (float)Sustain,
+            ["release"] = (float)Release,
+            ["detune"] = Detune,
+            ["vibrato"] = VibratoDepth,
+            ["stealMode"] = (float)StealMode
+        };
+    }
+
+    /// <summary>
+    /// Loads preset data and applies it to the synth.
+    /// </summary>
+    /// <param name="data">The preset data dictionary.</param>
+    public void LoadPresetData(Dictionary<string, object> data)
+    {
+        if (data == null) return;
+
+        foreach (var kvp in data)
+        {
+            var value = kvp.Value switch
+            {
+                float f => f,
+                double d => (float)d,
+                int i => (float)i,
+                System.Text.Json.JsonElement je => je.ValueKind == System.Text.Json.JsonValueKind.Number
+                    ? (float)je.GetDouble() : 0f,
+                _ => 0f
+            };
+
+            SetParameter(kvp.Key, value);
+        }
+
+        PresetChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Raises the PresetChanged event.
+    /// </summary>
+    protected void OnPresetChanged()
+    {
+        PresetChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    #endregion
 }

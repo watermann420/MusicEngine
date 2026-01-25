@@ -7,6 +7,7 @@
 using System;
 using System.Collections.Generic;
 using NAudio.Wave;
+using MusicEngine.Core.Presets;
 
 
 namespace MusicEngine.Core;
@@ -120,7 +121,7 @@ public enum FMAlgorithm
 /// FM Synthesizer with 6 operators and configurable algorithms.
 /// Based on Yamaha DX7 architecture.
 /// </summary>
-public class FMSynth : ISynth
+public class FMSynth : ISynth, IPresetProvider
 {
     private readonly WaveFormat _waveFormat;
     private readonly List<FMVoice> _voices = new();
@@ -609,6 +610,85 @@ public class FMSynth : ISynth
 
         return synth;
     }
+
+    #region IPresetProvider Implementation
+
+    /// <summary>
+    /// Event raised when preset parameters change.
+    /// </summary>
+    public event EventHandler? PresetChanged;
+
+    /// <summary>
+    /// Gets the current synth state as preset data.
+    /// </summary>
+    /// <returns>Dictionary of parameter names to values.</returns>
+    public Dictionary<string, object> GetPresetData()
+    {
+        var data = new Dictionary<string, object>
+        {
+            ["algorithm"] = (float)Algorithm,
+            ["volume"] = Volume,
+            ["feedback"] = FeedbackAmount,
+            ["pitchbendrange"] = PitchBendRange,
+            ["vibratodepth"] = VibratoDepth
+        };
+
+        // Add operator parameters
+        for (int i = 0; i < 6; i++)
+        {
+            var op = Operators[i];
+            var prefix = $"op{i + 1}_";
+            data[prefix + "ratio"] = op.Ratio;
+            data[prefix + "level"] = op.Level;
+            data[prefix + "detune"] = op.Detune;
+            data[prefix + "feedback"] = op.Feedback;
+            data[prefix + "waveform"] = (float)op.Waveform;
+            data[prefix + "velocity"] = op.VelocitySensitivity;
+            data[prefix + "keyscaling"] = op.KeyScaling;
+            data[prefix + "attack"] = (float)op.Envelope.Attack;
+            data[prefix + "decay"] = (float)op.Envelope.Decay;
+            data[prefix + "sustain"] = (float)op.Envelope.Sustain;
+            data[prefix + "release"] = (float)op.Envelope.Release;
+        }
+
+        return data;
+    }
+
+    /// <summary>
+    /// Loads preset data and applies it to the synth.
+    /// </summary>
+    /// <param name="data">The preset data dictionary.</param>
+    public void LoadPresetData(Dictionary<string, object> data)
+    {
+        if (data == null) return;
+
+        foreach (var kvp in data)
+        {
+            var value = kvp.Value switch
+            {
+                float f => f,
+                double d => (float)d,
+                int i => (float)i,
+                System.Text.Json.JsonElement je => je.ValueKind == System.Text.Json.JsonValueKind.Number
+                    ? (float)je.GetDouble() : 0f,
+                _ => 0f
+            };
+
+            SetParameter(kvp.Key, value);
+        }
+
+        PresetChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Raises the PresetChanged event.
+    /// </summary>
+    protected void OnPresetChanged()
+    {
+        PresetChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    #endregion
 }
 
 

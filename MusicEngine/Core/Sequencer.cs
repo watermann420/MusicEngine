@@ -67,13 +67,13 @@ public enum BeatSubdivision
 public class Sequencer : IDisposable
 {
     private readonly List<Pattern> _patterns = new(); // patterns to play
-    private bool _running; // is the sequencer running?
-    private double _bpm = 120.0; // beats per minute
+    private volatile bool _running; // is the sequencer running? (volatile for thread-safe reads)
+    private double _bpm = 120.0; // beats per minute (accessed under lock)
     private Thread? _thread; // playback thread
-    private double _beatAccumulator = 0; // current beat position
-    private bool _isScratching = false; // is scratching mode enabled?
+    private double _beatAccumulator = 0; // current beat position (accessed under lock)
+    private volatile bool _isScratching = false; // is scratching mode enabled? (volatile for thread-safe reads)
     private double _defaultLoopLength = 4.0; // default loop length for beat events
-    private bool _disposed = false;
+    private volatile bool _disposed = false; // volatile for thread-safe dispose check
 
     // High-resolution timing components
     private HighResolutionTimer? _highResTimer;

@@ -18,6 +18,20 @@ public interface IAudioBufferPool
     RentedBuffer<T> Rent<T>(int minimumLength);
 
     /// <summary>
+    /// Rents a raw float array from the pool.
+    /// </summary>
+    /// <param name="minimumLength">Minimum required length.</param>
+    /// <returns>A float array that must be returned when done.</returns>
+    float[] RentArray(int minimumLength);
+
+    /// <summary>
+    /// Rents a scoped buffer that auto-returns on dispose.
+    /// </summary>
+    /// <param name="minimumLength">Minimum required length.</param>
+    /// <returns>A pooled buffer wrapper.</returns>
+    PooledAudioBuffer RentScoped(int minimumLength);
+
+    /// <summary>
     /// Returns a previously rented buffer to the pool.
     /// </summary>
     void Return(float[] buffer, bool clearArray = false);
@@ -26,4 +40,14 @@ public interface IAudioBufferPool
     /// Returns a previously rented buffer to the pool.
     /// </summary>
     void Return<T>(T[] buffer, bool clearArray = false);
+
+    /// <summary>
+    /// Releases unused buffers to reduce memory usage.
+    /// </summary>
+    void Trim();
+
+    /// <summary>
+    /// Gets pool statistics.
+    /// </summary>
+    BufferPoolStatistics GetStatistics();
 }

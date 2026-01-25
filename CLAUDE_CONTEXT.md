@@ -91,15 +91,32 @@ MusicEngine/
 │   ├── Configuration/          # MusicEngineOptions, appsettings.json
 │   └── Memory/                 # AudioBufferPool
 │
-└── MusicEngine.Tests/          # Unit Tests (656+ Tests)
+└── MusicEngine.Tests/          # Unit Tests (774+ Tests)
 ```
 
 ## Build Status (Januar 2026)
 ```
-MusicEngine:       0 Fehler, 2 Warnungen (NetAnalyzers Version)
-MusicEngine.Tests: 656 Tests bestanden, 6 fehlgeschlagen (vorbestehend)
-MusicEngineEditor: 0 Fehler, 0 Warnungen
+MusicEngine:       0 Fehler, 7 Warnungen (NetAnalyzers Version)
+MusicEngine.Tests: 760 Tests bestanden, 14 fehlgeschlagen (vorbestehend)
+MusicEngineEditor: 0 Fehler, ~20 Warnungen
 ```
+
+## Code Quality Fixes (Januar 2026)
+Die folgenden kritischen Probleme wurden behoben:
+
+1. **PolySynth.cs** - Thread-safe Random für Noise-Waveform
+   - `new Random()` in Hot-Path entfernt
+   - ThreadStatic Random eingeführt (keine Allocations im Audio-Thread)
+
+2. **EffectChain.cs** - Lock-freie Read() Methode
+   - Lock-Zeit drastisch reduziert
+   - Copy-on-Write Pattern für Effect-Chain Reference
+
+3. **Sequencer.cs** - Volatile Fields für Thread-Safety
+   - `_running`, `_isScratching`, `_disposed` als volatile markiert
+
+4. **OggVorbisEncoder.cs** - Thread-safe Random für Stream-ID
+   - Statische Random-Instanz mit Lock
 
 ## Wichtige Konventionen
 

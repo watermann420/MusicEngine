@@ -6,6 +6,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using MusicEngine.Core.Clips;
 
 namespace MusicEngine.Core;
 
@@ -81,6 +82,8 @@ public class Arrangement
     private readonly List<AudioClip> _audioClips = [];
     private readonly List<MidiClip> _midiClips = [];
     private readonly List<Region> _regions = [];
+    private readonly List<CrossfadeRegion> _crossfades = [];
+    private readonly CrossfadeProcessor _crossfadeProcessor = new();
     private readonly object _lock = new();
 
     /// <summary>Name of the arrangement.</summary>
@@ -195,6 +198,48 @@ public class Arrangement
         get { lock (_lock) { return _regions.Count; } }
     }
 
+    /// <summary>Gets all crossfade regions in the arrangement.</summary>
+    public IReadOnlyList<CrossfadeRegion> Crossfades
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _crossfades.OrderBy(c => c.StartPosition).ToList().AsReadOnly();
+            }
+        }
+    }
+
+    /// <summary>Gets the number of crossfade regions.</summary>
+    public int CrossfadeCount
+    {
+        get { lock (_lock) { return _crossfades.Count; } }
+    }
+
+    /// <summary>Gets the crossfade processor for this arrangement.</summary>
+    public CrossfadeProcessor CrossfadeProcessor => _crossfadeProcessor;
+
+    /// <summary>Gets or sets whether auto-crossfade is enabled when clips overlap.</summary>
+    public bool AutoCrossfadeEnabled
+    {
+        get => _crossfadeProcessor.AutoCrossfade;
+        set => _crossfadeProcessor.AutoCrossfade = value;
+    }
+
+    /// <summary>Gets or sets the default crossfade length in beats.</summary>
+    public double DefaultCrossfadeLength
+    {
+        get => _crossfadeProcessor.DefaultCrossfadeLength;
+        set => _crossfadeProcessor.DefaultCrossfadeLength = value;
+    }
+
+    /// <summary>Gets or sets the default crossfade type.</summary>
+    public CrossfadeType DefaultCrossfadeType
+    {
+        get => _crossfadeProcessor.DefaultCrossfadeType;
+        set => _crossfadeProcessor.DefaultCrossfadeType = value;
+    }
+
     /// <summary>Event raised when a section is added.</summary>
     public event EventHandler<SectionEventArgs>? SectionAdded;
 
@@ -224,6 +269,15 @@ public class Arrangement
 
     /// <summary>Event raised when a region is removed.</summary>
     public event EventHandler<Region>? RegionRemoved;
+
+    /// <summary>Event raised when a crossfade is added.</summary>
+    public event EventHandler<CrossfadeRegion>? CrossfadeAdded;
+
+    /// <summary>Event raised when a crossfade is removed.</summary>
+    public event EventHandler<CrossfadeRegion>? CrossfadeRemoved;
+
+    /// <summary>Event raised when a crossfade is modified.</summary>
+    public event EventHandler<CrossfadeRegion>? CrossfadeModified;
 
     /// <summary>
     /// Adds a section to the arrangement.
@@ -1261,6 +1315,342 @@ public class Arrangement
                 return Math.Max(Math.Max(sectionEnd, audioEnd), midiEnd);
             }
         }
+    }
+
+    #endregion
+
+    #region Crossfades
+
+    /// <summary>
+    /// Adds a crossfade region to the arrangement.
+    /// </summary>
+    /// <param name="crossfade">The crossfade region to add.</param>
+    /// <returns>True if added successfully.</returns>
+    public bool AddCrossfade(CrossfadeRegion crossfade)
+    {
+        ArgumentNullException.ThrowIfNull(crossfade);
+
+        lock (_lock)
+        {
+            if (_crossfades.Any(c => c.Id == crossfade.Id))
+                return false;
+
+            _crossfades.Add(crossfade);
+        }
+
+        CrossfadeAdded?.Invoke(this, crossfade);
+        return true;
+    }
+
+    /// <summary>
+    /// Creates and adds a crossfade between two overlapping audio clips.
+    /// </summary>
+    /// <param name="outgoingClip">The clip that is ending (fading out).</param>
+    /// <param name="incomingClip">The clip that is starting (fading in).</param>
+    /// <returns>The created crossfade region, or null if clips don't overlap.</returns>
+    public CrossfadeRegion? CreateCrossfade(AudioClip outgoingClip, AudioClip incomingClip)
+    {
+        var crossfade = _crossfadeProcessor.CreateCrossfadeForClips(outgoingClip, incomingClip);
+        if (crossfade == null)
+            return null;
+
+        AddCrossfade(crossfade);
+        return crossfade;
+    }
+
+    /// <summary>
+    /// Creates a crossfade region with specified parameters.
+    /// </summary>
+    /// <param name="startPosition">Start position in beats.</param>
+    /// <param name="endPosition">End position in beats.</param>
+    /// <param name="outgoingClipId">ID of the outgoing clip.</param>
+    /// <param name="incomingClipId">ID of the incoming clip.</param>
+    /// <param name="type">Crossfade curve type.</param>
+    /// <param name="trackIndex">Track index.</param>
+    /// <returns>The created crossfade region.</returns>
+    public CrossfadeRegion CreateCrossfade(
+        double startPosition,
+        double endPosition,
+        Guid outgoingClipId,
+        Guid incomingClipId,
+        CrossfadeType type = CrossfadeType.EqualPower,
+        int trackIndex = 0)
+    {
+        var crossfade = new CrossfadeRegion(startPosition, endPosition, outgoingClipId, incomingClipId, type)
+        {
+            TrackIndex = trackIndex
+        };
+        AddCrossfade(crossfade);
+        return crossfade;
+    }
+
+    /// <summary>
+    /// Removes a crossfade region from the arrangement.
+    /// </summary>
+    /// <param name="crossfade">The crossfade to remove.</param>
+    /// <returns>True if removed successfully.</returns>
+    public bool RemoveCrossfade(CrossfadeRegion crossfade)
+    {
+        ArgumentNullException.ThrowIfNull(crossfade);
+
+        if (crossfade.IsLocked)
+            return false;
+
+        bool removed;
+        lock (_lock)
+        {
+            removed = _crossfades.Remove(crossfade);
+        }
+
+        if (removed)
+        {
+            CrossfadeRemoved?.Invoke(this, crossfade);
+        }
+
+        return removed;
+    }
+
+    /// <summary>
+    /// Removes a crossfade region by its ID.
+    /// </summary>
+    /// <param name="crossfadeId">The crossfade ID to remove.</param>
+    /// <returns>True if removed successfully.</returns>
+    public bool RemoveCrossfade(Guid crossfadeId)
+    {
+        CrossfadeRegion? crossfade;
+        lock (_lock)
+        {
+            crossfade = _crossfades.FirstOrDefault(c => c.Id == crossfadeId);
+        }
+
+        return crossfade != null && RemoveCrossfade(crossfade);
+    }
+
+    /// <summary>
+    /// Gets a crossfade region by its ID.
+    /// </summary>
+    /// <param name="crossfadeId">The crossfade ID.</param>
+    /// <returns>The crossfade, or null if not found.</returns>
+    public CrossfadeRegion? GetCrossfade(Guid crossfadeId)
+    {
+        lock (_lock)
+        {
+            return _crossfades.FirstOrDefault(c => c.Id == crossfadeId);
+        }
+    }
+
+    /// <summary>
+    /// Gets crossfades at a specific position.
+    /// </summary>
+    /// <param name="position">Position in beats.</param>
+    /// <returns>List of crossfades at the position.</returns>
+    public IReadOnlyList<CrossfadeRegion> GetCrossfadesAt(double position)
+    {
+        lock (_lock)
+        {
+            return _crossfades
+                .Where(c => c.ContainsPosition(position))
+                .OrderBy(c => c.TrackIndex)
+                .ToList()
+                .AsReadOnly();
+        }
+    }
+
+    /// <summary>
+    /// Gets crossfades within a range.
+    /// </summary>
+    /// <param name="startPosition">Start position in beats.</param>
+    /// <param name="endPosition">End position in beats.</param>
+    /// <returns>List of crossfades within or overlapping the range.</returns>
+    public IReadOnlyList<CrossfadeRegion> GetCrossfadesInRange(double startPosition, double endPosition)
+    {
+        lock (_lock)
+        {
+            return _crossfades
+                .Where(c => c.StartPosition < endPosition && c.EndPosition > startPosition)
+                .OrderBy(c => c.StartPosition)
+                .ToList()
+                .AsReadOnly();
+        }
+    }
+
+    /// <summary>
+    /// Gets crossfades on a specific track.
+    /// </summary>
+    /// <param name="trackIndex">Track index.</param>
+    /// <returns>List of crossfades on the track.</returns>
+    public IReadOnlyList<CrossfadeRegion> GetCrossfadesOnTrack(int trackIndex)
+    {
+        lock (_lock)
+        {
+            return _crossfades
+                .Where(c => c.TrackIndex == trackIndex)
+                .OrderBy(c => c.StartPosition)
+                .ToList()
+                .AsReadOnly();
+        }
+    }
+
+    /// <summary>
+    /// Gets crossfades involving a specific clip.
+    /// </summary>
+    /// <param name="clipId">The clip ID.</param>
+    /// <returns>List of crossfades involving the clip.</returns>
+    public IReadOnlyList<CrossfadeRegion> GetCrossfadesForClip(Guid clipId)
+    {
+        lock (_lock)
+        {
+            return _crossfades
+                .Where(c => c.OutgoingClipId == clipId || c.IncomingClipId == clipId)
+                .OrderBy(c => c.StartPosition)
+                .ToList()
+                .AsReadOnly();
+        }
+    }
+
+    /// <summary>
+    /// Updates the crossfade type.
+    /// </summary>
+    /// <param name="crossfade">The crossfade to update.</param>
+    /// <param name="newType">The new crossfade type.</param>
+    /// <returns>True if updated successfully.</returns>
+    public bool UpdateCrossfadeType(CrossfadeRegion crossfade, CrossfadeType newType)
+    {
+        if (crossfade.IsLocked)
+            return false;
+
+        lock (_lock)
+        {
+            if (!_crossfades.Contains(crossfade))
+                return false;
+
+            crossfade.Type = newType;
+        }
+
+        CrossfadeModified?.Invoke(this, crossfade);
+        return true;
+    }
+
+    /// <summary>
+    /// Updates the crossfade length.
+    /// </summary>
+    /// <param name="crossfade">The crossfade to update.</param>
+    /// <param name="newLength">The new length in beats.</param>
+    /// <returns>True if updated successfully.</returns>
+    public bool UpdateCrossfadeLength(CrossfadeRegion crossfade, double newLength)
+    {
+        if (crossfade.IsLocked || newLength <= 0)
+            return false;
+
+        lock (_lock)
+        {
+            if (!_crossfades.Contains(crossfade))
+                return false;
+
+            crossfade.EndPosition = crossfade.StartPosition + newLength;
+        }
+
+        CrossfadeModified?.Invoke(this, crossfade);
+        return true;
+    }
+
+    /// <summary>
+    /// Detects and creates crossfades for all overlapping audio clips.
+    /// </summary>
+    /// <returns>Number of crossfades created.</returns>
+    public int DetectAndCreateCrossfades()
+    {
+        int count = 0;
+        List<AudioClip> clips;
+
+        lock (_lock)
+        {
+            clips = _audioClips.ToList();
+        }
+
+        // Group clips by track
+        var trackGroups = clips.GroupBy(c => c.TrackIndex);
+
+        foreach (var trackGroup in trackGroups)
+        {
+            var trackClips = trackGroup.OrderBy(c => c.StartPosition).ToList();
+
+            for (int i = 0; i < trackClips.Count - 1; i++)
+            {
+                var currentClip = trackClips[i];
+                var nextClip = trackClips[i + 1];
+
+                // Check if they overlap
+                if (CrossfadeProcessor.NeedsCrossfade(currentClip, nextClip))
+                {
+                    // Check if a crossfade already exists
+                    var existingCrossfade = GetCrossfadesForClip(currentClip.Id)
+                        .FirstOrDefault(c => c.OutgoingClipId == currentClip.Id && c.IncomingClipId == nextClip.Id);
+
+                    if (existingCrossfade == null)
+                    {
+                        var crossfade = CreateCrossfade(currentClip, nextClip);
+                        if (crossfade != null)
+                        {
+                            count++;
+                        }
+                    }
+                }
+            }
+        }
+
+        return count;
+    }
+
+    /// <summary>
+    /// Clears all crossfades from the arrangement.
+    /// </summary>
+    /// <param name="includeLockedCrossfades">Whether to remove locked crossfades.</param>
+    /// <returns>Number of crossfades removed.</returns>
+    public int ClearCrossfades(bool includeLockedCrossfades = false)
+    {
+        int count;
+
+        lock (_lock)
+        {
+            if (includeLockedCrossfades)
+            {
+                count = _crossfades.Count;
+                _crossfades.Clear();
+            }
+            else
+            {
+                var toRemove = _crossfades.Where(c => !c.IsLocked).ToList();
+                count = toRemove.Count;
+                foreach (var crossfade in toRemove)
+                {
+                    _crossfades.Remove(crossfade);
+                }
+            }
+        }
+
+        return count;
+    }
+
+    /// <summary>
+    /// Removes crossfades associated with a removed audio clip.
+    /// </summary>
+    /// <param name="clipId">The ID of the removed clip.</param>
+    /// <returns>Number of crossfades removed.</returns>
+    public int RemoveCrossfadesForClip(Guid clipId)
+    {
+        var crossfadesToRemove = GetCrossfadesForClip(clipId).ToList();
+        int count = 0;
+
+        foreach (var crossfade in crossfadesToRemove)
+        {
+            if (RemoveCrossfade(crossfade))
+            {
+                count++;
+            }
+        }
+
+        return count;
     }
 
     #endregion

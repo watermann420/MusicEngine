@@ -248,21 +248,32 @@ public class EffectChain : ISampleProvider
     /// <summary>
     /// Gets all VST effect adapters in the chain.
     /// </summary>
-    /// <returns>List of VST effect adapters.</returns>
-    public List<VstEffectAdapter> GetVstEffects()
+    /// <returns>Enumerable of VST effect adapters (no allocation if not enumerated).</returns>
+    public IEnumerable<VstEffectAdapter> GetVstEffects()
     {
+        // Take snapshot under lock to avoid holding lock during enumeration
+        IEffect[] effectsCopy;
         lock (_lock)
         {
-            var vstEffects = new List<VstEffectAdapter>();
-            foreach (var effect in _effects)
-            {
-                if (effect is VstEffectAdapter vstAdapter)
-                {
-                    vstEffects.Add(vstAdapter);
-                }
-            }
-            return vstEffects;
+            effectsCopy = _effects.ToArray();
         }
+
+        foreach (var effect in effectsCopy)
+        {
+            if (effect is VstEffectAdapter vstAdapter)
+            {
+                yield return vstAdapter;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Gets all VST effect adapters as a list (for cases where List is needed).
+    /// </summary>
+    /// <returns>List of VST effect adapters.</returns>
+    public List<VstEffectAdapter> GetVstEffectsList()
+    {
+        return GetVstEffects().ToList();
     }
 
     /// <summary>
@@ -482,17 +493,23 @@ public class EffectChain : ISampleProvider
     /// <inheritdoc />
     public int Read(float[] buffer, int offset, int count)
     {
+        // Use lock-free read pattern: capture references under lock, then read outside lock
+        ISampleProvider? effectToRead;
+        bool bypassed;
+
         lock (_lock)
         {
-            // If bypassed or no effects, read directly from source
-            if (_bypassed || _effects.Count == 0)
-            {
-                return _source.Read(buffer, offset, count);
-            }
-
-            // Read from the last effect in the chain (which reads from previous effects)
-            return _effects[^1].Read(buffer, offset, count);
+            bypassed = _bypassed;
+            effectToRead = _effects.Count > 0 ? _effects[^1] : null;
         }
+
+        // Read outside lock to avoid holding it during audio processing
+        if (bypassed || effectToRead == null)
+        {
+            return _source.Read(buffer, offset, count);
+        }
+
+        return effectToRead.Read(buffer, offset, count);
     }
 
     /// <summary>

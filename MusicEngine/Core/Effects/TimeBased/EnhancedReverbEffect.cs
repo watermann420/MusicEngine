@@ -1,4 +1,5 @@
 using NAudio.Wave;
+using MusicEngine.Infrastructure.Memory;
 
 namespace MusicEngine.Core.Effects.TimeBased;
 

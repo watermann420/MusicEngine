@@ -24,6 +24,9 @@ public class OggVorbisEncoder : IFormatEncoder
     private static bool _checkedAssembly;
     private static string? _unavailableReason;
     private static string? _availablePackage;
+    // Thread-safe random for stream serial number generation
+    private static readonly Random _streamIdRandom = new();
+    private static readonly object _randomLock = new();
 
     private EncoderSettings? _settings;
     private bool _disposed;
@@ -201,7 +204,12 @@ public class OggVorbisEncoder : IFormatEncoder
             var ossConstructor = oggStreamType.GetConstructor([typeof(int)]);
             if (ossConstructor == null) return false;
 
-            using var oggStream = (IDisposable)ossConstructor.Invoke([new Random().Next()]);
+            int streamId;
+            lock (_randomLock)
+            {
+                streamId = _streamIdRandom.Next();
+            }
+            using var oggStream = (IDisposable)ossConstructor.Invoke([streamId]);
 
             // Get required methods
             var writeHeadersMethod = processingStateType.GetMethod("WriteHeaders");

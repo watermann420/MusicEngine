@@ -15,6 +15,7 @@ using Microsoft.Extensions.Logging;
 using MusicEngine.Core.Events;
 using MusicEngine.Core.PDC;
 using MusicEngine.Core.Progress;
+using MusicEngine.Core.Routing;
 using MusicEngine.Infrastructure.Logging;
 using MusicEngine.Infrastructure.Memory;
 
@@ -56,6 +57,12 @@ public class AudioEngine : IDisposable
     // Plugin Delay Compensation (PDC)
     private readonly PdcManager _pdcManager;
 
+    // Routing Matrix and Sidechain Management
+    private readonly RoutingMatrix _routingMatrix;
+    private readonly SidechainBusManager _sidechainBusManager;
+    private readonly TrackGroupManager _trackGroupManager;
+    private readonly Dictionary<string, ISampleProvider> _registeredSources = new();
+
     // Logging
     private readonly ILogger? _logger;
 
@@ -82,6 +89,11 @@ public class AudioEngine : IDisposable
 
         // Initialize PDC Manager
         _pdcManager = new PdcManager(rate, Settings.Channels, logger);
+
+        // Initialize Routing Matrix and Managers
+        _routingMatrix = new RoutingMatrix(rate, Settings.Channels);
+        _sidechainBusManager = new SidechainBusManager(_waveFormat);
+        _trackGroupManager = new TrackGroupManager();
 
         _logger?.LogInformation("AudioEngine initialized with sample rate {SampleRate}Hz", rate);
     }
@@ -171,59 +183,71 @@ public class AudioEngine : IDisposable
     }
     
     // Start capturing audio input for frequency analysis
-    private void StartInputCapture(int deviceIndex) 
+    private void StartInputCapture(int deviceIndex)
     {
         lock (_inputAnalyzers)
         {
             if (_inputAnalyzers.ContainsKey(deviceIndex)) return; // Already capturing
 
-            var analyzer = new FrequencyAnalyzer(Settings.FftSize, _waveFormat.SampleRate); // Create off a frequency analyzer
+            var analyzer = new FrequencyAnalyzer(Settings.FftSize, _waveFormat.SampleRate);
+            WaveInEvent? waveIn = null;
 
             // Store the FFT handler for later cleanup
-            Action<float[]> fftHandler = magnitudes => { // On FFT calculated
+            Action<float[]> fftHandler = magnitudes => {
                 lock (_frequencyMappings)
                 {
-                    foreach (var mapping in _frequencyMappings) // Iterate frequency mappings
+                    foreach (var mapping in _frequencyMappings)
                     {
-                        if (mapping.DeviceIndex == deviceIndex) // Match device index
+                        if (mapping.DeviceIndex == deviceIndex)
                         {
-                            float magnitude = analyzer.GetMagnitudeForRange(magnitudes, mapping.LowFreq, mapping.HighFreq); // Get magnitude for the specified frequency range
-                            mapping.ProcessMagnitude(magnitude); // Process magnitude for the mapping
+                            float magnitude = analyzer.GetMagnitudeForRange(magnitudes, mapping.LowFreq, mapping.HighFreq);
+                            mapping.ProcessMagnitude(magnitude);
                         }
                     }
                 }
             };
-            analyzer.FftCalculated += fftHandler;
-            _fftHandlers[deviceIndex] = fftHandler;
 
             try
             {
-                var waveIn = new WaveInEvent // Create audio input
+                waveIn = new WaveInEvent
                 {
-                    DeviceNumber = deviceIndex, // Set device index
-                    WaveFormat = new WaveFormat(_waveFormat.SampleRate, 16, 1) // Mono for analysis
+                    DeviceNumber = deviceIndex,
+                    WaveFormat = new WaveFormat(_waveFormat.SampleRate, 16, 1)
                 };
 
                 // Store the DataAvailable handler for later cleanup
-                EventHandler<WaveInEventArgs> dataHandler = (s, e) => { // On audio data available
-                    float[] samples = new float[e.BytesRecorded / 2]; // 16-bit audio
-                    for (int i = 0; i < samples.Length; i++) // Convert byte data to float samples
+                EventHandler<WaveInEventArgs> dataHandler = (s, e) => {
+                    int sampleCount = e.BytesRecorded / 2;
+                    using var pooledBuffer = AudioBufferPool.Instance.RentScoped(sampleCount);
+                    var samples = pooledBuffer.Data;
+                    for (int i = 0; i < sampleCount; i++)
                     {
-                        samples[i] = BitConverter.ToInt16(e.Buffer, i * 2) / 32768f; // Convert to float
+                        samples[i] = BitConverter.ToInt16(e.Buffer, i * 2) / 32768f;
                     }
-                    analyzer.AddSamples(samples, samples.Length); // Feed samples to analyzer
+                    analyzer.AddSamples(pooledBuffer.Array, sampleCount);
                 };
+
+                // Register handlers only after successful waveIn creation
+                analyzer.FftCalculated += fftHandler;
                 waveIn.DataAvailable += dataHandler;
+
+                // Store references for cleanup
+                _fftHandlers[deviceIndex] = fftHandler;
                 _dataHandlers[deviceIndex] = dataHandler;
                 _inputDevices[deviceIndex] = waveIn;
 
-                waveIn.StartRecording(); // Start recording
-                _inputs.Add(waveIn); // Store input
-                _inputAnalyzers[deviceIndex] = analyzer; // Store analyzer
-                _logger?.LogDebug("Started capturing from Input Device [{Index}]", deviceIndex); // Log capture start
+                waveIn.StartRecording();
+                _inputs.Add(waveIn);
+                _inputAnalyzers[deviceIndex] = analyzer;
+                _logger?.LogDebug("Started capturing from Input Device [{Index}]", deviceIndex);
             }
-            catch (Exception ex) // Handle exceptions
+            catch (Exception ex)
             {
+                // Cleanup on failure to prevent memory leaks
+                waveIn?.Dispose();
+                _fftHandlers.Remove(deviceIndex);
+                _dataHandlers.Remove(deviceIndex);
+                _inputDevices.Remove(deviceIndex);
                 _logger?.LogWarning(ex, "Failed to start input capture for device {Index}", deviceIndex);
             }
         }
@@ -894,11 +918,300 @@ public class AudioEngine : IDisposable
         return _pdcManager.GetLatencySummary();
     }
 
+    // === Routing Matrix Methods ===
+
+    /// <summary>
+    /// Gets the routing matrix for managing audio signal routing.
+    /// </summary>
+    public RoutingMatrix RoutingMatrix => _routingMatrix;
+
+    /// <summary>
+    /// Gets the sidechain bus manager for managing sidechain signal paths.
+    /// </summary>
+    public SidechainBusManager SidechainBusManager => _sidechainBusManager;
+
+    /// <summary>
+    /// Gets the track group manager for managing track groups.
+    /// </summary>
+    public TrackGroupManager TrackGroupManager => _trackGroupManager;
+
+    /// <summary>
+    /// Registers a track source for routing.
+    /// </summary>
+    /// <param name="trackId">Unique identifier for the track.</param>
+    /// <param name="trackName">Display name for the track.</param>
+    /// <param name="source">The audio source sample provider.</param>
+    /// <returns>The created routing point for the track output.</returns>
+    public RoutingPoint RegisterTrackSource(string trackId, string trackName, ISampleProvider source)
+    {
+        if (string.IsNullOrWhiteSpace(trackId))
+            throw new ArgumentNullException(nameof(trackId));
+        if (source == null)
+            throw new ArgumentNullException(nameof(source));
+
+        lock (_registeredSources)
+        {
+            _registeredSources[trackId] = source;
+        }
+
+        // Create and register routing point
+        var point = RoutingPointFactory.CreateTrackOutput(trackId, trackName, source, source.WaveFormat.Channels);
+        _routingMatrix.RegisterPoint(point);
+
+        _logger?.LogDebug("Registered track source '{TrackId}' ({TrackName}) for routing", trackId, trackName);
+        return point;
+    }
+
+    /// <summary>
+    /// Unregisters a track source from routing.
+    /// </summary>
+    /// <param name="trackId">The track identifier to unregister.</param>
+    /// <returns>True if unregistered successfully.</returns>
+    public bool UnregisterTrackSource(string trackId)
+    {
+        if (string.IsNullOrWhiteSpace(trackId))
+            return false;
+
+        lock (_registeredSources)
+        {
+            _registeredSources.Remove(trackId);
+        }
+
+        // Find and unregister the routing point
+        var point = _routingMatrix.GetAllPoints()
+            .Find(p => p.AssociatedTrackId == trackId);
+
+        if (point != null)
+        {
+            _routingMatrix.UnregisterPoint(point.PointId);
+            _logger?.LogDebug("Unregistered track source '{TrackId}' from routing", trackId);
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Gets the sidechain signal from a registered source.
+    /// </summary>
+    /// <param name="sourceId">The source track ID or routing point name.</param>
+    /// <returns>The sample provider for the sidechain signal, or null if not found.</returns>
+    /// <remarks>
+    /// This method retrieves the audio signal from a registered track source
+    /// that can be used as a sidechain input for dynamics processors like compressors.
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// // Get the kick drum track as a sidechain source
+    /// var kickSidechain = engine.GetSidechainSignal("kick_track");
+    /// if (kickSidechain != null)
+    /// {
+    ///     compressor.ConnectSidechain(kickSidechain);
+    /// }
+    /// </code>
+    /// </example>
+    public ISampleProvider? GetSidechainSignal(string sourceId)
+    {
+        if (string.IsNullOrWhiteSpace(sourceId))
+            return null;
+
+        // First check registered sources
+        lock (_registeredSources)
+        {
+            if (_registeredSources.TryGetValue(sourceId, out var source))
+            {
+                return source;
+            }
+        }
+
+        // Check routing points
+        var point = _routingMatrix.GetPointByName(sourceId);
+        if (point?.SampleProvider != null)
+        {
+            return point.SampleProvider;
+        }
+
+        // Check by track ID in routing points
+        point = _routingMatrix.GetAllPoints()
+            .Find(p => p.AssociatedTrackId?.Equals(sourceId, StringComparison.OrdinalIgnoreCase) == true);
+
+        return point?.SampleProvider;
+    }
+
+    /// <summary>
+    /// Creates a sidechain bus that routes audio from a source track to a target effect.
+    /// </summary>
+    /// <param name="sourceTrackId">The source track ID.</param>
+    /// <param name="targetEffectName">The target effect name.</param>
+    /// <param name="tapPoint">Where to tap the signal (default: PostFader).</param>
+    /// <returns>The created sidechain bus.</returns>
+    public SidechainBus CreateSidechainRoute(string sourceTrackId, string targetEffectName,
+        SidechainTapPoint tapPoint = SidechainTapPoint.PostFader)
+    {
+        var source = GetSidechainSignal(sourceTrackId);
+        var bus = _sidechainBusManager.CreateBusForEffect(targetEffectName, source, sourceTrackId);
+        bus.TapPoint = tapPoint;
+
+        // Create routing points and route
+        var sourcePoint = _routingMatrix.GetAllPoints()
+            .Find(p => p.AssociatedTrackId == sourceTrackId);
+
+        if (sourcePoint == null)
+        {
+            // Create a send point if source point doesn't exist
+            sourcePoint = RoutingPointFactory.CreateSend($"{sourceTrackId} SC Send", sourceTrackId);
+            sourcePoint.SampleProvider = source;
+            _routingMatrix.RegisterPoint(sourcePoint);
+        }
+
+        var destPoint = RoutingPointFactory.CreateSidechainInput(targetEffectName);
+        _routingMatrix.RegisterPoint(destPoint);
+
+        // Create the route if both points exist
+        if (sourcePoint.CanBeSource)
+        {
+            try
+            {
+                _routingMatrix.CreateRoute(sourcePoint, destPoint, 0f);
+                _logger?.LogDebug("Created sidechain route from '{Source}' to '{Target}'", sourceTrackId, targetEffectName);
+            }
+            catch (InvalidOperationException ex)
+            {
+                _logger?.LogWarning(ex, "Could not create sidechain route: {Message}", ex.Message);
+            }
+        }
+
+        return bus;
+    }
+
+    /// <summary>
+    /// Creates a route between two tracks or routing points.
+    /// </summary>
+    /// <param name="sourceId">The source track ID or routing point name.</param>
+    /// <param name="destinationId">The destination track ID or routing point name.</param>
+    /// <param name="gainDb">Route gain in decibels (default: 0 dB).</param>
+    /// <returns>The created audio route, or null if routing is not possible.</returns>
+    public AudioRoute? CreateRoute(string sourceId, string destinationId, float gainDb = 0f)
+    {
+        var sourcePoint = _routingMatrix.GetPointByName(sourceId) ??
+            _routingMatrix.GetAllPoints().Find(p => p.AssociatedTrackId == sourceId);
+
+        var destPoint = _routingMatrix.GetPointByName(destinationId) ??
+            _routingMatrix.GetAllPoints().Find(p => p.AssociatedTrackId == destinationId);
+
+        if (sourcePoint == null || destPoint == null)
+        {
+            _logger?.LogWarning("Cannot create route: source or destination point not found");
+            return null;
+        }
+
+        try
+        {
+            return _routingMatrix.CreateRoute(sourcePoint, destPoint, gainDb);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Failed to create route from '{Source}' to '{Destination}'", sourceId, destinationId);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Gets the routing matrix visualization data for UI display.
+    /// </summary>
+    /// <returns>List of matrix cells representing the routing state.</returns>
+    public List<MatrixCell> GetRoutingMatrixVisualization()
+    {
+        return _routingMatrix.GetMatrixCells();
+    }
+
+    /// <summary>
+    /// Gets a summary of the current routing configuration.
+    /// </summary>
+    public string GetRoutingSummary()
+    {
+        return _routingMatrix.GetRoutingSummary();
+    }
+
+    // === Track Group Methods ===
+
+    /// <summary>
+    /// Creates a new track group.
+    /// </summary>
+    /// <param name="name">The name of the group.</param>
+    /// <param name="color">Optional display color (as ARGB int).</param>
+    /// <returns>The created track group.</returns>
+    public TrackGroup CreateTrackGroup(string name, int? color = null)
+    {
+        var group = _trackGroupManager.CreateGroup(name, color);
+
+        // Create a routing point for the group
+        var groupPoint = RoutingPointFactory.CreateGroup(name);
+        _routingMatrix.RegisterPoint(groupPoint);
+
+        _logger?.LogDebug("Created track group '{GroupName}'", name);
+        return group;
+    }
+
+    /// <summary>
+    /// Adds a track to a group.
+    /// </summary>
+    /// <param name="groupId">The group ID.</param>
+    /// <param name="trackId">The track ID to add.</param>
+    /// <param name="channel">Optional audio channel reference.</param>
+    /// <returns>True if successful.</returns>
+    public bool AddTrackToGroup(Guid groupId, string trackId, AudioChannel? channel = null)
+    {
+        return _trackGroupManager.AddTrackToGroup(groupId, trackId, channel);
+    }
+
+    /// <summary>
+    /// Removes a track from its group.
+    /// </summary>
+    /// <param name="trackId">The track ID to remove.</param>
+    /// <returns>True if successful.</returns>
+    public bool RemoveTrackFromGroup(string trackId)
+    {
+        return _trackGroupManager.RemoveTrackFromGroup(trackId);
+    }
+
+    /// <summary>
+    /// Gets the group that a track belongs to.
+    /// </summary>
+    /// <param name="trackId">The track ID.</param>
+    /// <returns>The track group, or null if not in any group.</returns>
+    public TrackGroup? GetGroupForTrack(string trackId)
+    {
+        return _trackGroupManager.GetGroupForTrack(trackId);
+    }
+
+    /// <summary>
+    /// Gets all track groups.
+    /// </summary>
+    public IReadOnlyList<TrackGroup> GetAllTrackGroups()
+    {
+        return _trackGroupManager.Groups;
+    }
+
+    private volatile bool _disposed;
+
     // Dispose resources
     public void Dispose()
     {
-        foreach (var output in _outputs) output.Stop(); // Stop all outputs
-        foreach (var input in _inputs) input.StopRecording(); // Stop all inputs
+        if (_disposed) return;
+        _disposed = true;
+
+        // Stop all outputs and inputs safely
+        foreach (var output in _outputs)
+        {
+            try { output.Stop(); }
+            catch (Exception ex) { _logger?.LogWarning(ex, "Error stopping audio output"); }
+        }
+        foreach (var input in _inputs)
+        {
+            try { input.StopRecording(); }
+            catch (Exception ex) { _logger?.LogWarning(ex, "Error stopping audio input"); }
+        }
 
         System.Threading.Thread.Sleep(100); // Give it a moment to stop
 
@@ -933,13 +1246,43 @@ public class AudioEngine : IDisposable
         }
         _midiHandlers.Clear();
 
-        foreach (var input in _inputs) input.Dispose(); // Dispose inputs
-        foreach (var output in _outputs) output.Dispose(); // Dispose outputs
-        foreach (var midiIn in _midiInputs) midiIn.Dispose(); // Dispose MIDI inputs
-        foreach (var midiOut in _midiOutputs) midiOut.Dispose(); // Dispose MIDI outputs
+        // Dispose all resources with exception handling
+        foreach (var input in _inputs)
+        {
+            try { input.Dispose(); }
+            catch (Exception ex) { _logger?.LogWarning(ex, "Error disposing audio input"); }
+        }
+        foreach (var output in _outputs)
+        {
+            try { output.Dispose(); }
+            catch (Exception ex) { _logger?.LogWarning(ex, "Error disposing audio output"); }
+        }
+        foreach (var midiIn in _midiInputs)
+        {
+            try { midiIn.Dispose(); }
+            catch (Exception ex) { _logger?.LogWarning(ex, "Error disposing MIDI input"); }
+        }
+        foreach (var midiOut in _midiOutputs)
+        {
+            try { midiOut.Dispose(); }
+            catch (Exception ex) { _logger?.LogWarning(ex, "Error disposing MIDI output"); }
+        }
 
-        _vstHost.Dispose(); // Dispose VST host and all loaded plugins
-        _virtualChannels.Dispose(); // Dispose virtual channels
-        _pdcManager.Dispose(); // Dispose PDC manager
+        try { _vstHost.Dispose(); }
+        catch (Exception ex) { _logger?.LogWarning(ex, "Error disposing VST host"); }
+
+        try { _virtualChannels.Dispose(); }
+        catch (Exception ex) { _logger?.LogWarning(ex, "Error disposing virtual channels"); }
+
+        try { _pdcManager.Dispose(); }
+        catch (Exception ex) { _logger?.LogWarning(ex, "Error disposing PDC manager"); }
+
+        try { _routingMatrix.Dispose(); }
+        catch (Exception ex) { _logger?.LogWarning(ex, "Error disposing routing matrix"); }
+
+        _trackGroupManager.Clear();
+        _sidechainBusManager.Clear();
+
+        _logger?.LogInformation("AudioEngine disposed");
     }
 }

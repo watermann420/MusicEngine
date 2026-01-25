@@ -1,4 +1,5 @@
 using NAudio.Wave;
+using MusicEngine.Infrastructure.Memory;
 
 namespace MusicEngine.Core.Effects.TimeBased;
 
@@ -122,9 +123,10 @@ public class EnhancedDelayEffect : EffectBase
         float stereoSpread = StereoSpread;
         float pingPong = PingPong;
 
-        // Calculate delay times for each channel
+        // Calculate delay times for each channel using pooled buffer
         float baseDelaySamples = delayTime * sampleRate;
-        float[] channelDelays = new float[channels];
+        using var channelDelaysBuffer = AudioBufferPool.Instance.RentScoped(channels);
+        var channelDelays = channelDelaysBuffer.Data;
 
         for (int ch = 0; ch < channels; ch++)
         {
@@ -133,10 +135,13 @@ public class EnhancedDelayEffect : EffectBase
             channelDelays[ch] = baseDelaySamples + spreadOffset;
         }
 
+        // Use pooled buffer for delayed samples
+        using var delayedSamplesBuffer = AudioBufferPool.Instance.RentScoped(channels);
+        var delayedSamples = delayedSamplesBuffer.Data;
+
         for (int i = 0; i < count; i += channels)
         {
             // Read delayed samples (with interpolation)
-            float[] delayedSamples = new float[channels];
             for (int ch = 0; ch < channels; ch++)
             {
                 delayedSamples[ch] = _delayBuffers[ch].ReadInterpolated(channelDelays[ch]);

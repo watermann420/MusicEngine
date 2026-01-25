@@ -29,6 +29,11 @@ public class MusicEngineOptions
     /// Gets or sets the logging configuration options.
     /// </summary>
     public LoggingOptions Logging { get; set; } = new();
+
+    /// <summary>
+    /// Gets or sets the buffer pool configuration options.
+    /// </summary>
+    public BufferPoolOptions BufferPool { get; set; } = new();
 }
 
 /// <summary>
@@ -122,4 +127,58 @@ public class LoggingOptions
     /// Gets or sets the directory for log files. Default is "logs".
     /// </summary>
     public string LogDirectory { get; set; } = "logs";
+}
+
+/// <summary>
+/// Configuration options for the audio buffer pool.
+/// </summary>
+public class BufferPoolOptions
+{
+    /// <summary>
+    /// Gets or sets the maximum number of buffers to retain per size bucket.
+    /// Default is 50.
+    /// </summary>
+    public int MaxBuffersPerBucket { get; set; } = 50;
+
+    /// <summary>
+    /// Gets or sets the maximum total pool size in bytes.
+    /// Default is 100MB.
+    /// </summary>
+    public long MaxPoolSizeBytes { get; set; } = 100 * 1024 * 1024;
+
+    /// <summary>
+    /// Gets or sets the interval in milliseconds for periodic trimming.
+    /// Default is 30 seconds. Set to 0 to disable.
+    /// </summary>
+    public int TrimIntervalMs { get; set; } = 30000;
+
+    /// <summary>
+    /// Gets or sets whether to clear buffers when returning to pool.
+    /// Default is false for performance.
+    /// </summary>
+    public bool ClearOnReturn { get; set; } = false;
+
+    /// <summary>
+    /// Gets or sets whether to pre-allocate buffers at startup.
+    /// Default is false.
+    /// </summary>
+    public bool PreAllocate { get; set; } = false;
+
+    /// <summary>
+    /// Gets or sets the number of buffers to pre-allocate per size.
+    /// Default is 5.
+    /// </summary>
+    public int PreAllocateCount { get; set; } = 5;
+
+    /// <summary>
+    /// Gets or sets whether to track detailed statistics.
+    /// Default is true.
+    /// </summary>
+    public bool EnableStatistics { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets whether to monitor memory pressure.
+    /// Default is true.
+    /// </summary>
+    public bool EnableMemoryPressureMonitoring { get; set; } = true;
 }

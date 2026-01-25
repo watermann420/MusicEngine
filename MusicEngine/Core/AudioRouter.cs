@@ -16,7 +16,7 @@ public class AudioRouter : IDisposable
 {
     private readonly Dictionary<string, AudioChannel> _channels;
     private readonly Dictionary<string, AudioBus> _buses;
-    private readonly List<AudioRoute> _routes;
+    private readonly List<SimpleAudioRoute> _routes;
     private readonly object _routingLock = new();
     private readonly WaveFormat _defaultFormat;
 
@@ -33,7 +33,7 @@ public class AudioRouter : IDisposable
         _defaultFormat = WaveFormat.CreateIeeeFloatWaveFormat(sampleRate, channels);
         _channels = new Dictionary<string, AudioChannel>(StringComparer.OrdinalIgnoreCase);
         _buses = new Dictionary<string, AudioBus>(StringComparer.OrdinalIgnoreCase);
-        _routes = new List<AudioRoute>();
+        _routes = new List<SimpleAudioRoute>();
 
         // Create default master bus
         _masterBus = CreateBus("Master");
@@ -62,7 +62,7 @@ public class AudioRouter : IDisposable
     /// <summary>
     /// Gets all active routes.
     /// </summary>
-    public IReadOnlyList<AudioRoute> Routes
+    public IReadOnlyList<SimpleAudioRoute> Routes
     {
         get
         {
@@ -215,7 +215,7 @@ public class AudioRouter : IDisposable
     /// <param name="destBus">Destination bus name</param>
     /// <param name="level">Route level (0.0 - 1.0)</param>
     /// <returns>The created route</returns>
-    public AudioRoute Route(string sourceChannel, string destBus, float level = 1.0f)
+    public SimpleAudioRoute Route(string sourceChannel, string destBus, float level = 1.0f)
     {
         lock (_routingLock)
         {
@@ -246,7 +246,7 @@ public class AudioRouter : IDisposable
             }
 
             // Create the route
-            var route = new AudioRoute(sourceChannel, destBus, source, dest, level);
+            var route = new SimpleAudioRoute(sourceChannel, destBus, source, dest, level);
 
             // Create a level-controlled wrapper
             var leveledSource = new LeveledSampleProvider(source, level);
@@ -267,7 +267,7 @@ public class AudioRouter : IDisposable
     /// <param name="sourceName">Source channel or bus name</param>
     /// <param name="level">Route level</param>
     /// <returns>The created route</returns>
-    public AudioRoute RouteToMaster(string sourceName, float level = 1.0f)
+    public SimpleAudioRoute RouteToMaster(string sourceName, float level = 1.0f)
     {
         return Route(sourceName, "Master", level);
     }
@@ -305,7 +305,7 @@ public class AudioRouter : IDisposable
     /// Gets the routing matrix as a 2D representation.
     /// </summary>
     /// <returns>Routing matrix information</returns>
-    public RoutingMatrix GetRoutingMatrix()
+    public SimpleRoutingMatrix GetRoutingMatrix()
     {
         lock (_routingLock)
         {
@@ -316,7 +316,7 @@ public class AudioRouter : IDisposable
             var destinations = _buses.Keys.ToList();
 
             var matrix = new float[sources.Count, destinations.Count];
-            var routeInfo = new Dictionary<(string Source, string Dest), AudioRoute>();
+            var routeInfo = new Dictionary<(string Source, string Dest), SimpleAudioRoute>();
 
             for (int s = 0; s < sources.Count; s++)
             {
@@ -334,7 +334,7 @@ public class AudioRouter : IDisposable
                 }
             }
 
-            return new RoutingMatrix
+            return new SimpleRoutingMatrix
             {
                 Sources = sources.ToArray(),
                 Destinations = destinations.ToArray(),
@@ -523,14 +523,14 @@ public class AudioRouter : IDisposable
 }
 
 /// <summary>
-/// Represents a route between a source and destination.
+/// Represents a simple route between a source and destination.
 /// </summary>
-public class AudioRoute
+public class SimpleAudioRoute
 {
     /// <summary>
-    /// Creates a new audio route.
+    /// Creates a new simple audio route.
     /// </summary>
-    public AudioRoute(string sourceName, string destName, ISampleProvider source, AudioBus destination, float level)
+    public SimpleAudioRoute(string sourceName, string destName, ISampleProvider source, AudioBus destination, float level)
     {
         SourceName = sourceName;
         DestinationName = destName;
@@ -571,9 +571,9 @@ public class AudioRoute
 }
 
 /// <summary>
-/// Represents the full routing matrix.
+/// Represents a simple routing matrix for visualization.
 /// </summary>
-public class RoutingMatrix
+public class SimpleRoutingMatrix
 {
     /// <summary>
     /// Source names (channels and buses).
@@ -593,7 +593,7 @@ public class RoutingMatrix
     /// <summary>
     /// Route objects indexed by (source, destination) tuple.
     /// </summary>
-    public required Dictionary<(string Source, string Dest), AudioRoute> Routes { get; init; }
+    public required Dictionary<(string Source, string Dest), SimpleAudioRoute> Routes { get; init; }
 
     /// <summary>
     /// Prints the matrix to console.
