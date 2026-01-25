@@ -171,7 +171,7 @@ sequencer.Start();
 | VectorSynth | XY Pad Crossfade |
 | NoiseGenerator | 5 Noise Types |
 
-### Effects (46+)
+### Effects (48+)
 | Kategorie | Effects |
 |-----------|---------|
 | Dynamics | Compressor, MultibandCompressor, SideChain, Gate, Limiter, TransientShaper, DeEsser, DynamicEQ, SpectralGate |
@@ -179,7 +179,8 @@ sequencer.Start();
 | Modulation | Chorus, Flanger, Phaser, Tremolo, Vibrato, AutoPan |
 | Distortion | Distortion, Bitcrusher, TapeSaturation, HarmonicEnhancer |
 | Filters | Filter, ParametricEQ |
-| Special | Exciter, StereoWidener, Vocoder, RingModulator, TapeStop, PitchShifter, SubBassGenerator, Dither, SampleRateConverter (NEW) |
+| Special | Exciter, StereoWidener, Vocoder, RingModulator, TapeStop, PitchShifter, SubBassGenerator, Dither, SampleRateConverter |
+| Restoration (NEW) | NoiseReduction (Spectral Subtraction, Learn Mode), Declipping (Cubic Spline) |
 
 ### MIDI & Sequencing
 | Feature | Beschreibung |
@@ -211,6 +212,14 @@ sequencer.Start();
 | Send/Return Buses | Pre/Post Fader |
 | Groove Templates | 16 Built-in (MPC, Shuffle, etc.) |
 | Stem Export | Async with Progress |
+
+### Network & Collaboration (NEW)
+| Feature | Beschreibung |
+|---------|--------------|
+| LinkSync | Ableton Link-style Tempo Sync (UDP Multicast) |
+| NetworkMIDI (NEW) | RTP-MIDI Style, TCP/UDP, Peer Discovery, Latency Compensation |
+| CloudStorage (NEW) | Provider Abstraction, Auto-Sync, Offline Queue, Conflict Resolution |
+| Collaboration (NEW) | Real-time Multi-User, OT Algorithm, TCP Server/Client, Vector Clocks |
 
 ---
 
