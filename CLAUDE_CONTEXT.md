@@ -244,6 +244,14 @@ sequencer.Start();
 | Send/Return Buses | Pre/Post Fader |
 | Groove Templates | 16 Built-in (MPC, Shuffle, etc.) |
 | Stem Export | Async with Progress |
+| TempoTrack (NEW) | Tempo Changes, Linear/S-Curve Ramps |
+| TimeSignatureTrack (NEW) | Mixed Meters, Bar/Beat Calculation |
+| TrackGroups (NEW) | Nested Folders, Solo/Mute Propagation |
+| TakeLanes (NEW) | Comping, Multi-Take, Crossfades |
+| PunchRecording (NEW) | Punch In/Out, Pre/Post-Roll |
+| AudioPool (NEW) | Media Management, BPM/Key Detection |
+| ReferenceTrack (NEW) | A/B Comparison, LUFS Matching |
+| MacroControls (NEW) | 8 Macros, Parameter Mapping, MIDI Learn |
 
 ### Network & Collaboration (NEW)
 | Feature | Beschreibung |
@@ -261,6 +269,25 @@ sequencer.Start();
 | Command Palette | Ctrl+P für schnellen Zugriff auf alle Befehle (Fuzzy Search) |
 | Drag & Drop Audio | Audio-Dateien direkt in Arrangement ziehen (WAV, MP3, FLAC, OGG, AIFF) |
 | LUFS Meter | Integrated/Short-term/Momentary Loudness + True Peak im Mixer |
+| Track Group Headers | Nested Folders, Solo/Mute Propagation, Volume, Collapse |
+| Take Lane Control | Comping UI, Multi-Take Recording, Rating Stars, Flatten |
+| Punch Locator | Punch In/Out Markers, Pre/Post-Roll Settings, Visual Feedback |
+| Audio Pool View | Media Browser, Search/Tags, BPM/Key Detection, Consolidate |
+| Reference Track | A/B Vergleich, LUFS Level Matching, Loop Region, Transport Sync |
+| Macro Bank | 8 Macro Knobs, Parameter Mapping, Curves, MIDI Learn |
+| Time Signature Marker | Meter Changes auf Timeline, Custom Time Signatures |
+
+### Project Management Features (Januar 2026)
+| Feature | Beschreibung |
+|---------|--------------|
+| TempoTrack | Tempo-Änderungen über Zeit, Linear/S-Curve Ramping, Beat↔Time Konvertierung |
+| TimeSignatureTrack | Taktart-Änderungen, Bar/Beat Berechnung, Mixed Meters Support |
+| TrackGroups | Hierarchische Track-Organisation, Solo/Mute Vererbung, Gruppen-Volume |
+| TakeLanes | Multi-Take Recording, Comp Regions, Crossfades, Flatten to AudioClip |
+| PunchRecording | Punch In/Out Points, Pre-Roll/Post-Roll, Auto-Punch Mode |
+| AudioPool | Media Management, Usage Tracking, Consolidate, BPM/Key Analysis |
+| ReferenceTrack | A/B Comparison, LUFS Analysis, Auto Level Matching, Loop/Sync |
+| MacroControls | 8 Macros mit Multi-Parameter Mapping, Curves, MIDI Learn |
 
 ---
 

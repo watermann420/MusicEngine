@@ -2,11 +2,132 @@
 // copyright (c) 2026 MusicEngine Watermann420 and Contributors
 // Created by Watermann420
 // Description: Combines TempoMap and TimeSignatureMap to provide complete timing conversions
-//              between bars, beats, samples, and seconds.
+//              between bars, beats, samples, and seconds. Supports tempo changes over time
+//              with instant jumps, linear ramps, and S-curve transitions.
 
 using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace MusicEngine.Core;
+
+/// <summary>
+/// Type of transition between tempo points.
+/// </summary>
+public enum TempoRampType
+{
+    /// <summary>Jump instantly to new tempo.</summary>
+    Instant,
+
+    /// <summary>Linear ramp to next tempo point.</summary>
+    Linear,
+
+    /// <summary>Smooth S-curve transition (smoothstep: 3t^2 - 2t^3).</summary>
+    SCurve
+}
+
+/// <summary>
+/// Represents a tempo change point in the tempo track.
+/// </summary>
+public class TempoPoint
+{
+    /// <summary>Gets or sets the position in beats (quarter notes).</summary>
+    public double Beat { get; set; }
+
+    /// <summary>Gets or sets the tempo in BPM at this point.</summary>
+    public double Bpm { get; set; }
+
+    /// <summary>Gets or sets the type of transition to the next tempo point.</summary>
+    public TempoRampType RampType { get; set; }
+
+    /// <summary>
+    /// Creates a new tempo point.
+    /// </summary>
+    /// <param name="beat">Position in beats.</param>
+    /// <param name="bpm">Tempo in BPM.</param>
+    /// <param name="rampType">Type of transition.</param>
+    public TempoPoint(double beat, double bpm, TempoRampType rampType = TempoRampType.Instant)
+    {
+        Beat = beat;
+        Bpm = Math.Clamp(bpm, 1.0, 999.0);
+        RampType = rampType;
+    }
+
+    /// <summary>
+    /// Creates a tempo point from a TempoChange.
+    /// </summary>
+    internal TempoPoint(TempoChange change)
+    {
+        Beat = change.PositionBeats;
+        Bpm = change.Bpm;
+
+        // Map TempoChange properties to TempoRampType
+        if (!change.IsRamp)
+        {
+            RampType = TempoRampType.Instant;
+        }
+        else if (Math.Abs(change.RampCurve) < 0.001)
+        {
+            RampType = TempoRampType.Linear;
+        }
+        else
+        {
+            // Any non-linear curve maps to SCurve
+            RampType = TempoRampType.SCurve;
+        }
+    }
+
+    public override string ToString() => RampType == TempoRampType.Instant
+        ? $"Tempo: {Bpm:F1} BPM at beat {Beat:F2}"
+        : $"Tempo: {Bpm:F1} BPM at beat {Beat:F2} ({RampType} ramp)";
+}
+
+/// <summary>
+/// Event arguments for tempo changes.
+/// </summary>
+public class TempoChangedEventArgs : EventArgs
+{
+    /// <summary>Gets the beat position where the tempo changed.</summary>
+    public double Beat { get; }
+
+    /// <summary>Gets the new tempo in BPM.</summary>
+    public double NewBpm { get; }
+
+    /// <summary>Gets the previous tempo in BPM.</summary>
+    public double OldBpm { get; }
+
+    /// <summary>Gets the type of change (point added, removed, or modified).</summary>
+    public TempoChangeType ChangeType { get; }
+
+    /// <summary>
+    /// Creates new tempo changed event args.
+    /// </summary>
+    public TempoChangedEventArgs(double beat, double newBpm, double oldBpm = 0, TempoChangeType changeType = TempoChangeType.Added)
+    {
+        Beat = beat;
+        NewBpm = newBpm;
+        OldBpm = oldBpm;
+        ChangeType = changeType;
+    }
+}
+
+/// <summary>
+/// Type of tempo change event.
+/// </summary>
+public enum TempoChangeType
+{
+    /// <summary>A tempo point was added.</summary>
+    Added,
+
+    /// <summary>A tempo point was removed.</summary>
+    Removed,
+
+    /// <summary>A tempo point was modified.</summary>
+    Modified,
+
+    /// <summary>All tempo points were cleared.</summary>
+    Cleared
+}
 
 /// <summary>
 /// Represents a complete position in musical time.
@@ -596,8 +717,12 @@ public sealed class TempoTrack
     /// </summary>
     public void Clear()
     {
-        _tempoMap.Clear();
-        _timeSignatureMap.Clear();
+        lock (_lock)
+        {
+            _tempoMap.Clear();
+            _timeSignatureMap.Clear();
+            TempoChanged?.Invoke(this, new TempoChangedEventArgs(0, _tempoMap.DefaultBpm, 0, TempoChangeType.Cleared));
+        }
     }
 
     /// <summary>
@@ -626,6 +751,163 @@ public sealed class TempoTrack
     public override string ToString()
     {
         return $"TempoTrack: {_tempoMap.DefaultBpm:F1} BPM, {_timeSignatureMap.DefaultTimeSignature}, {_sampleRate} Hz";
+    }
+
+    #endregion
+
+    #region TempoPoint API
+
+    /// <summary>
+    /// Event fired when tempo changes are made to the track.
+    /// </summary>
+    public event EventHandler<TempoChangedEventArgs>? TempoChanged;
+
+    /// <summary>
+    /// Adds a tempo point at the specified beat position.
+    /// </summary>
+    /// <param name="beat">Position in beats (quarter notes).</param>
+    /// <param name="bpm">Tempo in BPM.</param>
+    /// <param name="rampType">Type of transition to next tempo point.</param>
+    public void AddTempoPoint(double beat, double bpm, TempoRampType rampType = TempoRampType.Instant)
+    {
+        lock (_lock)
+        {
+            double oldBpm = GetTempoAt(beat);
+
+            // Convert TempoRampType to IsRamp and RampCurve
+            bool isRamp = rampType != TempoRampType.Instant;
+            double rampCurve = rampType == TempoRampType.SCurve ? 0.5 : 0.0; // SCurve uses positive curve
+
+            _tempoMap.AddTempoChange(beat, bpm, isRamp, rampCurve);
+
+            TempoChanged?.Invoke(this, new TempoChangedEventArgs(beat, bpm, oldBpm, TempoChangeType.Added));
+        }
+    }
+
+    /// <summary>
+    /// Removes a tempo point at the specified beat position.
+    /// </summary>
+    /// <param name="beat">Position in beats.</param>
+    /// <returns>True if a tempo point was removed, false otherwise.</returns>
+    public bool RemoveTempoPoint(double beat)
+    {
+        lock (_lock)
+        {
+            double oldBpm = GetTempoAt(beat);
+            bool removed = _tempoMap.RemoveTempoChange(beat);
+
+            if (removed)
+            {
+                double newBpm = GetTempoAt(beat);
+                TempoChanged?.Invoke(this, new TempoChangedEventArgs(beat, newBpm, oldBpm, TempoChangeType.Removed));
+            }
+
+            return removed;
+        }
+    }
+
+    /// <summary>
+    /// Gets the tempo at a specific beat position (interpolated if ramping).
+    /// Alias for GetTempoAt for API consistency.
+    /// </summary>
+    /// <param name="beat">Position in beats.</param>
+    /// <returns>Tempo in BPM at the specified position.</returns>
+    public double GetTempoAtBeat(double beat)
+    {
+        return GetTempoAt(beat);
+    }
+
+    /// <summary>
+    /// Converts a beat position to time in seconds.
+    /// Alias for BeatsToSeconds for API consistency.
+    /// </summary>
+    /// <param name="beat">Position in beats.</param>
+    /// <returns>Time in seconds.</returns>
+    public double BeatToTime(double beat)
+    {
+        return BeatsToSeconds(beat);
+    }
+
+    /// <summary>
+    /// Converts a time in seconds to beat position.
+    /// Alias for SecondsToBeats for API consistency.
+    /// </summary>
+    /// <param name="timeSeconds">Time in seconds.</param>
+    /// <returns>Position in beats.</returns>
+    public double TimeToBeat(double timeSeconds)
+    {
+        return SecondsToBeats(timeSeconds);
+    }
+
+    /// <summary>
+    /// Gets all tempo points in order of beat position.
+    /// </summary>
+    /// <returns>Read-only list of tempo points.</returns>
+    public IReadOnlyList<TempoPoint> GetTempoPoints()
+    {
+        lock (_lock)
+        {
+            return _tempoMap.TempoChanges
+                .Select(tc => new TempoPoint(tc))
+                .ToList();
+        }
+    }
+
+    /// <summary>
+    /// Gets the tempo point at or before the specified beat position.
+    /// </summary>
+    /// <param name="beat">Position in beats.</param>
+    /// <returns>The tempo point, or null if none exists before this position.</returns>
+    public TempoPoint? GetTempoPointAt(double beat)
+    {
+        lock (_lock)
+        {
+            var change = _tempoMap.GetTempoChangeAt(beat);
+            return change != null ? new TempoPoint(change) : null;
+        }
+    }
+
+    /// <summary>
+    /// Gets the next tempo point after the specified beat position.
+    /// </summary>
+    /// <param name="beat">Position in beats.</param>
+    /// <returns>The next tempo point, or null if none exists after this position.</returns>
+    public TempoPoint? GetNextTempoPoint(double beat)
+    {
+        lock (_lock)
+        {
+            var change = _tempoMap.GetNextTempoChange(beat);
+            return change != null ? new TempoPoint(change) : null;
+        }
+    }
+
+    /// <summary>
+    /// Gets the number of tempo points in the track.
+    /// </summary>
+    public int TempoPointCount => _tempoMap.Count;
+
+    /// <summary>
+    /// Clears all tempo points (but not time signature changes).
+    /// </summary>
+    public void ClearTempoPoints()
+    {
+        lock (_lock)
+        {
+            _tempoMap.Clear();
+            TempoChanged?.Invoke(this, new TempoChangedEventArgs(0, _tempoMap.DefaultBpm, 0, TempoChangeType.Cleared));
+        }
+    }
+
+    /// <summary>
+    /// Applies smoothstep interpolation (S-curve) between two values.
+    /// Uses the formula: 3t^2 - 2t^3
+    /// </summary>
+    /// <param name="t">Normalized position (0 to 1).</param>
+    /// <returns>Smoothstepped value.</returns>
+    private static double Smoothstep(double t)
+    {
+        t = Math.Clamp(t, 0.0, 1.0);
+        return t * t * (3.0 - 2.0 * t);
     }
 
     #endregion

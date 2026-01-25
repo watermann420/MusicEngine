@@ -4,6 +4,8 @@
 // Description: Track group for grouping multiple tracks with shared controls.
 
 
+using System;
+using System.Drawing;
 using NAudio.Wave;
 
 
@@ -11,20 +13,56 @@ namespace MusicEngine.Core.Routing;
 
 
 /// <summary>
+/// Interface for audio channels that can be added to track groups.
+/// </summary>
+public interface IAudioChannel : ISampleProvider
+{
+    /// <summary>
+    /// Gets the name of the audio channel.
+    /// </summary>
+    string Name { get; }
+
+    /// <summary>
+    /// Gets or sets the volume level (0.0 to 2.0).
+    /// </summary>
+    float Volume { get; set; }
+
+    /// <summary>
+    /// Gets or sets the pan position (-1.0 to 1.0).
+    /// </summary>
+    float Pan { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether the channel is muted.
+    /// </summary>
+    bool Mute { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether the channel is soloed.
+    /// </summary>
+    bool Solo { get; set; }
+}
+
+
+/// <summary>
 /// Represents a group of tracks that can be controlled together.
 /// Provides group fader, mute, solo, and fold/unfold functionality.
+/// Supports nested groups for hierarchical organization.
 /// </summary>
-public class TrackGroup
+public class TrackGroup : IDisposable
 {
     private readonly object _lock = new();
     private readonly List<string> _memberTrackIds;
     private readonly List<AudioChannel> _memberChannels;
+    private readonly List<IAudioChannel> _genericChannels;
+    private readonly List<TrackGroup> _childGroups;
     private string _name;
     private float _volume;
     private float _pan;
     private bool _mute;
     private bool _solo;
     private bool _isFolded;
+    private bool _disposed;
 
     /// <summary>
     /// Creates a new track group.
@@ -38,10 +76,13 @@ public class TrackGroup
             throw new ArgumentNullException(nameof(name));
 
         GroupId = Guid.NewGuid();
+        Id = GroupId.ToString();
         _name = name;
         Color = color;
         _memberTrackIds = new List<string>();
         _memberChannels = new List<AudioChannel>();
+        _genericChannels = new List<IAudioChannel>();
+        _childGroups = new List<TrackGroup>();
         _volume = 1.0f;
         _pan = 0f;
         _mute = false;
@@ -53,6 +94,11 @@ public class TrackGroup
     /// Gets the unique identifier for this group.
     /// </summary>
     public Guid GroupId { get; }
+
+    /// <summary>
+    /// Gets the string identifier for this group.
+    /// </summary>
+    public string Id { get; }
 
     /// <summary>
     /// Gets or sets the name of this group.
@@ -84,6 +130,21 @@ public class TrackGroup
     /// Gets or sets the display color for this group (as ARGB int).
     /// </summary>
     public int Color { get; set; }
+
+    /// <summary>
+    /// Gets or sets the display color for this group as a System.Drawing.Color.
+    /// </summary>
+    public Color DisplayColor
+    {
+        get => System.Drawing.Color.FromArgb(Color);
+        set => Color = value.ToArgb();
+    }
+
+    /// <summary>
+    /// Gets or sets the parent group for nested hierarchy.
+    /// Null if this is a top-level group.
+    /// </summary>
+    public TrackGroup? Parent { get; private set; }
 
     /// <summary>
     /// Gets the list of member track IDs.
@@ -264,6 +325,44 @@ public class TrackGroup
             }
 
             OnPropertyChanged(nameof(IsFolded));
+            OnPropertyChanged(nameof(Collapsed));
+        }
+    }
+
+    /// <summary>
+    /// Gets or sets whether this group is collapsed (alias for IsFolded).
+    /// </summary>
+    public bool Collapsed
+    {
+        get => IsFolded;
+        set => IsFolded = value;
+    }
+
+    /// <summary>
+    /// Gets the list of child groups for nested hierarchy.
+    /// </summary>
+    public IReadOnlyList<TrackGroup> ChildGroups
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _childGroups.ToList();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Gets the number of child groups.
+    /// </summary>
+    public int ChildGroupCount
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _childGroups.Count;
+            }
         }
     }
 
@@ -448,6 +547,7 @@ public class TrackGroup
             removedIds = _memberTrackIds.ToList();
             _memberTrackIds.Clear();
             _memberChannels.Clear();
+            _genericChannels.Clear();
         }
 
         foreach (var trackId in removedIds)
@@ -455,6 +555,361 @@ public class TrackGroup
             MembershipChanged?.Invoke(this, new GroupMembershipChangedEventArgs(trackId, false));
         }
     }
+
+    #region IAudioChannel Support
+
+    /// <summary>
+    /// Adds an IAudioChannel track to this group.
+    /// </summary>
+    /// <param name="track">The audio channel to add.</param>
+    public void AddTrack(IAudioChannel track)
+    {
+        ArgumentNullException.ThrowIfNull(track);
+
+        lock (_lock)
+        {
+            if (!_genericChannels.Contains(track))
+            {
+                _genericChannels.Add(track);
+                if (!_memberTrackIds.Contains(track.Name))
+                {
+                    _memberTrackIds.Add(track.Name);
+                }
+            }
+        }
+
+        TrackAdded?.Invoke(this, new TrackAddedEventArgs(track));
+    }
+
+    /// <summary>
+    /// Removes an IAudioChannel track from this group.
+    /// </summary>
+    /// <param name="track">The audio channel to remove.</param>
+    /// <returns>True if removed, false if not a member.</returns>
+    public bool RemoveTrack(IAudioChannel track)
+    {
+        if (track == null)
+            return false;
+
+        bool removed;
+
+        lock (_lock)
+        {
+            removed = _genericChannels.Remove(track);
+            if (removed)
+            {
+                _memberTrackIds.Remove(track.Name);
+            }
+        }
+
+        if (removed)
+        {
+            TrackRemoved?.Invoke(this, new TrackRemovedEventArgs(track));
+        }
+
+        return removed;
+    }
+
+    /// <summary>
+    /// Gets all IAudioChannel tracks in this group.
+    /// </summary>
+    /// <returns>A list of audio channels.</returns>
+    public IReadOnlyList<IAudioChannel> GetTracks()
+    {
+        lock (_lock)
+        {
+            return _genericChannels.ToList();
+        }
+    }
+
+    #endregion
+
+    #region Nested Groups Support
+
+    /// <summary>
+    /// Creates a new child group within this group.
+    /// </summary>
+    /// <param name="name">The name of the child group.</param>
+    /// <returns>The newly created child group.</returns>
+    public TrackGroup CreateChildGroup(string name)
+    {
+        var childGroup = new TrackGroup(name)
+        {
+            Parent = this
+        };
+
+        lock (_lock)
+        {
+            _childGroups.Add(childGroup);
+        }
+
+        ChildGroupAdded?.Invoke(this, childGroup);
+        return childGroup;
+    }
+
+    /// <summary>
+    /// Adds an existing group as a child of this group.
+    /// </summary>
+    /// <param name="group">The group to add as a child.</param>
+    /// <exception cref="ArgumentNullException">Thrown if group is null.</exception>
+    /// <exception cref="InvalidOperationException">Thrown if adding would create a circular reference.</exception>
+    public void AddChildGroup(TrackGroup group)
+    {
+        ArgumentNullException.ThrowIfNull(group);
+
+        // Check for circular reference
+        if (IsDescendantOf(group))
+        {
+            throw new InvalidOperationException("Cannot add a group as a child of its descendant (circular reference).");
+        }
+
+        if (group == this)
+        {
+            throw new InvalidOperationException("Cannot add a group as a child of itself.");
+        }
+
+        lock (_lock)
+        {
+            if (!_childGroups.Contains(group))
+            {
+                // Remove from previous parent if any
+                group.Parent?.RemoveChildGroup(group);
+
+                group.Parent = this;
+                _childGroups.Add(group);
+            }
+        }
+
+        ChildGroupAdded?.Invoke(this, group);
+    }
+
+    /// <summary>
+    /// Removes a child group from this group.
+    /// </summary>
+    /// <param name="group">The group to remove.</param>
+    /// <returns>True if the group was removed, false if it was not a child.</returns>
+    public bool RemoveChildGroup(TrackGroup group)
+    {
+        if (group == null)
+            return false;
+
+        bool removed;
+
+        lock (_lock)
+        {
+            removed = _childGroups.Remove(group);
+            if (removed)
+            {
+                group.Parent = null;
+            }
+        }
+
+        if (removed)
+        {
+            ChildGroupRemoved?.Invoke(this, group);
+        }
+
+        return removed;
+    }
+
+    /// <summary>
+    /// Gets a read-only list of child groups.
+    /// </summary>
+    /// <returns>A list of child groups.</returns>
+    public IReadOnlyList<TrackGroup> GetChildGroups()
+    {
+        lock (_lock)
+        {
+            return _childGroups.ToList();
+        }
+    }
+
+    /// <summary>
+    /// Gets all tracks recursively, including tracks from all child groups.
+    /// </summary>
+    /// <returns>An enumerable of all tracks in this group and its descendants.</returns>
+    public IEnumerable<IAudioChannel> GetAllTracksRecursive()
+    {
+        lock (_lock)
+        {
+            // Yield direct tracks
+            foreach (var track in _genericChannels)
+            {
+                yield return track;
+            }
+
+            // Yield tracks from child groups recursively
+            foreach (var childGroup in _childGroups)
+            {
+                foreach (var track in childGroup.GetAllTracksRecursive())
+                {
+                    yield return track;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Gets the total count of all tracks in this group and all descendant groups.
+    /// </summary>
+    /// <returns>The total number of tracks.</returns>
+    public int GetTotalTrackCount()
+    {
+        lock (_lock)
+        {
+            int count = _memberTrackIds.Count;
+
+            foreach (var childGroup in _childGroups)
+            {
+                count += childGroup.GetTotalTrackCount();
+            }
+
+            return count;
+        }
+    }
+
+    /// <summary>
+    /// Gets the nesting depth of this group in the hierarchy.
+    /// </summary>
+    /// <returns>0 for top-level groups, 1 for first-level children, etc.</returns>
+    public int GetDepth()
+    {
+        int depth = 0;
+        var current = Parent;
+        while (current != null)
+        {
+            depth++;
+            current = current.Parent;
+        }
+        return depth;
+    }
+
+    /// <summary>
+    /// Checks if this group is a descendant of the specified group.
+    /// </summary>
+    /// <param name="potentialAncestor">The group to check as a potential ancestor.</param>
+    /// <returns>True if this group is a descendant of the specified group.</returns>
+    private bool IsDescendantOf(TrackGroup potentialAncestor)
+    {
+        var current = Parent;
+        while (current != null)
+        {
+            if (current == potentialAncestor)
+                return true;
+            current = current.Parent;
+        }
+        return false;
+    }
+
+    #endregion
+
+    #region Effective State Methods
+
+    /// <summary>
+    /// Checks if this group or any of its parent groups is muted.
+    /// </summary>
+    /// <returns>True if this group or any ancestor is muted.</returns>
+    public bool IsEffectivelyMuted()
+    {
+        if (Mute)
+            return true;
+
+        return Parent?.IsEffectivelyMuted() ?? false;
+    }
+
+    /// <summary>
+    /// Checks if this group or any of its parent groups is soloed.
+    /// </summary>
+    /// <returns>True if this group or any ancestor is soloed.</returns>
+    public bool IsEffectivelySoloed()
+    {
+        if (Solo)
+            return true;
+
+        return Parent?.IsEffectivelySoloed() ?? false;
+    }
+
+    /// <summary>
+    /// Gets the effective volume considering all parent group volumes.
+    /// </summary>
+    /// <returns>The combined volume from this group and all ancestors.</returns>
+    public float GetEffectiveVolume()
+    {
+        float effectiveVolume = Volume;
+
+        if (Parent != null)
+        {
+            effectiveVolume *= Parent.GetEffectiveVolume();
+        }
+
+        return Math.Clamp(effectiveVolume, 0f, 2f);
+    }
+
+    /// <summary>
+    /// Applies the group settings (volume, mute, solo) to all child tracks.
+    /// This method propagates settings through the hierarchy.
+    /// </summary>
+    public void ApplyGroupSettings()
+    {
+        lock (_lock)
+        {
+            // Apply to direct tracks
+            foreach (var channel in _memberChannels)
+            {
+                if (IsEffectivelyMuted())
+                    channel.Mute = true;
+                if (IsEffectivelySoloed())
+                    channel.Solo = true;
+            }
+
+            foreach (var track in _genericChannels)
+            {
+                if (IsEffectivelyMuted())
+                    track.Mute = true;
+                if (IsEffectivelySoloed())
+                    track.Solo = true;
+            }
+
+            // Apply to child groups
+            foreach (var childGroup in _childGroups)
+            {
+                childGroup.ApplyGroupSettings();
+            }
+        }
+
+        GroupSettingsChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    #endregion
+
+    #region Events
+
+    /// <summary>
+    /// Event raised when a track is added to this group.
+    /// </summary>
+    public event EventHandler<TrackAddedEventArgs>? TrackAdded;
+
+    /// <summary>
+    /// Event raised when a track is removed from this group.
+    /// </summary>
+    public event EventHandler<TrackRemovedEventArgs>? TrackRemoved;
+
+    /// <summary>
+    /// Event raised when group settings change (volume, mute, solo, collapsed).
+    /// </summary>
+    public event EventHandler? GroupSettingsChanged;
+
+    /// <summary>
+    /// Event raised when a child group is added.
+    /// </summary>
+    public event EventHandler<TrackGroup>? ChildGroupAdded;
+
+    /// <summary>
+    /// Event raised when a child group is removed.
+    /// </summary>
+    public event EventHandler<TrackGroup>? ChildGroupRemoved;
+
+    #endregion
 
     /// <summary>
     /// Applies the group volume to all member channels.
@@ -514,6 +969,26 @@ public class TrackGroup
         string soloState = _solo ? " [S]" : "";
         return $"{Name} ({Count} tracks){muteState}{soloState}{foldState}";
     }
+
+    /// <summary>
+    /// Disposes of all resources used by this track group.
+    /// </summary>
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+
+        lock (_lock)
+        {
+            _memberTrackIds.Clear();
+            _memberChannels.Clear();
+            _genericChannels.Clear();
+            _childGroups.Clear();
+            _disposed = true;
+        }
+
+        GC.SuppressFinalize(this);
+    }
 }
 
 
@@ -540,6 +1015,48 @@ public class GroupMembershipChangedEventArgs : EventArgs
     /// True if the track was added, false if removed.
     /// </summary>
     public bool Added { get; }
+}
+
+
+/// <summary>
+/// Event arguments for when a track is added to a group.
+/// </summary>
+public class TrackAddedEventArgs : EventArgs
+{
+    /// <summary>
+    /// Gets the track that was added.
+    /// </summary>
+    public IAudioChannel Track { get; }
+
+    /// <summary>
+    /// Creates new track added event arguments.
+    /// </summary>
+    /// <param name="track">The track that was added.</param>
+    public TrackAddedEventArgs(IAudioChannel track)
+    {
+        Track = track ?? throw new ArgumentNullException(nameof(track));
+    }
+}
+
+
+/// <summary>
+/// Event arguments for when a track is removed from a group.
+/// </summary>
+public class TrackRemovedEventArgs : EventArgs
+{
+    /// <summary>
+    /// Gets the track that was removed.
+    /// </summary>
+    public IAudioChannel Track { get; }
+
+    /// <summary>
+    /// Creates new track removed event arguments.
+    /// </summary>
+    /// <param name="track">The track that was removed.</param>
+    public TrackRemovedEventArgs(IAudioChannel track)
+    {
+        Track = track ?? throw new ArgumentNullException(nameof(track));
+    }
 }
 
 

@@ -102,6 +102,7 @@ public class Sequencer : IDisposable
 
     // Tempo and time signature tracking
     private TempoTrack? _tempoTrack;
+    private TimeSignatureTrack? _timeSignatureTrack;
 
     // Arrangement support
     private Arrangement? _arrangement;
@@ -115,6 +116,9 @@ public class Sequencer : IDisposable
     private Metronome? _metronome;
     private bool _enableMetronome = false;
     private bool _isWaitingForCountIn = false;
+
+    // Punch recording support
+    private readonly PunchRecording _punchSettings = new();
 
     // Event emission for visualization
     private readonly object _eventLock = new();
@@ -170,6 +174,12 @@ public class Sequencer : IDisposable
 
     /// <summary>Fired when the arrangement is changed.</summary>
     public event EventHandler<ArrangementChangedEventArgs>? ArrangementSet;
+
+    /// <summary>Fired when punch-in is triggered during recording.</summary>
+    public event EventHandler<PunchEventArgs>? PunchInTriggered;
+
+    /// <summary>Fired when punch-out is triggered during recording.</summary>
+    public event EventHandler<PunchOutEventArgs>? PunchOutTriggered;
 
     // Properties for BPM and current beat
     public double Bpm
@@ -322,6 +332,29 @@ public class Sequencer : IDisposable
                 _tempoTrack.SampleRate = _sampleRate;
                 _bpm = _tempoTrack.DefaultBpm;
                 UpdateTimingParameters();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Gets or sets the time signature track for managing time signature changes throughout the project.
+    /// This provides a dedicated track for time signature management separate from the tempo track.
+    /// </summary>
+    public TimeSignatureTrack? TimeSignatureTrack
+    {
+        get => _timeSignatureTrack;
+        set
+        {
+            if (_timeSignatureTrack != null)
+            {
+                _timeSignatureTrack.TimeSignatureChanged -= OnTimeSignatureTrackChanged;
+            }
+
+            _timeSignatureTrack = value;
+
+            if (_timeSignatureTrack != null)
+            {
+                _timeSignatureTrack.TimeSignatureChanged += OnTimeSignatureTrackChanged;
             }
         }
     }
@@ -531,12 +564,51 @@ public class Sequencer : IDisposable
     public bool IsWaitingForCountIn => _isWaitingForCountIn;
 
     /// <summary>
+    /// Gets the punch recording settings for punch in/out recording.
+    /// </summary>
+    public PunchRecording PunchSettings => _punchSettings;
+
+    /// <summary>
+    /// Gets whether the sequencer is currently in the punch recording region.
+    /// Returns true if punch recording is not enabled or if in the punch region.
+    /// </summary>
+    public bool IsInPunchRegion => !_punchSettings.IsActive || _punchSettings.IsInPunchRegion(_beatAccumulator);
+
+    /// <summary>
     /// Creates a new sequencer with default settings (backward compatible).
     /// </summary>
     public Sequencer()
     {
         _tempoTrack = new TempoTrack(_bpm, TimeSignature.Common, _sampleRate);
         UpdateTimingParameters();
+        InitializePunchRecording();
+    }
+
+    /// <summary>
+    /// Initializes punch recording event handlers.
+    /// </summary>
+    private void InitializePunchRecording()
+    {
+        _punchSettings.PunchInTriggered += OnPunchInTriggered;
+        _punchSettings.PunchOutTriggered += OnPunchOutTriggered;
+    }
+
+    /// <summary>
+    /// Handles the punch-in event from PunchRecording.
+    /// </summary>
+    private void OnPunchInTriggered(object? sender, PunchEventArgs e)
+    {
+        _logger?.LogInformation("Punch-in triggered at beat {Beat}", e.Beat);
+        PunchInTriggered?.Invoke(this, e);
+    }
+
+    /// <summary>
+    /// Handles the punch-out event from PunchRecording.
+    /// </summary>
+    private void OnPunchOutTriggered(object? sender, PunchOutEventArgs e)
+    {
+        _logger?.LogInformation("Punch-out triggered at beat {Beat}, recorded {Duration} beats", e.Beat, e.RecordedDurationBeats);
+        PunchOutTriggered?.Invoke(this, e);
     }
 
     /// <summary>
@@ -1147,6 +1219,9 @@ public class Sequencer : IDisposable
         _jitterCompensationMs = 0;
         _samplePosition = 0;
 
+        // Reset punch recording state
+        _punchSettings.Reset();
+
         // Start MIDI clock if enabled
         if (_midiClockSync != null && _midiClockSync.Mode != MidiClockMode.External)
         {
@@ -1208,6 +1283,51 @@ public class Sequencer : IDisposable
         {
             _beatAccumulator += beats;
             _midiClockSync?.SetPosition(_beatAccumulator);
+        }
+    }
+
+    /// <summary>
+    /// Starts playback for punch recording with pre-roll.
+    /// Automatically positions playback at the pre-roll start position before punch-in.
+    /// </summary>
+    /// <param name="beatsPerBar">Number of beats per bar for pre-roll calculation. Default is 4 (for 4/4 time).</param>
+    public void StartWithPunchPreRoll(double beatsPerBar = 4.0)
+    {
+        if (!_punchSettings.PunchInEnabled)
+        {
+            // No punch-in set, just start normally
+            Start();
+            return;
+        }
+
+        // Position at pre-roll start
+        var preRollStart = _punchSettings.GetPreRollStartBeat(beatsPerBar);
+        lock (_patterns)
+        {
+            _beatAccumulator = preRollStart;
+            _midiClockSync?.SetPosition(_beatAccumulator);
+        }
+
+        _logger?.LogInformation("Starting punch recording with pre-roll at beat {PreRollStart}, punch-in at {PunchIn}",
+            preRollStart, _punchSettings.PunchInBeat);
+
+        Start();
+    }
+
+    /// <summary>
+    /// Sets the punch region and optionally starts playback with pre-roll.
+    /// </summary>
+    /// <param name="punchInBeat">The punch-in position in beats.</param>
+    /// <param name="punchOutBeat">The punch-out position in beats.</param>
+    /// <param name="startImmediately">Whether to start playback immediately with pre-roll.</param>
+    /// <param name="beatsPerBar">Number of beats per bar for pre-roll calculation.</param>
+    public void SetPunchRegionAndStart(double punchInBeat, double punchOutBeat, bool startImmediately = true, double beatsPerBar = 4.0)
+    {
+        _punchSettings.SetPunchRegion(punchInBeat, punchOutBeat, true);
+
+        if (startImmediately)
+        {
+            StartWithPunchPreRoll(beatsPerBar);
         }
     }
 
@@ -1490,6 +1610,9 @@ public class Sequencer : IDisposable
                     // Process arrangement clips (AudioClips and MidiClips)
                     ProcessArrangementClips(lastProcessedBeat, nextBeat);
 
+                    // Process punch in/out events
+                    _punchSettings.Process(nextBeat);
+
                     lastProcessedBeat = nextBeat; // Update last processed beat
                 }
 
@@ -1625,6 +1748,9 @@ public class Sequencer : IDisposable
                     // Process arrangement clips (AudioClips and MidiClips)
                     ProcessArrangementClips(lastProcessedBeat, nextBeat);
 
+                    // Process punch in/out events
+                    _punchSettings.Process(nextBeat);
+
                     lastProcessedBeat = nextBeat;
                 }
 
@@ -1658,6 +1784,14 @@ public class Sequencer : IDisposable
             _highResTimer?.Dispose();
             _highResTimer = null;
         }
+    }
+
+    // Time signature track event handler
+    private void OnTimeSignatureTrackChanged(object? sender, TimeSignatureTrackChangedEventArgs e)
+    {
+        // Relay the event as a TimeSignatureChangedEventArgs
+        var oldTimeSignature = _tempoTrack?.GetTimeSignatureAt(e.BarNumber) ?? TimeSignature.Common;
+        TimeSignatureChanged?.Invoke(this, new TimeSignatureChangedEventArgs(e.BarNumber, oldTimeSignature, e.NewTimeSignature));
     }
 
     // MIDI clock event handlers
@@ -1959,6 +2093,17 @@ public class Sequencer : IDisposable
         // Dispose MIDI clock sync
         _midiClockSync?.Dispose();
         _midiClockSync = null;
+
+        // Unsubscribe from time signature track
+        if (_timeSignatureTrack != null)
+        {
+            _timeSignatureTrack.TimeSignatureChanged -= OnTimeSignatureTrackChanged;
+            _timeSignatureTrack = null;
+        }
+
+        // Detach punch recording events
+        _punchSettings.PunchInTriggered -= OnPunchInTriggered;
+        _punchSettings.PunchOutTriggered -= OnPunchOutTriggered;
 
         GC.SuppressFinalize(this);
     }
