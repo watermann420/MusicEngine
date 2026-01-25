@@ -6,7 +6,7 @@ Zwei C# .NET 10 Projekte für Audio/Musik-Produktion:
 ### 1. MusicEngine (Engine/Library)
 **Pfad:** `C:\Users\null\RiderProjects\MusicEngine`
 
-- Audio-Engine mit Synthesizern (SimpleSynth, PolySynth, SFZ Sampler)
+- Audio-Engine mit Synthesizern (SimpleSynth, PolySynth, SFZ Sampler, SampleSynth, SpeechSynth)
 - VST2/VST3 Plugin Hosting via VST.NET
 - Sequencer mit Pattern-basierter Komposition
 - MIDI Input/Output mit NAudio.Midi
@@ -53,6 +53,8 @@ MusicEngine/
 │   ├── SimpleSynth.cs          # Monophoner Synthesizer
 │   ├── PolySynth.cs            # Polyphoner Synthesizer mit Voice Stealing
 │   ├── SfzSampler.cs           # SFZ Sample Player
+│   ├── SampleSynth.cs          # Multi-Sample Synth (Velocity Layers, Round-Robin, Loop-Modi)
+│   ├── SpeechSynth.cs          # Formant-Synthesizer (TTS, Singing, Vowel Morphing)
 │   ├── VstHost.cs              # VST Plugin Management
 │   ├── VstHostAsync.cs         # Async VST Operations
 │   ├── VstPlugin.cs            # VST2 Plugin Wrapper
