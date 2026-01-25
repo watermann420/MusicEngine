@@ -4,6 +4,11 @@
 // Description: Represents an audio clip in the arrangement timeline.
 
 using System;
+using MusicEngine.Core.Analysis;
+using MusicEngine.Core.Warp;
+
+using WarpMarker = MusicEngine.Core.Warp.WarpMarker;
+using WarpMarkerType = MusicEngine.Core.Warp.WarpMarkerType;
 
 namespace MusicEngine.Core;
 
@@ -99,6 +104,27 @@ public class AudioClip : IEquatable<AudioClip>
 
     /// <summary>Whether warp/time-stretch is enabled.</summary>
     public bool IsWarpEnabled { get; set; }
+
+    /// <summary>The audio warp processor for elastic audio support.</summary>
+    public AudioWarpProcessor? WarpProcessor { get; private set; }
+
+    /// <summary>Detected BPM of the original audio (set by tempo detection).</summary>
+    public double? DetectedBpm { get; set; }
+
+    /// <summary>Original BPM (user-set or detected).</summary>
+    public double OriginalBpm { get; set; } = 120.0;
+
+    /// <summary>Audio sample rate for warp calculations.</summary>
+    public int SampleRate { get; set; } = 44100;
+
+    /// <summary>Number of audio channels.</summary>
+    public int Channels { get; set; } = 2;
+
+    /// <summary>Total number of samples in the audio file.</summary>
+    public long TotalSamples { get; set; }
+
+    /// <summary>Raw audio data for processing (mono or interleaved stereo).</summary>
+    public float[]? AudioData { get; set; }
 
     /// <summary>Creation timestamp.</summary>
     public DateTime CreatedAt { get; } = DateTime.UtcNow;
@@ -301,8 +327,45 @@ public class AudioClip : IEquatable<AudioClip>
             IsReversed = IsReversed,
             IsWarpEnabled = IsWarpEnabled,
             FadeOutDuration = FadeOutDuration,
-            FadeOutType = FadeOutType
+            FadeOutType = FadeOutType,
+            DetectedBpm = DetectedBpm,
+            OriginalBpm = OriginalBpm,
+            SampleRate = SampleRate,
+            Channels = Channels,
+            TotalSamples = TotalSamples,
+            AudioData = AudioData
         };
+
+        // Handle warp processor split
+        if (WarpProcessor != null && IsWarpEnabled)
+        {
+            // Calculate split position in samples
+            double splitSeconds = splitOffset * 60.0 / WarpProcessor.Bpm;
+            long splitSampleOffset = (long)(splitSeconds * SampleRate);
+            long remainingSamples = TotalSamples - splitSampleOffset;
+
+            // Initialize warp for new clip
+            newClip.EnableWarping(false);
+            if (newClip.WarpProcessor != null)
+            {
+                newClip.WarpProcessor.Bpm = WarpProcessor.Bpm;
+                newClip.WarpProcessor.TotalOriginalSamples = remainingSamples;
+
+                // Copy markers that are after split point
+                foreach (var marker in WarpProcessor.Markers)
+                {
+                    if (marker.OriginalPositionSamples > splitSampleOffset &&
+                        marker.MarkerType != WarpMarkerType.Start &&
+                        marker.MarkerType != WarpMarkerType.End)
+                    {
+                        newClip.WarpProcessor.AddMarker(
+                            marker.OriginalPositionSamples - splitSampleOffset,
+                            marker.WarpedPositionSamples - splitSampleOffset,
+                            marker.MarkerType);
+                    }
+                }
+            }
+        }
 
         // Adjust this clip
         Length = splitOffset;
@@ -319,7 +382,7 @@ public class AudioClip : IEquatable<AudioClip>
     /// <returns>A new clip with the same properties.</returns>
     public AudioClip Duplicate(double? newStartPosition = null)
     {
-        return new AudioClip
+        var duplicate = new AudioClip
         {
             FilePath = FilePath,
             Name = Name + " (copy)",
@@ -337,8 +400,37 @@ public class AudioClip : IEquatable<AudioClip>
             TimeStretchFactor = TimeStretchFactor,
             PitchShiftSemitones = PitchShiftSemitones,
             IsReversed = IsReversed,
-            IsWarpEnabled = IsWarpEnabled
+            IsWarpEnabled = IsWarpEnabled,
+            DetectedBpm = DetectedBpm,
+            OriginalBpm = OriginalBpm,
+            SampleRate = SampleRate,
+            Channels = Channels,
+            TotalSamples = TotalSamples,
+            AudioData = AudioData // Share reference to audio data
         };
+
+        // Copy warp processor state if exists
+        if (WarpProcessor != null && IsWarpEnabled)
+        {
+            duplicate.EnableWarping(false);
+            if (duplicate.WarpProcessor != null)
+            {
+                duplicate.WarpProcessor.Bpm = WarpProcessor.Bpm;
+                // Copy warp markers
+                foreach (var marker in WarpProcessor.Markers)
+                {
+                    if (marker.MarkerType != WarpMarkerType.Start && marker.MarkerType != WarpMarkerType.End)
+                    {
+                        duplicate.WarpProcessor.AddMarker(
+                            marker.OriginalPositionSamples,
+                            marker.WarpedPositionSamples,
+                            marker.MarkerType);
+                    }
+                }
+            }
+        }
+
+        return duplicate;
     }
 
     /// <summary>
@@ -348,6 +440,210 @@ public class AudioClip : IEquatable<AudioClip>
     {
         ModifiedAt = DateTime.UtcNow;
     }
+
+    #region Warping Methods
+
+    /// <summary>
+    /// Enables warping for this clip with optional auto-detection of transients.
+    /// Creates a WarpProcessor if one does not exist.
+    /// </summary>
+    /// <param name="autoDetectTransients">Whether to auto-detect transients for warp markers.</param>
+    public void EnableWarping(bool autoDetectTransients = true)
+    {
+        if (WarpProcessor == null)
+        {
+            WarpProcessor = new AudioWarpProcessor(SampleRate, OriginalBpm, TotalSamples);
+
+            if (autoDetectTransients && AudioData != null)
+            {
+                // Convert to mono for transient detection if stereo
+                float[] monoData;
+                if (Channels == 2)
+                {
+                    monoData = new float[AudioData.Length / 2];
+                    for (int i = 0; i < monoData.Length; i++)
+                    {
+                        monoData[i] = (AudioData[i * 2] + AudioData[i * 2 + 1]) * 0.5f;
+                    }
+                }
+                else
+                {
+                    monoData = AudioData;
+                }
+
+                WarpProcessor.DetectTransients(monoData);
+            }
+        }
+
+        IsWarpEnabled = true;
+        Touch();
+    }
+
+    /// <summary>
+    /// Disables warping (reverts to original audio playback).
+    /// </summary>
+    public void DisableWarping()
+    {
+        IsWarpEnabled = false;
+        Touch();
+    }
+
+    /// <summary>
+    /// Gets the stretch ratio at a specific position in the clip.
+    /// </summary>
+    /// <param name="positionSamples">Position in warped output (samples).</param>
+    /// <returns>Stretch ratio (1.0 = no stretch, 0.5 = half speed, 2.0 = double speed).</returns>
+    public double GetStretchRatioAt(long positionSamples)
+    {
+        if (WarpProcessor == null || !IsWarpEnabled)
+            return 1.0;
+
+        return WarpProcessor.GetStretchRatioAt(positionSamples);
+    }
+
+    /// <summary>
+    /// Quantizes the audio to match the project tempo using warp markers.
+    /// </summary>
+    /// <param name="projectBpm">Target project tempo in BPM.</param>
+    /// <param name="gridResolution">Grid resolution in beats (default: 0.25 for 16th notes).</param>
+    public void QuantizeToTempo(double projectBpm, double gridResolution = 0.25)
+    {
+        if (WarpProcessor == null)
+        {
+            EnableWarping(true);
+        }
+
+        if (WarpProcessor != null)
+        {
+            WarpProcessor.Bpm = projectBpm;
+            WarpProcessor.QuantizeToGrid(gridResolution);
+        }
+
+        Touch();
+    }
+
+    /// <summary>
+    /// Adds a warp marker at the specified position.
+    /// </summary>
+    /// <param name="originalPositionSamples">Position in original audio (samples).</param>
+    /// <param name="warpedPositionSamples">Position in warped output (samples).</param>
+    /// <param name="markerType">Type of warp marker.</param>
+    /// <returns>The created warp marker, or null if warping is not enabled.</returns>
+    public Warp.WarpMarker? AddWarpMarker(long originalPositionSamples, long warpedPositionSamples, WarpMarkerType markerType = WarpMarkerType.User)
+    {
+        if (WarpProcessor == null)
+        {
+            EnableWarping(false);
+        }
+
+        var marker = WarpProcessor?.AddMarker(originalPositionSamples, warpedPositionSamples, markerType);
+        if (marker != null)
+        {
+            Touch();
+        }
+        return marker;
+    }
+
+    /// <summary>
+    /// Removes a warp marker.
+    /// </summary>
+    /// <param name="marker">The marker to remove.</param>
+    /// <returns>True if the marker was removed.</returns>
+    public bool RemoveWarpMarker(Warp.WarpMarker marker)
+    {
+        if (WarpProcessor == null)
+            return false;
+
+        bool result = WarpProcessor.RemoveMarker(marker);
+        if (result)
+        {
+            Touch();
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Clears all user-placed warp markers.
+    /// </summary>
+    public void ClearUserWarpMarkers()
+    {
+        WarpProcessor?.ClearUserMarkers();
+        Touch();
+    }
+
+    /// <summary>
+    /// Resets all warp markers to their original positions (no warping effect).
+    /// </summary>
+    public void ResetWarp()
+    {
+        WarpProcessor?.ResetWarp();
+        Touch();
+    }
+
+    /// <summary>
+    /// Detects the tempo of the audio and sets DetectedBpm.
+    /// </summary>
+    /// <returns>The detected BPM, or null if detection failed.</returns>
+    public double? DetectTempo()
+    {
+        if (AudioData == null || AudioData.Length == 0)
+            return null;
+
+        // Convert to mono for tempo detection if stereo
+        float[] monoData;
+        if (Channels == 2)
+        {
+            monoData = new float[AudioData.Length / 2];
+            for (int i = 0; i < monoData.Length; i++)
+            {
+                monoData[i] = (AudioData[i * 2] + AudioData[i * 2 + 1]) * 0.5f;
+            }
+        }
+        else
+        {
+            monoData = AudioData;
+        }
+
+        var detector = new TempoDetector(SampleRate);
+        var result = detector.AnalyzeBuffer(monoData, SampleRate);
+
+        if (result.Confidence > 0.3)
+        {
+            DetectedBpm = result.DetectedBpm;
+            OriginalBpm = result.DetectedBpm;
+            return result.DetectedBpm;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Maps a warped (output) position back to its original position in the source audio.
+    /// </summary>
+    /// <param name="warpedPositionSamples">Position in warped output (samples).</param>
+    /// <returns>Corresponding position in original audio (samples).</returns>
+    public long WarpedToOriginal(long warpedPositionSamples)
+    {
+        if (WarpProcessor == null || !IsWarpEnabled)
+            return warpedPositionSamples;
+
+        return WarpProcessor.WarpedToOriginal(warpedPositionSamples);
+    }
+
+    /// <summary>
+    /// Maps an original position to its warped (output) position.
+    /// </summary>
+    /// <param name="originalPositionSamples">Position in original audio (samples).</param>
+    /// <returns>Corresponding position in warped output (samples).</returns>
+    public long OriginalToWarped(long originalPositionSamples)
+    {
+        if (WarpProcessor == null || !IsWarpEnabled)
+            return originalPositionSamples;
+
+        return WarpProcessor.OriginalToWarped(originalPositionSamples);
+    }
+
+    #endregion
 
     public bool Equals(AudioClip? other)
     {

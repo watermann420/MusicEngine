@@ -4,6 +4,8 @@
 // Description: Represents a region between two warp markers with calculated stretch ratio.
 
 using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace MusicEngine.Core.Warp;
 
@@ -278,4 +280,425 @@ public class WarpRegion
     public override string ToString() =>
         $"WarpRegion [{StartMarker.OriginalPositionSamples}-{EndMarker.OriginalPositionSamples}] " +
         $"Ratio: {StretchRatio:F3} ({Algorithm})";
+}
+
+/// <summary>
+/// Represents a collection of warp markers for an audio region with time-stretching capabilities.
+/// Manages the relationship between original audio time and warped musical time.
+/// This class implements the container/manager pattern for warp markers.
+/// </summary>
+public class WarpMarkerCollection
+{
+    private readonly List<WarpMarker> _markers = new();
+    private readonly object _lock = new();
+
+    /// <summary>Audio sample rate for time calculations.</summary>
+    public int SampleRate { get; }
+
+    /// <summary>Total length of the audio in samples.</summary>
+    public long TotalSamples { get; }
+
+    /// <summary>Total duration of the audio in seconds.</summary>
+    public double TotalDurationSeconds => (double)TotalSamples / SampleRate;
+
+    /// <summary>BPM used for beat calculations.</summary>
+    public double Bpm { get; set; } = 120.0;
+
+    /// <summary>Whether warping is enabled for this region.</summary>
+    public bool WarpEnabled { get; set; } = true;
+
+    /// <summary>Event raised when a marker is added.</summary>
+    public event EventHandler<WarpMarkerEventArgs>? MarkerAdded;
+
+    /// <summary>Event raised when a marker is removed.</summary>
+    public event EventHandler<WarpMarkerEventArgs>? MarkerRemoved;
+
+    /// <summary>Event raised when a marker is moved.</summary>
+    public event EventHandler<WarpMarkerEventArgs>? MarkerMoved;
+
+    /// <summary>Event raised when warp configuration changes.</summary>
+    public event EventHandler? WarpChanged;
+
+    /// <summary>
+    /// Creates a new warp marker collection for the specified audio.
+    /// </summary>
+    /// <param name="sampleRate">Audio sample rate.</param>
+    /// <param name="totalSamples">Total length of the audio in samples.</param>
+    public WarpMarkerCollection(int sampleRate, long totalSamples)
+    {
+        SampleRate = sampleRate;
+        TotalSamples = totalSamples;
+
+        // Create anchor markers at start and end
+        var startMarker = new WarpMarker(0, sampleRate, 0, WarpMarkerType.Beat)
+        {
+            IsAnchor = true,
+            IsLocked = true,
+            Label = "Start"
+        };
+        var endMarker = new WarpMarker(totalSamples, sampleRate, TotalDurationSeconds * Bpm / 60.0, WarpMarkerType.Beat)
+        {
+            IsAnchor = true,
+            Label = "End"
+        };
+        _markers.Add(startMarker);
+        _markers.Add(endMarker);
+    }
+
+    /// <summary>
+    /// Adds a marker at the specified original sample position.
+    /// The warped beat position is calculated via interpolation from existing markers.
+    /// </summary>
+    /// <param name="originalSamplePosition">Position in original audio (samples).</param>
+    /// <param name="type">Type of marker to create.</param>
+    /// <returns>The created warp marker.</returns>
+    public WarpMarker AddMarker(long originalSamplePosition, WarpMarkerType type = WarpMarkerType.User)
+    {
+        // Calculate the warped beat position via interpolation
+        double warpedBeatPosition = OriginalToWarped(originalSamplePosition);
+
+        var marker = new WarpMarker(originalSamplePosition, SampleRate, warpedBeatPosition, type);
+
+        lock (_lock)
+        {
+            _markers.Add(marker);
+            _markers.Sort();
+        }
+
+        MarkerAdded?.Invoke(this, new WarpMarkerEventArgs(marker, _markers.IndexOf(marker)));
+        WarpChanged?.Invoke(this, EventArgs.Empty);
+
+        return marker;
+    }
+
+    /// <summary>
+    /// Adds a marker at a beat position (calculates original position via interpolation).
+    /// </summary>
+    /// <param name="beatPosition">Beat position for the marker.</param>
+    /// <param name="type">Type of marker to create.</param>
+    /// <returns>The created warp marker.</returns>
+    public WarpMarker AddMarkerAtBeat(double beatPosition, WarpMarkerType type = WarpMarkerType.User)
+    {
+        // Calculate original position from beat via interpolation
+        long originalSamplePosition = WarpedToOriginal(beatPosition);
+
+        var marker = new WarpMarker(originalSamplePosition, SampleRate, beatPosition, type);
+
+        lock (_lock)
+        {
+            _markers.Add(marker);
+            _markers.Sort();
+        }
+
+        MarkerAdded?.Invoke(this, new WarpMarkerEventArgs(marker, _markers.IndexOf(marker)));
+        WarpChanged?.Invoke(this, EventArgs.Empty);
+
+        return marker;
+    }
+
+    /// <summary>
+    /// Removes a marker by its ID.
+    /// </summary>
+    /// <param name="markerId">ID of the marker to remove.</param>
+    /// <returns>True if the marker was removed.</returns>
+    public bool RemoveMarker(string markerId)
+    {
+        lock (_lock)
+        {
+            var marker = _markers.FirstOrDefault(m => m.MarkerId == markerId);
+            if (marker == null || marker.IsLocked)
+                return false;
+
+            int index = _markers.IndexOf(marker);
+            _markers.Remove(marker);
+
+            MarkerRemoved?.Invoke(this, new WarpMarkerEventArgs(marker, index));
+            WarpChanged?.Invoke(this, EventArgs.Empty);
+
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Gets all markers sorted by original position.
+    /// </summary>
+    /// <returns>Read-only list of markers.</returns>
+    public IReadOnlyList<WarpMarker> GetMarkers()
+    {
+        lock (_lock)
+        {
+            return _markers.OrderBy(m => m.OriginalPositionSamples).ToList().AsReadOnly();
+        }
+    }
+
+    /// <summary>
+    /// Gets a marker at or near the specified position.
+    /// </summary>
+    /// <param name="samplePosition">Position in samples.</param>
+    /// <param name="tolerance">Search tolerance in samples.</param>
+    /// <returns>The nearest marker, or null if none found within tolerance.</returns>
+    public WarpMarker? GetMarkerNear(long samplePosition, long tolerance = 1000)
+    {
+        lock (_lock)
+        {
+            return _markers
+                .Where(m => Math.Abs(m.OriginalPositionSamples - samplePosition) <= tolerance)
+                .OrderBy(m => Math.Abs(m.OriginalPositionSamples - samplePosition))
+                .FirstOrDefault();
+        }
+    }
+
+    /// <summary>
+    /// Moves a marker's warped position to a new beat position.
+    /// </summary>
+    /// <param name="markerId">ID of the marker to move.</param>
+    /// <param name="newBeatPosition">New warped beat position.</param>
+    /// <returns>True if the marker was moved.</returns>
+    public bool MoveMarker(string markerId, double newBeatPosition)
+    {
+        lock (_lock)
+        {
+            var marker = _markers.FirstOrDefault(m => m.MarkerId == markerId);
+            if (marker == null || marker.IsLocked)
+                return false;
+
+            // Validate the new position doesn't cross adjacent markers
+            var sortedMarkers = _markers.OrderBy(m => m.OriginalPositionSamples).ToList();
+            int index = sortedMarkers.IndexOf(marker);
+
+            if (index > 0)
+            {
+                var prevMarker = sortedMarkers[index - 1];
+                if (newBeatPosition <= prevMarker.WarpedBeatPosition)
+                    return false;
+            }
+
+            if (index < sortedMarkers.Count - 1)
+            {
+                var nextMarker = sortedMarkers[index + 1];
+                if (newBeatPosition >= nextMarker.WarpedBeatPosition)
+                    return false;
+            }
+
+            marker.WarpedBeatPosition = newBeatPosition;
+            marker.Touch();
+
+            MarkerMoved?.Invoke(this, new WarpMarkerEventArgs(marker, index));
+            WarpChanged?.Invoke(this, EventArgs.Empty);
+
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Converts original sample position to warped beat position (interpolated).
+    /// </summary>
+    /// <param name="originalSamplePosition">Position in original audio (samples).</param>
+    /// <returns>Warped beat position.</returns>
+    public double OriginalToWarped(long originalSamplePosition)
+    {
+        var (before, after) = GetSurroundingMarkers(originalSamplePosition);
+
+        if (before == null && after == null)
+        {
+            // No markers, use linear mapping
+            double originalSeconds = (double)originalSamplePosition / SampleRate;
+            return originalSeconds * Bpm / 60.0;
+        }
+
+        if (before == null)
+            return after!.WarpedBeatPosition;
+
+        if (after == null || before == after)
+            return before.WarpedBeatPosition;
+
+        // Linear interpolation between markers
+        double t = (double)(originalSamplePosition - before.OriginalPositionSamples) /
+                   (after.OriginalPositionSamples - before.OriginalPositionSamples);
+        return before.WarpedBeatPosition + t * (after.WarpedBeatPosition - before.WarpedBeatPosition);
+    }
+
+    /// <summary>
+    /// Converts warped beat position to original sample position (interpolated).
+    /// </summary>
+    /// <param name="warpedBeatPosition">Warped beat position.</param>
+    /// <returns>Original sample position.</returns>
+    public long WarpedToOriginal(double warpedBeatPosition)
+    {
+        var sortedMarkers = GetMarkers();
+
+        if (sortedMarkers.Count < 2)
+        {
+            // No markers, use linear mapping
+            double seconds = warpedBeatPosition * 60.0 / Bpm;
+            return (long)(seconds * SampleRate);
+        }
+
+        // Find surrounding markers by beat position
+        WarpMarker? before = null;
+        WarpMarker? after = null;
+
+        foreach (var marker in sortedMarkers)
+        {
+            if (marker.WarpedBeatPosition <= warpedBeatPosition)
+                before = marker;
+            if (marker.WarpedBeatPosition >= warpedBeatPosition && after == null)
+                after = marker;
+        }
+
+        if (before == null)
+            return sortedMarkers[0].OriginalPositionSamples;
+
+        if (after == null || before == after)
+            return before.OriginalPositionSamples;
+
+        // Linear interpolation between markers
+        double t = (warpedBeatPosition - before.WarpedBeatPosition) /
+                   (after.WarpedBeatPosition - before.WarpedBeatPosition);
+        return (long)(before.OriginalPositionSamples +
+                      t * (after.OriginalPositionSamples - before.OriginalPositionSamples));
+    }
+
+    /// <summary>
+    /// Gets the time stretch ratio at a given original position.
+    /// Ratio > 1.0 means stretched (slower), Ratio < 1.0 means compressed (faster).
+    /// </summary>
+    /// <param name="originalSamplePosition">Position in original audio (samples).</param>
+    /// <returns>Stretch ratio at the position.</returns>
+    public double GetStretchRatioAt(long originalSamplePosition)
+    {
+        var (before, after) = GetSurroundingMarkers(originalSamplePosition);
+
+        if (before == null || after == null || before == after)
+            return 1.0;
+
+        // Calculate stretch ratio between markers
+        // Stretch ratio = (WarpedDelta / BPM * 60) / OriginalDelta
+        double warpedDeltaBeats = after.WarpedBeatPosition - before.WarpedBeatPosition;
+        double warpedDeltaSeconds = warpedDeltaBeats * 60.0 / Bpm;
+        double originalDeltaSeconds = (double)(after.OriginalPositionSamples - before.OriginalPositionSamples) / SampleRate;
+
+        if (originalDeltaSeconds <= 0)
+            return 1.0;
+
+        return warpedDeltaSeconds / originalDeltaSeconds;
+    }
+
+    /// <summary>
+    /// Gets the two markers surrounding a position.
+    /// </summary>
+    /// <param name="originalSamplePosition">Position in original audio (samples).</param>
+    /// <returns>Tuple of (marker before, marker after).</returns>
+    public (WarpMarker? before, WarpMarker? after) GetSurroundingMarkers(long originalSamplePosition)
+    {
+        lock (_lock)
+        {
+            var sortedMarkers = _markers.OrderBy(m => m.OriginalPositionSamples).ToList();
+
+            WarpMarker? before = null;
+            WarpMarker? after = null;
+
+            foreach (var marker in sortedMarkers)
+            {
+                if (marker.OriginalPositionSamples <= originalSamplePosition)
+                    before = marker;
+                if (marker.OriginalPositionSamples >= originalSamplePosition && after == null)
+                    after = marker;
+            }
+
+            return (before, after);
+        }
+    }
+
+    /// <summary>
+    /// Auto-detects transients and adds markers at transient positions.
+    /// </summary>
+    /// <param name="audioData">Mono audio samples to analyze.</param>
+    /// <param name="threshold">Detection threshold (0.0 to 1.0).</param>
+    public void AutoWarpFromTransients(float[] audioData, float threshold = 0.3f)
+    {
+        var detector = new MusicEngine.Core.Analysis.TransientDetector(SampleRate);
+        detector.Threshold = threshold;
+
+        var transients = detector.AnalyzeBuffer(audioData, SampleRate);
+
+        lock (_lock)
+        {
+            foreach (var transient in transients)
+            {
+                long positionSamples = (long)(transient.TimeSeconds * SampleRate);
+
+                // Check if a marker already exists near this position
+                if (GetMarkerNear(positionSamples, (long)(SampleRate * 0.01)) != null)
+                    continue;
+
+                var marker = AddMarker(positionSamples, WarpMarkerType.Transient);
+                marker.TransientStrength = transient.Strength;
+            }
+        }
+
+        WarpChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Quantizes all non-locked markers to the beat grid.
+    /// </summary>
+    /// <param name="gridSize">Grid size in beats (e.g., 0.25 for 1/16 note).</param>
+    public void QuantizeToGrid(double gridSize = 0.25)
+    {
+        lock (_lock)
+        {
+            foreach (var marker in _markers)
+            {
+                if (marker.IsLocked)
+                    continue;
+
+                double quantizedBeat = Math.Round(marker.WarpedBeatPosition / gridSize) * gridSize;
+                marker.WarpedBeatPosition = quantizedBeat;
+                marker.Touch();
+            }
+        }
+
+        WarpChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Resets all markers to original positions (no stretch).
+    /// </summary>
+    public void ResetToOriginal()
+    {
+        lock (_lock)
+        {
+            foreach (var marker in _markers)
+            {
+                if (!marker.IsLocked || !marker.IsAnchor || marker.MarkerType == WarpMarkerType.End)
+                {
+                    double originalSeconds = (double)marker.OriginalPositionSamples / SampleRate;
+                    marker.WarpedBeatPosition = originalSeconds * Bpm / 60.0;
+                    marker.Touch();
+                }
+            }
+        }
+
+        WarpChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Clears all non-anchor markers.
+    /// </summary>
+    public void ClearMarkers()
+    {
+        lock (_lock)
+        {
+            var markersToRemove = _markers.Where(m => !m.IsAnchor).ToList();
+            foreach (var marker in markersToRemove)
+            {
+                int index = _markers.IndexOf(marker);
+                _markers.Remove(marker);
+                MarkerRemoved?.Invoke(this, new WarpMarkerEventArgs(marker, index));
+            }
+        }
+
+        WarpChanged?.Invoke(this, EventArgs.Empty);
+    }
 }

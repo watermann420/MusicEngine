@@ -35,20 +35,41 @@ public enum WarpMarkerType
 /// </summary>
 public class WarpMarker : IEquatable<WarpMarker>, IComparable<WarpMarker>
 {
-    /// <summary>Unique identifier for this marker.</summary>
-    public Guid Id { get; } = Guid.NewGuid();
+    /// <summary>Unique identifier for this marker (string format for serialization compatibility).</summary>
+    public string MarkerId { get; } = Guid.NewGuid().ToString();
 
-    /// <summary>Original position in the source audio (in samples).</summary>
+    /// <summary>Unique identifier for this marker.</summary>
+    public Guid Id => Guid.TryParse(MarkerId, out var guid) ? guid : Guid.Empty;
+
+    /// <summary>Original position in the source audio (in samples). This never changes once the marker is created.</summary>
     public long OriginalPositionSamples { get; set; }
 
     /// <summary>Warped (target) position in the output (in samples).</summary>
     public long WarpedPositionSamples { get; set; }
+
+    /// <summary>
+    /// Original position in seconds (derived from sample position and sample rate).
+    /// Requires SampleRate to be set for accurate calculation.
+    /// </summary>
+    public double OriginalTimeSeconds { get; private set; }
+
+    /// <summary>
+    /// Warped position in beats. Moving this stretches/compresses audio.
+    /// This is an alternative representation to WarpedPositionSamples for beat-based workflows.
+    /// </summary>
+    public double WarpedBeatPosition { get; set; }
 
     /// <summary>Type of this warp marker.</summary>
     public WarpMarkerType MarkerType { get; set; } = WarpMarkerType.User;
 
     /// <summary>Whether this marker is locked from editing.</summary>
     public bool IsLocked { get; set; }
+
+    /// <summary>
+    /// Whether this is an anchor point (start/end of region).
+    /// Anchor points define the boundaries of the warpable audio.
+    /// </summary>
+    public bool IsAnchor { get; set; }
 
     /// <summary>Whether this marker is selected in the UI.</summary>
     public bool IsSelected { get; set; }
@@ -83,6 +104,23 @@ public class WarpMarker : IEquatable<WarpMarker>, IComparable<WarpMarker>
         OriginalPositionSamples = originalPositionSamples;
         WarpedPositionSamples = warpedPositionSamples;
         MarkerType = markerType;
+        IsAnchor = markerType == WarpMarkerType.Start || markerType == WarpMarkerType.End;
+    }
+
+    /// <summary>
+    /// Creates a new warp marker with beat-based warped position (as per user specification).
+    /// </summary>
+    /// <param name="originalSamplePosition">Original position in the source audio (in samples).</param>
+    /// <param name="sampleRate">Audio sample rate for time calculations.</param>
+    /// <param name="warpedBeatPosition">Warped position in beats.</param>
+    /// <param name="type">Type of marker.</param>
+    public WarpMarker(long originalSamplePosition, int sampleRate, double warpedBeatPosition, WarpMarkerType type = WarpMarkerType.User)
+    {
+        OriginalPositionSamples = originalSamplePosition;
+        OriginalTimeSeconds = (double)originalSamplePosition / sampleRate;
+        WarpedBeatPosition = warpedBeatPosition;
+        MarkerType = type;
+        IsAnchor = type == WarpMarkerType.Start || type == WarpMarkerType.End;
     }
 
     /// <summary>
