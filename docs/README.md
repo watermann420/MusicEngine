@@ -7,8 +7,7 @@
 ![License](https://img.shields.io/badge/license-MEL-blue)
 ![C#](https://img.shields.io/badge/language-C%23-blue)
 ![.NET](https://img.shields.io/badge/.NET-10.0-purple)
-![Status](https://img.shields.io/badge/status-Complete-brightgreen)
-![Tests](https://img.shields.io/badge/tests-774_passing-brightgreen)
+![Status](https://img.shields.io/badge/status-Work_in_Progress-orange)
 ![Effects](https://img.shields.io/badge/effects-100+-blue)
 ![Synths](https://img.shields.io/badge/synthesizers-45+-blue)
 
@@ -18,9 +17,8 @@
 
 | Component | Status | Details |
 |-----------|--------|---------|
-| **MusicEngine** | 100% Complete | 100+ effects, 45+ synthesizers, VST2/VST3/CLAP hosting |
-| **MusicEngineEditor** | 100% Complete | 189+ UI features, full WPF desktop application |
-| **Unit Tests** | 774 tests | 760 passed, 14 pre-existing failures |
+| **MusicEngine** | 50% Complete | 100+ effects, 45+ synthesizers, VST2/VST3/CLAP hosting |
+| **MusicEngineEditor** | 50% Complete | 189+ UI features, full WPF desktop application |
 | **Build** | 0 Errors | Clean builds with minimal warnings |
 
 ## Multiple Function Aliases
