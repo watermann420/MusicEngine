@@ -46,11 +46,11 @@ public static class MusicEngineFactory
     }
 
     /// <summary>
-    /// Creates a new Session.
+    /// Creates a new EngineSession.
     /// </summary>
-    public static Session CreateSession()
+    public static EngineSession CreateSession()
     {
-        return new Session();
+        return new EngineSession();
     }
 
     /// <summary>

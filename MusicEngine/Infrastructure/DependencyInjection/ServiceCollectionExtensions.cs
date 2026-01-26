@@ -50,7 +50,7 @@ public static class ServiceCollectionExtensions
         });
 
         // Session management
-        services.AddTransient<Session>();
+        services.AddTransient<EngineSession>();
 
         return services;
     }

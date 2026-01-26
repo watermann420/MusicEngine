@@ -16,7 +16,7 @@ namespace MusicEngine.Core;
 
 
 /// <summary>
-/// Provides async extension methods for <see cref="Session"/> operations.
+/// Provides async extension methods for <see cref="EngineSession"/> operations.
 /// </summary>
 /// <remarks>
 /// These extension methods enable non-blocking session I/O operations with support for:
@@ -28,7 +28,7 @@ namespace MusicEngine.Core;
 /// </remarks>
 /// <example>
 /// <code>
-/// var session = new Session();
+/// var session = new EngineSession();
 /// session.Data.BPM = 140f;
 /// session.Data.Metadata.Name = "My Project";
 ///
@@ -79,7 +79,7 @@ public static class SessionAsync
     /// </remarks>
     /// <example>
     /// <code>
-    /// var session = new Session();
+    /// var session = new EngineSession();
     /// var progress = new Progress&lt;SessionProgress&gt;(p =>
     /// {
     ///     Console.WriteLine($"[{p.Stage}] {p.Percentage:F0}% - {p.Message}");
@@ -108,7 +108,7 @@ public static class SessionAsync
     /// </code>
     /// </example>
     public static async Task LoadAsync(
-        this Session session,
+        this EngineSession session,
         string path,
         IProgress<SessionProgress>? progress = null,
         CancellationToken ct = default)
@@ -167,7 +167,7 @@ public static class SessionAsync
         progress?.Report(new SessionProgress("Validating", 70, "Validating session data..."));
 
         // Update session with temporary data to validate
-        var tempSession = new Session { };
+        var tempSession = new EngineSession { };
 
         // Use reflection or direct property setting to validate
         // Basic validation
@@ -208,7 +208,7 @@ public static class SessionAsync
     /// <exception cref="OperationCanceledException">Thrown when the operation is canceled.</exception>
     /// <example>
     /// <code>
-    /// var session = new Session();
+    /// var session = new EngineSession();
     /// using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
     ///
     /// await session.LoadAsync(@"C:\Projects\myproject.mep", cts.Token);
@@ -216,7 +216,7 @@ public static class SessionAsync
     /// </code>
     /// </example>
     public static async Task LoadAsync(
-        this Session session,
+        this EngineSession session,
         string path,
         CancellationToken ct)
     {
@@ -246,7 +246,7 @@ public static class SessionAsync
     /// </remarks>
     /// <example>
     /// <code>
-    /// var session = new Session();
+    /// var session = new EngineSession();
     /// session.Data.BPM = 140f;
     /// session.Data.Metadata.Name = "My EDM Track";
     /// session.Data.Metadata.Author = "DJ Producer";
@@ -268,7 +268,7 @@ public static class SessionAsync
     /// </code>
     /// </example>
     public static async Task SaveAsync(
-        this Session session,
+        this EngineSession session,
         string path,
         IProgress<SessionProgress>? progress = null,
         CancellationToken ct = default)
@@ -374,7 +374,7 @@ public static class SessionAsync
     /// <exception cref="OperationCanceledException">Thrown when the operation is canceled.</exception>
     /// <example>
     /// <code>
-    /// var session = new Session();
+    /// var session = new EngineSession();
     /// session.Data.BPM = 128f;
     ///
     /// using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
@@ -382,7 +382,7 @@ public static class SessionAsync
     /// </code>
     /// </example>
     public static async Task SaveAsync(
-        this Session session,
+        this EngineSession session,
         string path,
         CancellationToken ct)
     {
@@ -401,7 +401,7 @@ public static class SessionAsync
     /// <exception cref="OperationCanceledException">Thrown when the operation is canceled.</exception>
     /// <example>
     /// <code>
-    /// var session = new Session();
+    /// var session = new EngineSession();
     /// session.Data.Metadata.Name = "Important Project";
     ///
     /// // Create a backup before making changes
@@ -421,7 +421,7 @@ public static class SessionAsync
     /// </code>
     /// </example>
     public static async Task<string> CreateBackupAsync(
-        this Session session,
+        this EngineSession session,
         string? backupPath = null,
         CancellationToken ct = default)
     {
@@ -462,7 +462,7 @@ public static class SessionAsync
     /// <exception cref="OperationCanceledException">Thrown when the operation is canceled.</exception>
     /// <example>
     /// <code>
-    /// var session = new Session();
+    /// var session = new EngineSession();
     /// await session.LoadAsync(@"C:\Projects\myproject.mep");
     ///
     /// // Export to a different location/format
@@ -470,7 +470,7 @@ public static class SessionAsync
     /// </code>
     /// </example>
     public static async Task ExportAsync(
-        this Session session,
+        this EngineSession session,
         string path,
         string format = "json",
         CancellationToken ct = default)
@@ -622,7 +622,7 @@ public static class SessionAsync
             }
 
             // Create a temporary session to use its Validate method
-            var tempSession = new Session();
+            var tempSession = new EngineSession();
             // Use reflection or copy data to validate
             // For now, perform basic validation directly
 

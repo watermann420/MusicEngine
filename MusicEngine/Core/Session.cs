@@ -412,7 +412,7 @@ public class SessionTemplate
 /// <summary>
 /// Main session management class for saving/loading engine state.
 /// </summary>
-public class Session
+public class EngineSession
 {
     private static readonly JsonSerializerOptions DefaultJsonOptions = new()
     {
@@ -483,7 +483,7 @@ public class Session
     /// <summary>
     /// Creates a new empty session.
     /// </summary>
-    public Session()
+    public EngineSession()
     {
         Data = new SessionData();
     }
@@ -492,7 +492,7 @@ public class Session
     /// Creates a new session from a template.
     /// </summary>
     /// <param name="template">The template to use.</param>
-    public Session(SessionTemplate template)
+    public EngineSession(SessionTemplate template)
     {
         Data = new SessionData
         {
@@ -951,7 +951,7 @@ public class Session
     /// </summary>
     /// <param name="templateName">Name of the template to use.</param>
     /// <returns>A new session initialized from the template.</returns>
-    public static Session CreateFromTemplate(string templateName)
+    public static EngineSession CreateFromTemplate(string templateName)
     {
         var template = Templates.Find(t =>
             t.Name.Equals(templateName, StringComparison.OrdinalIgnoreCase));
@@ -961,7 +961,7 @@ public class Session
             throw new ArgumentException($"Template '{templateName}' not found.", nameof(templateName));
         }
 
-        return new Session(template);
+        return new EngineSession(template);
     }
 
     /// <summary>

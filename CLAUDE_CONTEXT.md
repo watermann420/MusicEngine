@@ -96,10 +96,47 @@ MusicEngine/
 
 ## Build Status (Januar 2026)
 ```
-MusicEngine:       0 Fehler, 7 Warnungen (NetAnalyzers Version)
+MusicEngine:       0 Fehler, 25 Warnungen (NetAnalyzers + unused fields)
 MusicEngine.Tests: 760 Tests bestanden, 14 fehlgeschlagen (vorbestehend)
-MusicEngineEditor: 0 Fehler, ~20 Warnungen
+MusicEngineEditor: 0 Fehler, 69 Warnungen (pre-existing)
 ```
+
+## Massive Feature Update (Januar 2026)
+60 neue Features implementiert über Engine und Editor:
+
+### Neue Engine Features (21)
+| Feature | Pfad | Beschreibung |
+|---------|------|--------------|
+| DCOffsetRemoval | Effects/Restoration/ | High-pass Filter bei 5-20Hz |
+| ClickRemoval | Effects/Restoration/ | Derivative Analysis + Interpolation |
+| HumRemoval | Effects/Restoration/ | Adaptive Notch bei 50/60Hz |
+| BreathRemoval | Effects/Restoration/ | Auto Vocal Breath Detection |
+| VCAFaders | Routing/VCAGroup.cs | Linked Gain ohne Audio Routing |
+| ChannelStripPresets | Presets/ | Save/Load Effect Chains als JSON |
+| MPE Support | Midi/MPEProcessor.cs | Per-Note Pitch Bend, Pressure, Slide |
+| ModulationMatrix | Modulation/ | Global LFO/Envelope Routing |
+| SidechainMatrix | Routing/ | Flexible Sidechain Source Routing |
+| MixerSnapshots | Routing/ | A/B Mixer States, Interpolation |
+| SamplerSlicer | Synthesizers/ | REX-style Beat Slicing |
+| ExpressionMaps | Midi/ | Keyswitch Management |
+| SoundVariations | Midi/ | Articulation Switching |
+| VideoTrack | Video/ | SMPTE Timecode Sync |
+| ClipLauncher | Session/ | Ableton-style Session View |
+| SpectralEditor | Analysis/ | FFT Frequency Editing |
+| AudioAlignment | Analysis/ | VocAlign-style DTW |
+| SurroundPanner | Routing/ | 5.1/7.1/Atmos VBAP |
+| ModularSynth | Synthesizers/Modular/ | Patch-based Synthesis |
+| VSTLinkBridge | Integration/ | DAW Inter-Operation |
+| PolyphonicPitchEdit | Analysis/ | Melodyne DNA-style |
+
+### Neue Editor Features (39)
+- ArrangerTrack, TempoCurveEditor, DrumEditor, EventListEditor
+- QuickControlsPanel, LoudnessReportDialog, BounceInPlaceCommand
+- AutomationModes, BezierCurves, CrossfadeEditorDialog
+- TrackTemplateService, CrashRecovery, MIDIMonitorPanel
+- ChordTrackControl, VideoTrackControl, MultiTrackPianoRollView
+- NoteExpressionLane, WorkspaceService, RenderQueueDialog, ScoreEditorView
+- Plus 19 weitere QoL Features
 
 ## Code Quality Fixes (Januar 2026)
 Die folgenden kritischen Probleme wurden behoben:
@@ -186,7 +223,18 @@ sequencer.Start();
 
 ## Implementierte Features (Komplett)
 
-### Synthesizers (13)
+### Effects (52+)
+| Kategorie | Effects |
+|-----------|---------|
+| Dynamics | Compressor, MultibandCompressor, SideChain, Gate, Limiter, TransientShaper, DeEsser, DynamicEQ, SpectralGate |
+| Time-Based | Reverb, EnhancedReverb, ConvolutionReverb, ShimmerReverb, ReverseReverb, Delay |
+| Modulation | Chorus, Flanger, Phaser, Tremolo, Vibrato, AutoPan |
+| Distortion | Distortion, Bitcrusher, TapeSaturation, HarmonicEnhancer |
+| Filters | Filter, ParametricEQ |
+| Special | Exciter, StereoWidener, Vocoder, RingModulator, TapeStop, PitchShifter, SubBassGenerator, Dither, SampleRateConverter |
+| Restoration | NoiseReduction, Declipping, DCOffsetRemoval, ClickRemoval, HumRemoval, BreathRemoval |
+
+### Synthesizers (14)
 | Synth | Beschreibung |
 |-------|--------------|
 | SimpleSynth | Monophonic mit ADSR |
@@ -202,17 +250,39 @@ sequencer.Start();
 | AdditiveSynth | Hammond Drawbars |
 | VectorSynth | XY Pad Crossfade |
 | NoiseGenerator | 5 Noise Types |
+| ModularSynth (NEW) | Patch-based mit VCO/VCF/VCA/LFO/ADSR Modules |
+| SamplerSlicer (NEW) | REX-style Beat Slicing |
 
-### Effects (48+)
-| Kategorie | Effects |
-|-----------|---------|
-| Dynamics | Compressor, MultibandCompressor, SideChain, Gate, Limiter, TransientShaper, DeEsser, DynamicEQ, SpectralGate |
-| Time-Based | Reverb, EnhancedReverb, ConvolutionReverb, ShimmerReverb, ReverseReverb, Delay |
-| Modulation | Chorus, Flanger, Phaser, Tremolo, Vibrato, AutoPan |
-| Distortion | Distortion, Bitcrusher, TapeSaturation, HarmonicEnhancer |
-| Filters | Filter, ParametricEQ |
-| Special | Exciter, StereoWidener, Vocoder, RingModulator, TapeStop, PitchShifter, SubBassGenerator, Dither, SampleRateConverter |
-| Restoration (NEW) | NoiseReduction (Spectral Subtraction, Learn Mode), Declipping (Cubic Spline) |
+### Routing & Mixing (NEW)
+| Feature | Beschreibung |
+|---------|--------------|
+| VCAFaders | Linked Gain ohne Audio Routing |
+| SidechainMatrix | Flexible Sidechain Routing |
+| MixerSnapshots | A/B Compare, Interpolation, Crossfade |
+| SurroundPanner | 5.1/7.1/Atmos VBAP Panning |
+| ChannelStripPresets | Save/Load Effect Chains |
+
+### Analysis (NEW)
+| Feature | Beschreibung |
+|---------|--------------|
+| SpectralEditor | FFT-based Frequency Editing, STFT, Undo/Redo |
+| AudioAlignment | VocAlign-style DTW, Formant Preservation |
+| PolyphonicPitchEdit | Melodyne DNA-style, HPS Multi-Pitch Detection |
+
+### MIDI & Expression (NEW)
+| Feature | Beschreibung |
+|---------|--------------|
+| MPEProcessor | Per-Note Pitch Bend, Pressure, Slide |
+| ModulationMatrix | Global LFO/Envelope Routing |
+| ExpressionMaps | Keyswitch Management |
+| SoundVariations | Articulation Switching |
+
+### Session & Video (NEW)
+| Feature | Beschreibung |
+|---------|--------------|
+| ClipLauncher | Ableton-style Session View, Scenes |
+| VideoTrack | SMPTE Timecode Sync |
+| VSTLinkBridge | DAW Inter-Operation |
 
 ### MIDI & Sequencing
 | Feature | Beschreibung |
@@ -233,7 +303,8 @@ sequencer.Start();
 | ChordDetection | Real-time |
 | KeyDetection | Krumhansl-Schmuckler |
 | Dithering | RPDF/TPDF/HP-TPDF, Noise Shaping |
-| SampleRateConverter (NEW) | Linear/Cubic/Sinc interpolation, Anti-aliasing |
+| SampleRateConverter | Linear/Cubic/Sinc interpolation, Anti-aliasing |
+| Audio Warping (NEW) | Elastic Audio mit Warp Markers, Phase Vocoder, Quantize to Grid |
 
 ### Advanced Features
 | Feature | Beschreibung |
@@ -276,6 +347,8 @@ sequencer.Start();
 | Reference Track | A/B Vergleich, LUFS Level Matching, Loop Region, Transport Sync |
 | Macro Bank | 8 Macro Knobs, Parameter Mapping, Curves, MIDI Learn |
 | Time Signature Marker | Meter Changes auf Timeline, Custom Time Signatures |
+| Warp Marker Control (NEW) | Elastic Audio Editor, Draggable Warp Markers, Auto-Warp |
+| Elastic Audio Editor (NEW) | BPM Detection, Tempo Matching, Waveform Warping UI |
 
 ### Project Management Features (Januar 2026)
 | Feature | Beschreibung |
@@ -288,6 +361,35 @@ sequencer.Start();
 | AudioPool | Media Management, Usage Tracking, Consolidate, BPM/Key Analysis |
 | ReferenceTrack | A/B Comparison, LUFS Analysis, Auto Level Matching, Loop/Sync |
 | MacroControls | 8 Macros mit Multi-Parameter Mapping, Curves, MIDI Learn |
+
+---
+
+## Synthesizer Dokumentation
+
+Jeder Synthesizer hat eine eigene README-Datei mit vollständiger Dokumentation:
+
+| Synth | README | Inhalt |
+|-------|--------|--------|
+| SimpleSynth | `README_SimpleSynth.md` | Monophonic, ADSR, 5 Waveforms |
+| PolySynth | `README_PolySynth.md` | 16-Voice, Voice Stealing Modes |
+| AdvancedSynth | `README_AdvancedSynth.md` | Multi-Oscillator, 5 Filter Types |
+| FMSynth | `README_FMSynth.md` | 6-Operator, 20 Algorithmen |
+| AdditiveSynth | `README_AdditiveSynth.md` | 64 Partials, Hammond Drawbars |
+| WavetableSynth | `README_WavetableSynth.md` | Wavetable Morphing, Custom Loading |
+| GranularSynth | `README_GranularSynth.md` | Grain Synthesis, 5 Envelope Shapes |
+| SampleSynth | `README_SampleSynth.md` | Multi-Sample, Velocity Layers |
+| SpeechSynth | `README_SpeechSynth.md` | Formant/TTS, Singing Mode |
+| SupersawSynth | `README_SupersawSynth.md` | JP-8000 Style, 1-16 Unison |
+| VectorSynth | `README_VectorSynth.md` | XY Pad, 4 Oscillators |
+| PhysicalModeling | `README_PhysicalModeling.md` | Karplus-Strong, Waveguide |
+| NoiseGenerator | `README_NoiseGenerator.md` | 5 Noise Colors, Filtering |
+
+Jede README enthält:
+- Parameter-Tabellen mit Types, Ranges, Defaults
+- C# Code-Beispiele
+- Signal Flow Diagramme
+- Sound Design Tipps
+- Factory Presets
 
 ---
 

@@ -237,7 +237,7 @@ public class MidiExporter
     /// </code>
     /// </para>
     /// </remarks>
-    public void ExportSession(Session session, string filePath)
+    public void ExportSession(EngineSession session, string filePath)
     {
         if (session == null)
         {
