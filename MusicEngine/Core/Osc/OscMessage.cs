@@ -1,9 +1,7 @@
-//Engine License (MEL) - Honor-Based Commercial Support
-// copyright (c) 2026 MusicEngine Watermann420 and Contributors
-// Created by Watermann420
-// Description: OSC (Open Sound Control) message and bundle representation with parsing and serialization.
-//              Implements OSC 1.0 specification for interoperability with DAWs, controllers, and visual software.
-
+﻿// MusicEngine License (MEL) - Honor-Based Commercial Support
+// Copyright (c) 2025-2026 Yannis Watermann (watermann420, nullonebinary)
+// https://github.com/watermann420/MusicEngine
+// Description: MusicEngine component.
 
 using System;
 using System.Collections.Generic;

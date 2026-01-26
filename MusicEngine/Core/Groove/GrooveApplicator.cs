@@ -1,8 +1,7 @@
-//Engine License (MEL) - Honor-Based Commercial Support
-// copyright (c) 2026 MusicEngine Watermann420 and Contributors
-// Created by Watermann420
-// Description: Applies groove templates to patterns, transforming timing and velocity.
-
+﻿// MusicEngine License (MEL) - Honor-Based Commercial Support
+// Copyright (c) 2025-2026 Yannis Watermann (watermann420, nullonebinary)
+// https://github.com/watermann420/MusicEngine
+// Description: MusicEngine component.
 
 using System.Collections.Generic;
 using System.Linq;

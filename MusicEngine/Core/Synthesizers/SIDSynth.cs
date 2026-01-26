@@ -1,8 +1,7 @@
-//Engine License (MEL) - Honor-Based Commercial Support
-// copyright (c) 2026 MusicEngine Watermann420 and Contributors
-// Created by Watermann420
-// Description: Commodore 64 SID chip emulation (MOS 6581/8580).
-// Features 3 oscillators with pulse/saw/tri/noise, ring modulation, hard sync, multimode filter.
+﻿// MusicEngine License (MEL) - Honor-Based Commercial Support
+// Copyright (c) 2025-2026 Yannis Watermann (watermann420, nullonebinary)
+// https://github.com/watermann420/MusicEngine
+// Description: Synthesizer component.
 
 using System;
 using System.Collections.Generic;

@@ -1,7 +1,7 @@
-//Engine License (MEL) - Honor-Based Commercial Support
-// copyright (c) 2026 MusicEngine Watermann420 and Contributors
-// Created by Watermann420
-// Description: Stereo to 5.1/7.1 upmixing with ambience extraction and center channel processing.
+﻿// MusicEngine License (MEL) - Honor-Based Commercial Support
+// Copyright (c) 2025-2026 Yannis Watermann (watermann420, nullonebinary)
+// https://github.com/watermann420/MusicEngine
+// Description: Audio/MIDI routing component.
 
 using NAudio.Wave;
 

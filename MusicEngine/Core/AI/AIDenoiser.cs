@@ -1,8 +1,7 @@
-//Engine License (MEL) - Honor-Based Commercial Support
-// copyright (c) 2026 MusicEngine Watermann420 and Contributors
-// Created by Watermann420
-// Description: Neural network-style noise reduction using spectral gating with learned noise profiles
-//              and adaptive thresholds for AI-like behavior.
+﻿// MusicEngine License (MEL) - Honor-Based Commercial Support
+// Copyright (c) 2025-2026 Yannis Watermann (watermann420, nullonebinary)
+// https://github.com/watermann420/MusicEngine
+// Description: AI-based audio denoising.
 
 using NAudio.Wave;
 

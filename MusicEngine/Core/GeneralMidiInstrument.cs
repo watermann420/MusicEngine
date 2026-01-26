@@ -1,7 +1,7 @@
-//Engine License (MEL) – Honor-Based Commercial Support
-// copyright (c) 2026 MusicEngine Watermann420 and Contributors
-// Created by Watermann420
-// Description: General MIDI instrument using Windows built-in synthesizer
+﻿// MusicEngine License (MEL) - Honor-Based Commercial Support
+// Copyright (c) 2025-2026 Yannis Watermann (watermann420, nullonebinary)
+// https://github.com/watermann420/MusicEngine
+// Description: General MIDI instrument via system MIDI.
 
 using System;
 using System.Collections.Generic;
@@ -212,13 +212,13 @@ public class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
             if (midiDeviceCount == 0)
             {
                 Console.WriteLine("╔════════════════════════════════════════════════════════════════╗");
-                Console.WriteLine("║  WARNUNG: Kein MIDI-Gerät gefunden!                           ║");
-                Console.WriteLine("║  General MIDI Instrumente werden stumm geschaltet.            ║");
+                Console.WriteLine("║  WARNING: No MIDI device found!                                ║");
+                Console.WriteLine("║  General MIDI instruments will be muted.                       ║");
                 Console.WriteLine("║                                                                ║");
-                Console.WriteLine("║  Mögliche Lösungen:                                            ║");
-                Console.WriteLine("║  1. Windows MIDI Synthesizer installieren                      ║");
-                Console.WriteLine("║  2. Virtuelles MIDI-Gerät installieren (z.B. VirtualMIDISynth) ║");
-                Console.WriteLine("║  3. FL Studio MIDI-Ausgabe konfigurieren                       ║");
+                Console.WriteLine("║  Possible solutions:                                           ║");
+                Console.WriteLine("║  1. Install Windows MIDI Synthesizer                           ║");
+                Console.WriteLine("║  2. Install virtual MIDI device (e.g. VirtualMIDISynth)        ║");
+                Console.WriteLine("║  3. Configure FL Studio MIDI output                            ║");
                 Console.WriteLine("╚════════════════════════════════════════════════════════════════╝");
                 _midiAvailable = false;
                 _midiOut = null;
@@ -228,7 +228,7 @@ public class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
                 // Print available devices once
                 if (!_deviceListPrinted)
                 {
-                    Console.WriteLine($"\n═══ Verfügbare MIDI-Geräte ({midiDeviceCount}) ═══");
+                    Console.WriteLine($"\n═══ Available MIDI Devices ({midiDeviceCount}) ═══");
                     for (int i = 0; i < midiDeviceCount; i++)
                     {
                         var caps = MidiOut.DeviceInfo(i);
@@ -276,10 +276,10 @@ public class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
         catch (Exception ex)
         {
             Console.WriteLine("╔════════════════════════════════════════════════════════════════╗");
-            Console.WriteLine("║  FEHLER: MIDI-Gerät konnte nicht geöffnet werden!              ║");
+            Console.WriteLine("║  ERROR: Could not open MIDI device!                            ║");
             Console.WriteLine($"║  {ex.Message.PadRight(62)} ║");
             Console.WriteLine("║                                                                ║");
-            Console.WriteLine("║  General MIDI Instrumente werden stumm geschaltet.            ║");
+            Console.WriteLine("║  General MIDI instruments will be muted.                       ║");
             Console.WriteLine("╚════════════════════════════════════════════════════════════════╝");
             _midiAvailable = false;
             _midiOut = null;

@@ -1,8 +1,7 @@
-//Engine License (MEL) - Honor-Based Commercial Support
-// copyright (c) 2026 MusicEngine Watermann420 and Contributors
-// Created by Watermann420
-// Description: Electric piano synthesizer with Rhodes/Wurlitzer physical modeling.
-// Features tine/tone bar modeling, velocity-dependent timbre, tremolo, and built-in effects.
+﻿// MusicEngine License (MEL) - Honor-Based Commercial Support
+// Copyright (c) 2025-2026 Yannis Watermann (watermann420, nullonebinary)
+// https://github.com/watermann420/MusicEngine
+// Description: Synthesizer component.
 
 using System;
 using System.Collections.Generic;
