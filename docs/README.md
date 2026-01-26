@@ -591,21 +591,7 @@ dotnet test MusicEngine.Tests
 
 ---
 
-## Code Quality (January 2026)
 
-Critical thread-safety and memory management improvements:
-
-| Component | Fix | Impact |
-|-----------|-----|--------|
-| `PolySynth.cs` | ThreadStatic Random for noise | Eliminates ~44k allocations/s in audio thread |
-| `EffectChain.cs` | Lock-free Read() with copy-on-write | Reduces audio thread blocking |
-| `EffectChain.cs` | GetVstEffects() as IEnumerable | Zero allocation on enumeration |
-| `Sequencer.cs` | Volatile fields for thread safety | Prevents stale reads across threads |
-| `AudioEngine.cs` | StartInputCapture() cleanup on error | Prevents memory leaks |
-| `AudioEngine.cs` | Robust Dispose() with exception handling | Ensures cleanup even on errors |
-| `OggVorbisEncoder.cs` | Thread-safe Random with lock | Prevents seed collisions |
-
----
 
 ## Documentation
 
