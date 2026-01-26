@@ -23,9 +23,6 @@ public class ADSRModule : ModuleBase
 
     private EnvelopeStage _stage = EnvelopeStage.Idle;
     private double _envelopeValue;
-    private double _attackBase;
-    private double _decayBase;
-    private double _releaseBase;
     private bool _gateActive;
     private bool _lastRetrigger;
 

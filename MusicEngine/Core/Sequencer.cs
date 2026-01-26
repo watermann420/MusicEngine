@@ -65,9 +65,9 @@ public class Sequencer : IDisposable
 {
     private readonly List<Pattern> _patterns = new(); // patterns to play
     private volatile bool _running; // is the sequencer running? (volatile for thread-safe reads)
-    private double _bpm = 120.0; // beats per minute (accessed under lock)
+    private double _bpm = 120.0; // beats per minute (accessed under _patterns lock or via Volatile.Read/Write)
     private Thread? _thread; // playback thread
-    private double _beatAccumulator = 0; // current beat position (accessed under lock)
+    private double _beatAccumulator = 0; // current beat position (accessed under _patterns lock or via Volatile.Read/Write)
     private volatile bool _isScratching = false; // is scratching mode enabled? (volatile for thread-safe reads)
     private double _defaultLoopLength = 4.0; // default loop length for beat events
     private volatile bool _disposed = false; // volatile for thread-safe dispose check
@@ -1214,6 +1214,7 @@ public class Sequencer : IDisposable
         _timingJitterBuffer.Clear();
         _averageTimingJitter = 0;
         _jitterCompensationMs = 0;
+        _lastActualTime = 0;
         _samplePosition = 0;
 
         // Reset punch recording state
@@ -1548,10 +1549,7 @@ public class Sequencer : IDisposable
     private void RunStandard()
     {
         var stopwatch = Stopwatch.StartNew(); // High-resolution timer
-        double lastTime = stopwatch.Elapsed.TotalSeconds; // Last time checkpoint
         double lastProcessedBeat = _beatAccumulator; // Last processed beat position
-        double lastBeatEventTime = 0; // For throttling beat events
-        const double beatEventInterval = 1.0 / 60.0; // ~60fps for beat events
 
         RunStandardInternal(stopwatch, lastProcessedBeat);
     }
@@ -1598,8 +1596,9 @@ public class Sequencer : IDisposable
 
                 if (nextBeat != lastProcessedBeat) // Process patterns if beat has changed
                 {
-                    // Process patterns
-                    foreach (var pattern in _patterns) // Process each pattern
+                    // Process patterns - take snapshot to avoid lock scope issues
+                    var patternsSnapshot = _patterns.ToArray();
+                    foreach (var pattern in patternsSnapshot) // Process each pattern
                     {
                         pattern.Process(lastProcessedBeat, nextBeat, _bpm); // Process pattern for the beat range
                     }

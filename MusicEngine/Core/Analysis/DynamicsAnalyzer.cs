@@ -592,27 +592,6 @@ public class DynamicsAnalysisResult
 
 #endregion
 
-#region Event Args
-
-/// <summary>
-/// Event arguments for dynamics analysis updates.
-/// </summary>
-public class DynamicsAnalysisEventArgs : EventArgs
-{
-    /// <summary>Gets the current analysis result.</summary>
-    public DynamicsAnalysisResult Result { get; }
-
-    /// <summary>
-    /// Creates new dynamics analysis event arguments.
-    /// </summary>
-    public DynamicsAnalysisEventArgs(DynamicsAnalysisResult result)
-    {
-        Result = result;
-    }
-}
-
-#endregion
-
 /// <summary>
 /// Comprehensive dynamics analyzer for measuring loudness, dynamic range, compression detection,
 /// and transient characteristics of audio.
@@ -713,8 +692,6 @@ public class DynamicsAnalyzer : IAnalyzer, ISampleProvider
     private int _timeSeriesSampleCount;
     private double _timeSeriesRmsSum;
     private float _timeSeriesPeak;
-    private float _timeSeriesLufs;
-
     // LUFS calculation
     private readonly double[] _momentaryBuffer;
     private int _momentaryWritePos;
@@ -749,7 +726,6 @@ public class DynamicsAnalyzer : IAnalyzer, ISampleProvider
     private readonly List<SectionDynamics> _sections;
     private double _currentSectionRmsSum;
     private float _currentSectionPeak;
-    private double _currentSectionLufsSum;
     private int _currentSectionSamples;
     private float _sectionStartTime;
 
@@ -761,7 +737,7 @@ public class DynamicsAnalyzer : IAnalyzer, ISampleProvider
     // Analysis state
     private int _sampleBufferPos;
     private int _frameCount;
-    private bool _isAnalyzing;
+    private volatile bool _isAnalyzing;
 
     #endregion
 
@@ -796,11 +772,6 @@ public class DynamicsAnalyzer : IAnalyzer, ISampleProvider
     /// Gets or sets the section detection threshold in dB.
     /// </summary>
     public float SectionDetectionThresholdDb { get; set; } = 3.0f;
-
-    /// <summary>
-    /// Event raised when analysis is updated during real-time processing.
-    /// </summary>
-    public event EventHandler<DynamicsAnalysisEventArgs>? AnalysisUpdated;
 
     #endregion
 
@@ -1198,7 +1169,6 @@ public class DynamicsAnalyzer : IAnalyzer, ISampleProvider
             _timeSeriesSampleCount = 0;
             _timeSeriesRmsSum = 0;
             _timeSeriesPeak = 0;
-            _timeSeriesLufs = 0;
 
             Array.Clear(_momentaryBuffer, 0, _momentaryBuffer.Length);
             _momentaryWritePos = 0;
@@ -1230,7 +1200,6 @@ public class DynamicsAnalyzer : IAnalyzer, ISampleProvider
             _sections.Clear();
             _currentSectionRmsSum = 0;
             _currentSectionPeak = 0;
-            _currentSectionLufsSum = 0;
             _currentSectionSamples = 0;
             _sectionStartTime = 0;
 

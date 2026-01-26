@@ -51,12 +51,10 @@ public class StereoImager : EffectBase
 {
     // Crossover filter states (2-pole Linkwitz-Riley)
     private float _lowCrossLpL1, _lowCrossLpL2, _lowCrossLpR1, _lowCrossLpR2;
-    private float _lowCrossHpL1, _lowCrossHpL2, _lowCrossHpR1, _lowCrossHpR2;
-    private float _highCrossLpL1, _highCrossLpL2, _highCrossLpR1, _highCrossLpR2;
     private float _highCrossHpL1, _highCrossHpL2, _highCrossHpR1, _highCrossHpR2;
 
     // Side EQ filter states
-    private float _sideEqLowState, _sideEqHighState;
+    private float _sideEqLowState;
 
     // Bass mono filter states
     private float _bassMonoLpStateL, _bassMonoLpStateR;
@@ -72,8 +70,8 @@ public class StereoImager : EffectBase
     private float _phaseAllpassR1, _phaseAllpassR2;
 
     // Transient detection envelope followers
-    private float _fastEnvelopeL, _fastEnvelopeR;
-    private float _slowEnvelopeL, _slowEnvelopeR;
+    private float _fastEnvelopeL;
+    private float _slowEnvelopeL;
 
     // Auto-width frequency analysis
     private float _lowBandEnergy, _midBandEnergy, _highBandEnergy;
@@ -327,17 +325,28 @@ public class StereoImager : EffectBase
 
             if (haasEnabled && _haasDelaySamples > 0 && haasMix > 0)
             {
-                float delayedL = _haasDelayBufferL[_haasDelayIndex];
-                float delayedR = _haasDelayBufferR[_haasDelayIndex];
-                _haasDelayBufferL[_haasDelayIndex] = processedR;
-                _haasDelayBufferR[_haasDelayIndex] = processedL;
-                _haasDelayIndex = (_haasDelayIndex + 1) % _haasDelaySamples;
-                processedL += delayedL * haasMix * 0.5f;
-                processedR += delayedR * haasMix * 0.5f;
+                // Capture local references for thread safety
+                var haasBufferL = _haasDelayBufferL;
+                var haasBufferR = _haasDelayBufferR;
+                int haasDelaySamples = _haasDelaySamples;
+
+                if (haasBufferL.Length >= haasDelaySamples && haasBufferR.Length >= haasDelaySamples)
+                {
+                    float delayedL = haasBufferL[_haasDelayIndex];
+                    float delayedR = haasBufferR[_haasDelayIndex];
+                    haasBufferL[_haasDelayIndex] = processedR;
+                    haasBufferR[_haasDelayIndex] = processedL;
+                    _haasDelayIndex = (_haasDelayIndex + 1) % haasDelaySamples;
+                    processedL += delayedL * haasMix * 0.5f;
+                    processedR += delayedR * haasMix * 0.5f;
+                }
             }
 
             if (MathF.Abs(phaseRotation) > 0.01f)
+            {
                 processedL = ProcessAllpass(processedL, ref _phaseAllpassL1, ref _phaseAllpassL2, phaseAllpassCoef);
+                processedR = ProcessAllpass(processedR, ref _phaseAllpassR1, ref _phaseAllpassR2, phaseAllpassCoef);
+            }
 
             if (balance < 0) processedR *= 1f + balance;
             else if (balance > 0) processedL *= 1f - balance;
@@ -418,15 +427,13 @@ public class StereoImager : EffectBase
     public void Reset()
     {
         _lowCrossLpL1 = _lowCrossLpL2 = _lowCrossLpR1 = _lowCrossLpR2 = 0f;
-        _lowCrossHpL1 = _lowCrossHpL2 = _lowCrossHpR1 = _lowCrossHpR2 = 0f;
-        _highCrossLpL1 = _highCrossLpL2 = _highCrossLpR1 = _highCrossLpR2 = 0f;
         _highCrossHpL1 = _highCrossHpL2 = _highCrossHpR1 = _highCrossHpR2 = 0f;
-        _sideEqLowState = _sideEqHighState = 0f;
+        _sideEqLowState = 0f;
         _bassMonoLpStateL = _bassMonoLpStateR = 0f;
         _phaseAllpassL1 = _phaseAllpassL2 = _phaseAllpassR1 = _phaseAllpassR2 = 0f;
         Array.Clear(_haasDelayBufferL); Array.Clear(_haasDelayBufferR);
         _haasDelayIndex = 0;
-        _fastEnvelopeL = _fastEnvelopeR = _slowEnvelopeL = _slowEnvelopeR = 0f;
+        _fastEnvelopeL = _slowEnvelopeL = 0f;
         _lowBandEnergy = _midBandEnergy = _highBandEnergy = 0f;
         _autoWidthSmoothed = 1f;
         _correlationSum = _powerSumL = _powerSumR = 0f;

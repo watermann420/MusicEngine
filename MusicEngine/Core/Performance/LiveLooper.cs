@@ -456,7 +456,6 @@ public class LiveLooper : ISampleProvider, IDisposable
     private readonly List<LoopLayer> _layers;
     private readonly Stack<LooperUndoState> _undoStack;
     private readonly object _lock = new();
-    private readonly Random _random = new();
 
     // Transport state
     private LooperState _state = LooperState.Empty;
@@ -479,8 +478,6 @@ public class LiveLooper : ISampleProvider, IDisposable
 
     // Fade handling
     private float _fadeTimeSamples;
-    private float _fadeInPosition;
-    private float _fadeOutPosition;
 
     // Maximum configuration
     private readonly int _maxLoopLengthSamples;
@@ -1321,12 +1318,13 @@ public class LiveLooper : ISampleProvider, IDisposable
                         OnLoopCycleCompleted();
                     }
 
-                    // Check for pending quantized actions
-                    if (_state == LooperState.WaitingForSync)
-                    {
-                        CheckPendingAction(_playPosition);
-                    }
                 }
+            }
+
+            // Check for pending quantized actions (must be outside Playing/Overdubbing block for WaitingForSync state)
+            if (_state == LooperState.WaitingForSync)
+            {
+                CheckPendingAction(_playPosition);
             }
 
             return count;
@@ -1497,6 +1495,10 @@ public class LiveLooper : ISampleProvider, IDisposable
             _disposed = true;
 
             Stop();
+            foreach (var layer in _layers)
+            {
+                layer.Clear();
+            }
             _layers.Clear();
             _undoStack.Clear();
             _inputSource = null;

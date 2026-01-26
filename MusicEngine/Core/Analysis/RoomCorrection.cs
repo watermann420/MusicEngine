@@ -169,8 +169,6 @@ public class RoomCorrection
     private bool _isMeasuring;
     private float[] _measurementBuffer = Array.Empty<float>();
     private int _measurementPosition;
-    private Action<float>? _progressCallback;
-    private Action<RoomMeasurement>? _measurementCompleteCallback;
 
     /// <summary>
     /// Gets the current room correction profile.
@@ -304,7 +302,6 @@ public class RoomCorrection
         // Report progress
         float progress = (float)_measurementPosition / _measurementBuffer.Length;
         MeasurementProgress?.Invoke(progress);
-        _progressCallback?.Invoke(progress);
 
         // Check if complete
         if (_measurementPosition >= _measurementBuffer.Length)
@@ -346,7 +343,6 @@ public class RoomCorrection
         CurrentProfile.Measurements.Add(measurement);
 
         MeasurementComplete?.Invoke(measurement);
-        _measurementCompleteCallback?.Invoke(measurement);
     }
 
     /// <summary>

@@ -4,7 +4,6 @@
 // Description: MIDI handling component.
 
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 
 namespace MusicEngine.Core.Midi;
@@ -189,10 +188,10 @@ public struct Midi2NoteOn
     /// </summary>
     public ulong ToUMP()
     {
+        byte statusWithChannel = (byte)(((byte)Midi2ChannelVoiceStatus.NoteOn & 0xF0) | (Channel & 0x0F));
         uint word1 = ((uint)UMPMessageType.Midi2ChannelVoice << 28) |
                      ((uint)(Group & 0x0F) << 24) |
-                     ((uint)Midi2ChannelVoiceStatus.NoteOn << 16) |
-                     ((uint)(Channel & 0x0F) << 16) |
+                     ((uint)statusWithChannel << 16) |
                      ((uint)Note << 8) |
                      (uint)AttributeType;
 
@@ -265,10 +264,10 @@ public struct Midi2PerNotePitchBend
     /// </summary>
     public ulong ToUMP()
     {
+        byte statusWithChannel = (byte)(((byte)Midi2ChannelVoiceStatus.PerNotePitchBend & 0xF0) | (Channel & 0x0F));
         uint word1 = ((uint)UMPMessageType.Midi2ChannelVoice << 28) |
                      ((uint)(Group & 0x0F) << 24) |
-                     ((uint)Midi2ChannelVoiceStatus.PerNotePitchBend << 16) |
-                     ((uint)(Channel & 0x0F) << 16) |
+                     ((uint)statusWithChannel << 16) |
                      ((uint)Note << 8);
 
         return ((ulong)word1 << 32) | PitchBend;
@@ -312,10 +311,10 @@ public struct Midi2PerNoteController
             ? Midi2ChannelVoiceStatus.RegisteredPerNoteController
             : Midi2ChannelVoiceStatus.AssignablePerNoteController;
 
+        byte statusWithChannel = (byte)(((byte)status & 0xF0) | (Channel & 0x0F));
         uint word1 = ((uint)UMPMessageType.Midi2ChannelVoice << 28) |
                      ((uint)(Group & 0x0F) << 24) |
-                     ((uint)status << 16) |
-                     ((uint)(Channel & 0x0F) << 16) |
+                     ((uint)statusWithChannel << 16) |
                      ((uint)Note << 8) |
                      Index;
 
@@ -394,12 +393,6 @@ public class MIDI2Processor
     // Channel state
     private readonly Dictionary<(byte group, byte channel), ChannelState> _channelStates = new();
 
-    // Property exchange buffers
-    private readonly Dictionary<byte, PropertyExchangeBuffer> _propertyExchangeBuffers = new();
-
-    // Event queues
-    private readonly ConcurrentQueue<MIDI2Event> _eventQueue = new();
-
     /// <summary>
     /// Event raised when a MIDI 2.0 Note On is received.
     /// </summary>
@@ -419,11 +412,6 @@ public class MIDI2Processor
     /// Event raised when a per-note controller is received.
     /// </summary>
     public event Action<Midi2PerNoteController>? PerNoteControllerReceived;
-
-    /// <summary>
-    /// Event raised when a property exchange message is complete.
-    /// </summary>
-    public event Action<PropertyExchangeMessage>? PropertyExchangeReceived;
 
     /// <summary>
     /// Processes a 32-bit UMP word.
@@ -880,7 +868,6 @@ public class MIDI2Processor
         _activeNotes.Clear();
         _perNoteControllers.Clear();
         _channelStates.Clear();
-        _propertyExchangeBuffers.Clear();
     }
 
     /// <summary>
@@ -903,24 +890,5 @@ public class MIDI2Processor
         public byte Program { get; set; }
         public uint Pressure { get; set; }
         public uint PitchBend { get; set; } = 0x80000000; // Center
-    }
-
-    /// <summary>
-    /// Buffer for assembling multi-part property exchange messages.
-    /// </summary>
-    private class PropertyExchangeBuffer
-    {
-        public List<byte[]> Chunks { get; } = new();
-        public int TotalChunks { get; set; }
-    }
-
-    /// <summary>
-    /// Generic MIDI 2.0 event for queuing.
-    /// </summary>
-    private struct MIDI2Event
-    {
-        public UMPMessageType Type;
-        public ulong Data;
-        public DateTime Timestamp;
     }
 }

@@ -94,9 +94,6 @@ public class ProbabilitySequencer
     /// <summary>Event fired when a note should be triggered</summary>
     public event Action<int, int, double>? NoteTriggered; // note, velocity, duration
 
-    /// <summary>Event fired when a note should be released</summary>
-    public event Action<int>? NoteReleased;
-
     /// <summary>Event fired when step changes</summary>
     public event Action<int>? StepChanged;
 

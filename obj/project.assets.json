@@ -3143,19 +3143,19 @@
     ]
   },
   "packageFolders": {
-    "C:\\Users\\water\\.nuget\\packages\\": {}
+    "C:\\Users\\null\\.nuget\\packages\\": {}
   },
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\water\\RiderProjects\\MusicEngine\\MusicEngine.csproj",
+      "projectUniqueName": "C:\\Users\\null\\RiderProjects\\MusicEngine\\MusicEngine.csproj",
       "projectName": "MusicEngine",
-      "projectPath": "C:\\Users\\water\\RiderProjects\\MusicEngine\\MusicEngine.csproj",
-      "packagesPath": "C:\\Users\\water\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\water\\RiderProjects\\MusicEngine\\obj\\",
+      "projectPath": "C:\\Users\\null\\RiderProjects\\MusicEngine\\MusicEngine.csproj",
+      "packagesPath": "C:\\Users\\null\\.nuget\\packages\\",
+      "outputPath": "C:\\Users\\null\\RiderProjects\\MusicEngine\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
-        "C:\\Users\\water\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        "C:\\Users\\null\\AppData\\Roaming\\NuGet\\NuGet.Config"
       ],
       "originalTargetFrameworks": [
         "net10.0-windows"
@@ -3282,7 +3282,7 @@
             "privateAssets": "all"
           }
         },
-        "runtimeIdentifierGraphPath": "C:\\Users\\water\\.dotnet\\sdk\\10.0.101/PortableRuntimeIdentifierGraph.json",
+        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.101/PortableRuntimeIdentifierGraph.json",
         "packagesToPrune": {
           "Microsoft.CSharp": "(,4.7.32767]",
           "Microsoft.VisualBasic": "(,10.4.32767]",
