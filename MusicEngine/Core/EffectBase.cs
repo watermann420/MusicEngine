@@ -1,12 +1,12 @@
-//Engine License (MEL) - Honor-Based Commercial Support
-// copyright (c) 2026 MusicEngine Watermann420 and Contributors
-// Created by Watermann420
-// Description: Base class implementing common effect functionality.
-
+﻿// MusicEngine License (MEL) - Honor-Based Commercial Support
+// Copyright (c) 2025-2026 Yannis Watermann (watermann420, nullonebinary)
+// https://github.com/watermann420/MusicEngine
+// Description: Core engine component.
 
 using System;
 using System.Collections.Generic;
 using NAudio.Wave;
+using MusicEngine.Infrastructure.Memory;
 
 
 namespace MusicEngine.Core;
@@ -23,6 +23,7 @@ public abstract class EffectBase : IEffect
     private float _mix = 1.0f;
     private bool _enabled = true;
     private float[] _sourceBuffer = Array.Empty<float>();
+    private readonly IAudioBufferPool? _bufferPool;
 
     /// <summary>
     /// Creates a new effect with the specified audio source.
@@ -34,6 +35,18 @@ public abstract class EffectBase : IEffect
         _source = source ?? throw new ArgumentNullException(nameof(source));
         Name = name ?? throw new ArgumentNullException(nameof(name));
         WaveFormat = source.WaveFormat;
+    }
+
+    /// <summary>
+    /// Creates a new effect with the specified audio source and buffer pool.
+    /// </summary>
+    /// <param name="source">The audio source to process</param>
+    /// <param name="name">The name of the effect</param>
+    /// <param name="bufferPool">Optional buffer pool for memory efficiency</param>
+    protected EffectBase(ISampleProvider source, string name, IAudioBufferPool? bufferPool)
+        : this(source, name)
+    {
+        _bufferPool = bufferPool;
     }
 
     /// <inheritdoc />
@@ -113,27 +126,46 @@ public abstract class EffectBase : IEffect
     /// <inheritdoc />
     public int Read(float[] buffer, int offset, int count)
     {
-        // Ensure source buffer is large enough
-        if (_sourceBuffer.Length < count)
+        // Use buffer pool if available, otherwise use regular allocation
+        RentedBuffer<float>? rentedBuffer = null;
+        float[] sourceBuffer;
+
+        if (_bufferPool != null)
         {
-            _sourceBuffer = new float[count];
+            rentedBuffer = _bufferPool.Rent(count);
+            sourceBuffer = rentedBuffer.Value.Array;
+        }
+        else
+        {
+            // Ensure source buffer is large enough (legacy path)
+            if (_sourceBuffer.Length < count)
+            {
+                _sourceBuffer = new float[count];
+            }
+            sourceBuffer = _sourceBuffer;
         }
 
         // Read from source
-        int samplesRead = _source.Read(_sourceBuffer, 0, count);
+        int samplesRead = _source.Read(sourceBuffer, 0, count);
 
         if (samplesRead == 0)
+        {
+            // Return rented buffer to pool
+            rentedBuffer?.Dispose();
             return 0;
+        }
 
         // If effect is disabled, just copy the source
         if (!_enabled)
         {
-            Array.Copy(_sourceBuffer, 0, buffer, offset, samplesRead);
+            Array.Copy(sourceBuffer, 0, buffer, offset, samplesRead);
+            // Return rented buffer to pool
+            rentedBuffer?.Dispose();
             return samplesRead;
         }
 
         // Process the audio
-        ProcessBuffer(_sourceBuffer, buffer, offset, samplesRead);
+        ProcessBuffer(sourceBuffer, buffer, offset, samplesRead);
 
         // Apply dry/wet mix
         if (_mix < 1.0f)
@@ -141,9 +173,12 @@ public abstract class EffectBase : IEffect
             float dry = 1.0f - _mix;
             for (int i = 0; i < samplesRead; i++)
             {
-                buffer[offset + i] = (_sourceBuffer[i] * dry) + (buffer[offset + i] * _mix);
+                buffer[offset + i] = (sourceBuffer[i] * dry) + (buffer[offset + i] * _mix);
             }
         }
+
+        // Return rented buffer to pool
+        rentedBuffer?.Dispose();
 
         return samplesRead;
     }

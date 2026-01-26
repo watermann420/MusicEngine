@@ -1,14 +1,15 @@
-//Engine License (MEL) - Honor-Based Commercial Support
-// copyright (c) 2026 MusicEngine Watermann420 and Contributors
-// Created by Watermann420
-// Description: VST Plugin wrapper with full DSP processing, preset management, and parameter automation.
-
+﻿// MusicEngine License (MEL) - Honor-Based Commercial Support
+// Copyright (c) 2025-2026 Yannis Watermann (watermann420, nullonebinary)
+// https://github.com/watermann420/MusicEngine
+// Description: VST plugin wrapper.
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
+using MusicEngine.Core.Automation;
 using NAudio.Wave;
 
 
@@ -215,7 +216,7 @@ internal struct FxpHeader
 /// VST Plugin wrapper that implements ISynth for seamless integration.
 /// Provides full DSP processing, preset management, and parameter automation.
 /// </summary>
-public class VstPlugin : ISynth, IDisposable
+public class VstPlugin : IVstPlugin
 {
     // VST SDK constants
     private const int kVstMidiType = 1;
@@ -230,11 +231,12 @@ public class VstPlugin : ISynth, IDisposable
     private readonly WaveFormat _waveFormat;
     private readonly object _lock = new();
     private readonly List<(int note, int velocity)> _activeNotes = new();
-    private readonly Queue<VstMidiEventInternal> _midiEventQueue = new();
+    private readonly ConcurrentQueue<VstMidiEventInternal> _midiEventQueue = new();
     private IntPtr _pluginHandle = IntPtr.Zero;
     private IntPtr _moduleHandle = IntPtr.Zero;
     private bool _isDisposed;
     private bool _isProcessing;
+    private bool _isBypassed;
     private float _masterVolume = 1.0f;
 
     // Audio buffers
@@ -330,6 +332,46 @@ public class VstPlugin : ISynth, IDisposable
     public string CurrentPresetName => _currentPresetName;
     public int CurrentPresetIndex => _currentPreset;
     public float MasterVolume { get => _masterVolume; set => _masterVolume = Math.Clamp(value, 0f, 2f); }
+
+    // IVstPlugin interface properties
+    public string PluginPath => _info.Path;
+    public string Vendor => _info.Vendor;
+    public string Version => _info.Version;
+    public bool IsVst3 => false; // Always false for VST2
+    public int NumAudioInputs => _info.NumInputs;
+    public int NumAudioOutputs => _info.NumOutputs;
+    public int SampleRate => _waveFormat.SampleRate;
+    public int BlockSize => Settings.VstBufferSize;
+    public bool HasEditor => _pluginHandle != IntPtr.Zero && (Marshal.ReadInt32(_pluginHandle, IntPtr.Size * 5 + 16) & (int)VstPluginFlags.HasEditor) != 0;
+    public bool IsActive => _isProcessing;
+
+    /// <summary>
+    /// Gets the processing latency introduced by this plugin in samples.
+    /// For VST2 plugins, this corresponds to aeffect->initialDelay.
+    /// </summary>
+    public int LatencySamples => GetInitialDelay();
+
+    /// <summary>
+    /// Event raised when the bypass state changes.
+    /// </summary>
+    public event EventHandler<bool>? BypassChanged;
+
+    /// <summary>
+    /// Gets or sets whether the plugin is bypassed.
+    /// When bypassed, audio passes through without processing.
+    /// </summary>
+    public bool IsBypassed
+    {
+        get => _isBypassed;
+        set
+        {
+            if (_isBypassed != value)
+            {
+                _isBypassed = value;
+                BypassChanged?.Invoke(this, value);
+            }
+        }
+    }
 
     /// <summary>
     /// Gets or sets the input provider for effect processing.
@@ -542,6 +584,66 @@ public class VstPlugin : ISynth, IDisposable
     }
 
     /// <summary>
+    /// Gets the initial delay (latency) reported by the VST2 plugin in samples.
+    /// </summary>
+    /// <returns>The plugin's processing latency in samples, or 0 if not available.</returns>
+    private int GetInitialDelay()
+    {
+        if (_pluginHandle == IntPtr.Zero)
+            return 0;
+
+        try
+        {
+            // AEffect structure layout includes initialDelay after the flags field
+            // The exact offset depends on the architecture and VST SDK version
+            // Standard AEffect layout:
+            // - magic: int (4 bytes)
+            // - dispatcher: IntPtr
+            // - deprecated_process: IntPtr
+            // - setParameter: IntPtr
+            // - getParameter: IntPtr
+            // - numPrograms: int (4 bytes)
+            // - numParams: int (4 bytes)
+            // - numInputs: int (4 bytes)
+            // - numOutputs: int (4 bytes)
+            // - flags: int (4 bytes)
+            // - resvd1: IntPtr
+            // - resvd2: IntPtr
+            // - initialDelay: int (4 bytes)
+
+            int ptrSize = IntPtr.Size;
+
+            // Calculate offset to initialDelay
+            // After 5 IntPtrs (magic uses 4 bytes, but aligned to IntPtr boundary in 64-bit)
+            // plus 5 ints (numPrograms, numParams, numInputs, numOutputs, flags)
+            // plus 2 IntPtrs (resvd1, resvd2)
+
+            // For 64-bit: (1 + 4) * 8 + 5 * 4 + 2 * 8 = 40 + 20 + 16 = 76
+            // But we need to account for alignment. Let's use a more reliable offset.
+
+            // Offset calculation: ptrSize * 5 (for magic aligned + 4 function pointers)
+            // + 20 bytes (5 ints: numPrograms, numParams, numInputs, numOutputs, flags)
+            // + 2 * ptrSize (resvd1, resvd2)
+            int baseOffset = ptrSize * 5 + 20; // After flags
+            int initialDelayOffset = baseOffset + (ptrSize * 2); // After resvd1 and resvd2
+
+            int initialDelay = Marshal.ReadInt32(_pluginHandle, initialDelayOffset);
+
+            // Validate the value is reasonable (0 to ~10 seconds at 48kHz = 480000 samples)
+            if (initialDelay >= 0 && initialDelay < 500000)
+            {
+                return initialDelay;
+            }
+
+            return 0;
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    /// <summary>
     /// Audio master callback for VST host communication
     /// </summary>
     private IntPtr AudioMasterCallback(IntPtr effect, int opcode, int index, IntPtr value, IntPtr ptr, float opt)
@@ -726,6 +828,9 @@ public class VstPlugin : ISynth, IDisposable
     /// </summary>
     public void NoteOn(int note, int velocity)
     {
+        MidiValidation.ValidateNote(note);
+        MidiValidation.ValidateVelocity(velocity);
+
         lock (_lock)
         {
             _activeNotes.Add((note, velocity));
@@ -733,8 +838,8 @@ public class VstPlugin : ISynth, IDisposable
             {
                 DeltaFrames = 0,
                 Status = 0x90, // Note On, channel 1
-                Data1 = (byte)Math.Clamp(note, 0, 127),
-                Data2 = (byte)Math.Clamp(velocity, 0, 127)
+                Data1 = (byte)note,
+                Data2 = (byte)velocity
             });
         }
     }
@@ -744,6 +849,8 @@ public class VstPlugin : ISynth, IDisposable
     /// </summary>
     public void NoteOff(int note)
     {
+        MidiValidation.ValidateNote(note);
+
         lock (_lock)
         {
             _activeNotes.RemoveAll(n => n.note == note);
@@ -751,7 +858,7 @@ public class VstPlugin : ISynth, IDisposable
             {
                 DeltaFrames = 0,
                 Status = 0x80, // Note Off, channel 1
-                Data1 = (byte)Math.Clamp(note, 0, 127),
+                Data1 = (byte)note,
                 Data2 = 0
             });
         }
@@ -792,16 +899,17 @@ public class VstPlugin : ISynth, IDisposable
     /// </summary>
     public void SendControlChange(int channel, int controller, int value)
     {
-        lock (_lock)
+        MidiValidation.ValidateChannel(channel);
+        MidiValidation.ValidateController(controller);
+        MidiValidation.ValidateVelocity(value); // CC values are 0-127 like velocity
+
+        _midiEventQueue.Enqueue(new VstMidiEventInternal
         {
-            _midiEventQueue.Enqueue(new VstMidiEventInternal
-            {
-                DeltaFrames = 0,
-                Status = (byte)(0xB0 | (channel & 0x0F)),
-                Data1 = (byte)Math.Clamp(controller, 0, 127),
-                Data2 = (byte)Math.Clamp(value, 0, 127)
-            });
-        }
+            DeltaFrames = 0,
+            Status = (byte)(0xB0 | channel),
+            Data1 = (byte)controller,
+            Data2 = (byte)value
+        });
     }
 
     /// <summary>
@@ -809,17 +917,16 @@ public class VstPlugin : ISynth, IDisposable
     /// </summary>
     public void SendPitchBend(int channel, int value)
     {
-        lock (_lock)
+        MidiValidation.ValidateChannel(channel);
+        MidiValidation.ValidatePitchBend(value);
+
+        _midiEventQueue.Enqueue(new VstMidiEventInternal
         {
-            int clampedValue = Math.Clamp(value, 0, 16383);
-            _midiEventQueue.Enqueue(new VstMidiEventInternal
-            {
-                DeltaFrames = 0,
-                Status = (byte)(0xE0 | (channel & 0x0F)),
-                Data1 = (byte)(clampedValue & 0x7F),
-                Data2 = (byte)((clampedValue >> 7) & 0x7F)
-            });
-        }
+            DeltaFrames = 0,
+            Status = (byte)(0xE0 | channel),
+            Data1 = (byte)(value & 0x7F),
+            Data2 = (byte)((value >> 7) & 0x7F)
+        });
     }
 
     /// <summary>
@@ -827,16 +934,16 @@ public class VstPlugin : ISynth, IDisposable
     /// </summary>
     public void SendProgramChange(int channel, int program)
     {
-        lock (_lock)
+        MidiValidation.ValidateChannel(channel);
+        MidiValidation.ValidateProgram(program);
+
+        _midiEventQueue.Enqueue(new VstMidiEventInternal
         {
-            _midiEventQueue.Enqueue(new VstMidiEventInternal
-            {
-                DeltaFrames = 0,
-                Status = (byte)(0xC0 | (channel & 0x0F)),
-                Data1 = (byte)Math.Clamp(program, 0, 127),
-                Data2 = 0
-            });
-        }
+            DeltaFrames = 0,
+            Status = (byte)(0xC0 | channel),
+            Data1 = (byte)program,
+            Data2 = 0
+        });
     }
 
     #endregion
@@ -1012,6 +1119,78 @@ public class VstPlugin : ISynth, IDisposable
             return label;
         }
         return "";
+    }
+
+    /// <summary>
+    /// Get detailed information about a parameter
+    /// </summary>
+    /// <param name="index">Parameter index</param>
+    /// <returns>VstParameterInfo containing parameter details, or null if index is invalid</returns>
+    public VstParameterInfo? GetParameterInfo(int index)
+    {
+        if (index < 0 || index >= _info.NumParameters)
+            return null;
+
+        string name = GetParameterName(index);
+        string label = GetParameterLabel(index);
+        float currentValue = GetParameterValue(index);
+        bool canAutomate = CanParameterBeAutomated(index);
+
+        return new VstParameterInfo
+        {
+            Index = index,
+            Name = name,
+            ShortName = name.Length > 8 ? name[..8] : name,
+            Label = label,
+            MinValue = 0f,
+            MaxValue = 1f,
+            DefaultValue = currentValue, // VST2 doesn't expose default, use current
+            StepCount = 0, // VST2 doesn't expose step count
+            IsAutomatable = canAutomate,
+            IsReadOnly = false,
+            ParameterId = (uint)index
+        };
+    }
+
+    /// <summary>
+    /// Get information about all parameters
+    /// </summary>
+    /// <returns>Read-only list of all parameter info</returns>
+    public IReadOnlyList<VstParameterInfo> GetAllParameterInfo()
+    {
+        var result = new List<VstParameterInfo>();
+        for (int i = 0; i < _info.NumParameters; i++)
+        {
+            var info = GetParameterInfo(i);
+            if (info != null)
+            {
+                result.Add(info);
+            }
+        }
+        return result.AsReadOnly();
+    }
+
+    /// <summary>
+    /// Check if a parameter can be automated
+    /// </summary>
+    /// <param name="index">Parameter index</param>
+    /// <returns>True if the parameter supports automation</returns>
+    public bool CanParameterBeAutomated(int index)
+    {
+        if (index < 0 || index >= _info.NumParameters)
+            return false;
+
+        if (_dispatcher != null && _pluginHandle != IntPtr.Zero)
+        {
+            lock (_lock)
+            {
+                IntPtr result = _dispatcher(_pluginHandle, (int)VstOpcode.CanBeAutomated, index, IntPtr.Zero, IntPtr.Zero, 0);
+                return result.ToInt32() != 0;
+            }
+        }
+
+        // Assume automatable if we can't query
+        return true;
     }
 
     #endregion
@@ -1420,9 +1599,20 @@ public class VstPlugin : ISynth, IDisposable
                     // Process automation
                     ProcessAutomation();
 
-                    // Process through VST plugin
-                    if (_processReplacing != null && _pluginHandle != IntPtr.Zero)
+                    // Handle bypass - pass input through without processing
+                    if (_isBypassed)
                     {
+                        // For effects, pass input through; for instruments, output silence
+                        if (!IsInstrument && _inputProvider != null)
+                        {
+                            Array.Copy(_inputBufferLeft, _outputBufferLeft, samplesToProcess);
+                            Array.Copy(_inputBufferRight, _outputBufferRight, samplesToProcess);
+                        }
+                        // else output buffers are already cleared (silence for bypassed instruments)
+                    }
+                    else if (_processReplacing != null && _pluginHandle != IntPtr.Zero)
+                    {
+                        // Process through VST plugin
                         // Pin pointer arrays
                         GCHandle inputPtrsHandle = GCHandle.Alloc(_inputPointers, GCHandleType.Pinned);
                         GCHandle outputPtrsHandle = GCHandle.Alloc(_outputPointers, GCHandleType.Pinned);
@@ -1488,9 +1678,20 @@ public class VstPlugin : ISynth, IDisposable
                 // Process automation
                 ProcessAutomation();
 
-                // Process through VST
-                if (_processReplacing != null && _pluginHandle != IntPtr.Zero)
+                // Handle bypass - pass input through without processing
+                if (_isBypassed)
                 {
+                    // For effects, pass input through; for instruments, output silence
+                    if (!IsInstrument)
+                    {
+                        Array.Copy(_inputBufferLeft, _outputBufferLeft, samplesPerChannel);
+                        Array.Copy(_inputBufferRight, _outputBufferRight, samplesPerChannel);
+                    }
+                    // else output buffers are already cleared (silence for bypassed instruments)
+                }
+                else if (_processReplacing != null && _pluginHandle != IntPtr.Zero)
+                {
+                    // Process through VST
                     GCHandle inputPtrsHandle = GCHandle.Alloc(_inputPointers, GCHandleType.Pinned);
                     GCHandle outputPtrsHandle = GCHandle.Alloc(_outputPointers, GCHandleType.Pinned);
 
@@ -1535,7 +1736,7 @@ public class VstPlugin : ISynth, IDisposable
     /// </summary>
     private void ProcessMidiEvents()
     {
-        if (_midiEventQueue.Count == 0) return;
+        if (_midiEventQueue.IsEmpty) return;
 
         if (_dispatcher != null && _pluginHandle != IntPtr.Zero)
         {
@@ -1555,10 +1756,8 @@ public class VstPlugin : ISynth, IDisposable
                 int eventOffset = 8 + IntPtr.Size;
                 int dataOffset = eventsSize;
 
-                while (_midiEventQueue.Count > 0)
+                while (_midiEventQueue.TryDequeue(out var evt))
                 {
-                    var evt = _midiEventQueue.Dequeue();
-
                     // Create MIDI event struct
                     var midiEvent = new VstMidiEventStruct
                     {
@@ -1640,6 +1839,143 @@ public class VstPlugin : ISynth, IDisposable
                 {
                     output[dstIndex + 1] = right[i] * gain;
                 }
+            }
+        }
+    }
+
+    #endregion
+
+    #region IVstPlugin Interface Methods
+
+    /// <summary>
+    /// Set the sample rate for processing
+    /// </summary>
+    public void SetSampleRate(double sampleRate)
+    {
+        lock (_lock)
+        {
+            if (_dispatcher != null && _pluginHandle != IntPtr.Zero)
+            {
+                _dispatcher(_pluginHandle, (int)VstOpcode.SetSampleRate, 0, IntPtr.Zero, IntPtr.Zero, (float)sampleRate);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Set the block size for processing
+    /// </summary>
+    public void SetBlockSize(int blockSize)
+    {
+        lock (_lock)
+        {
+            if (_dispatcher != null && _pluginHandle != IntPtr.Zero)
+            {
+                _dispatcher(_pluginHandle, (int)VstOpcode.SetBlockSize, 0, new IntPtr(blockSize), IntPtr.Zero, 0);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Open the plugin editor GUI
+    /// </summary>
+    /// <param name="parentWindow">Handle to the parent window</param>
+    /// <returns>Handle to the editor window, or IntPtr.Zero if failed</returns>
+    public IntPtr OpenEditor(IntPtr parentWindow)
+    {
+        lock (_lock)
+        {
+            if (_dispatcher != null && _pluginHandle != IntPtr.Zero && HasEditor)
+            {
+                return _dispatcher(_pluginHandle, (int)VstOpcode.EditOpen, 0, IntPtr.Zero, parentWindow, 0);
+            }
+        }
+        return IntPtr.Zero;
+    }
+
+    /// <summary>
+    /// Close the plugin editor GUI
+    /// </summary>
+    public void CloseEditor()
+    {
+        lock (_lock)
+        {
+            if (_dispatcher != null && _pluginHandle != IntPtr.Zero)
+            {
+                _dispatcher(_pluginHandle, (int)VstOpcode.EditClose, 0, IntPtr.Zero, IntPtr.Zero, 0);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Get the preferred editor window size
+    /// </summary>
+    /// <param name="width">Output width</param>
+    /// <param name="height">Output height</param>
+    /// <returns>True if size was retrieved</returns>
+    public bool GetEditorSize(out int width, out int height)
+    {
+        width = 0;
+        height = 0;
+
+        lock (_lock)
+        {
+            if (_dispatcher != null && _pluginHandle != IntPtr.Zero && HasEditor)
+            {
+                // Allocate memory for ERect pointer
+                IntPtr rectPtrPtr = Marshal.AllocHGlobal(IntPtr.Size);
+                try
+                {
+                    Marshal.WriteIntPtr(rectPtrPtr, IntPtr.Zero);
+                    _dispatcher(_pluginHandle, (int)VstOpcode.EditGetRect, 0, IntPtr.Zero, rectPtrPtr, 0);
+
+                    IntPtr rectPtr = Marshal.ReadIntPtr(rectPtrPtr);
+                    if (rectPtr != IntPtr.Zero)
+                    {
+                        // ERect structure: short top, short left, short bottom, short right
+                        short top = Marshal.ReadInt16(rectPtr, 0);
+                        short left = Marshal.ReadInt16(rectPtr, 2);
+                        short bottom = Marshal.ReadInt16(rectPtr, 4);
+                        short right = Marshal.ReadInt16(rectPtr, 6);
+
+                        width = right - left;
+                        height = bottom - top;
+                        return true;
+                    }
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(rectPtrPtr);
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Activate the plugin for processing
+    /// </summary>
+    public void Activate()
+    {
+        lock (_lock)
+        {
+            if (_dispatcher != null && _pluginHandle != IntPtr.Zero)
+            {
+                _dispatcher(_pluginHandle, (int)VstOpcode.MainsChanged, 0, new IntPtr(1), IntPtr.Zero, 0);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Deactivate the plugin
+    /// </summary>
+    public void Deactivate()
+    {
+        lock (_lock)
+        {
+            if (_dispatcher != null && _pluginHandle != IntPtr.Zero)
+            {
+                _dispatcher(_pluginHandle, (int)VstOpcode.MainsChanged, 0, IntPtr.Zero, IntPtr.Zero, 0);
             }
         }
     }

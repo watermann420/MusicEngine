@@ -1,14 +1,15 @@
-//Engine License (MEL) - Honor-Based Commercial Support
-// copyright (c) 2026 MusicEngine Watermann420 and Contributors
-// Created by Watermann420
-// Description: A class for sequencing MIDI patterns and controlling playback with event emission.
-//              Enhanced with high-resolution timing for sample-accurate music production.
-
+﻿// MusicEngine License (MEL) - Honor-Based Commercial Support
+// Copyright (c) 2025-2026 Yannis Watermann (watermann420, nullonebinary)
+// https://github.com/watermann420/MusicEngine
+// Description: Main sequencer for pattern playback and scheduling.
 
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
 
 namespace MusicEngine.Core;
@@ -63,13 +64,13 @@ public enum BeatSubdivision
 public class Sequencer : IDisposable
 {
     private readonly List<Pattern> _patterns = new(); // patterns to play
-    private bool _running; // is the sequencer running?
-    private double _bpm = 120.0; // beats per minute
+    private volatile bool _running; // is the sequencer running? (volatile for thread-safe reads)
+    private double _bpm = 120.0; // beats per minute (accessed under lock)
     private Thread? _thread; // playback thread
-    private double _beatAccumulator = 0; // current beat position
-    private bool _isScratching = false; // is scratching mode enabled?
+    private double _beatAccumulator = 0; // current beat position (accessed under lock)
+    private volatile bool _isScratching = false; // is scratching mode enabled? (volatile for thread-safe reads)
     private double _defaultLoopLength = 4.0; // default loop length for beat events
-    private bool _disposed = false;
+    private volatile bool _disposed = false; // volatile for thread-safe dispose check
 
     // High-resolution timing components
     private HighResolutionTimer? _highResTimer;
@@ -96,9 +97,32 @@ public class Sequencer : IDisposable
     private MidiClockSync? _midiClockSync;
     private bool _useMidiClockSync = false;
 
+    // Tempo and time signature tracking
+    private TempoTrack? _tempoTrack;
+    private TimeSignatureTrack? _timeSignatureTrack;
+
+    // Arrangement support
+    private Arrangement? _arrangement;
+    private readonly object _arrangementLock = new();
+    private readonly HashSet<Guid> _activeAudioClipIds = [];
+    private readonly HashSet<Guid> _activeMidiClipIds = [];
+    private readonly Dictionary<Guid, ISynth?> _midiClipSynths = new();
+    private bool _loopingEnabled = true;
+
+    // Metronome integration
+    private Metronome? _metronome;
+    private bool _enableMetronome = false;
+    private bool _isWaitingForCountIn = false;
+
+    // Punch recording support
+    private readonly PunchRecording _punchSettings = new();
+
     // Event emission for visualization
     private readonly object _eventLock = new();
     private readonly List<MusicalEvent> _activeEvents = new(); // currently playing events
+
+    // Logging
+    private readonly ILogger? _logger;
 
     /// <summary>Fired when a note is triggered (NoteOn).</summary>
     public event EventHandler<MusicalEventArgs>? NoteTriggered;
@@ -118,6 +142,9 @@ public class Sequencer : IDisposable
     /// <summary>Fired when BPM changes.</summary>
     public event EventHandler<ParameterChangedEventArgs>? BpmChanged;
 
+    /// <summary>Fired when time signature changes.</summary>
+    public event EventHandler<TimeSignatureChangedEventArgs>? TimeSignatureChanged;
+
     /// <summary>Fired when a pattern is added.</summary>
     public event EventHandler<Pattern>? PatternAdded;
 
@@ -130,16 +157,45 @@ public class Sequencer : IDisposable
     /// <summary>Fired when timing jitter is detected above threshold.</summary>
     public event EventHandler<TimingJitterEventArgs>? TimingJitterDetected;
 
+    /// <summary>Fired when an audio clip starts playing.</summary>
+    public event EventHandler<AudioClipEventArgs>? AudioClipStarted;
+
+    /// <summary>Fired when an audio clip stops playing.</summary>
+    public event EventHandler<AudioClipEventArgs>? AudioClipEnded;
+
+    /// <summary>Fired when a MIDI clip starts playing.</summary>
+    public event EventHandler<MidiClipEventArgs>? MidiClipStarted;
+
+    /// <summary>Fired when a MIDI clip stops playing.</summary>
+    public event EventHandler<MidiClipEventArgs>? MidiClipEnded;
+
+    /// <summary>Fired when the arrangement is changed.</summary>
+    public event EventHandler<ArrangementChangedEventArgs>? ArrangementSet;
+
+    /// <summary>Fired when punch-in is triggered during recording.</summary>
+    public event EventHandler<PunchEventArgs>? PunchInTriggered;
+
+    /// <summary>Fired when punch-out is triggered during recording.</summary>
+    public event EventHandler<PunchOutEventArgs>? PunchOutTriggered;
+
     // Properties for BPM and current beat
     public double Bpm
     {
-        get => _bpm;
+        get => _tempoTrack != null ? _tempoTrack.GetTempoAt(_beatAccumulator) : _bpm;
         set
         {
             var oldBpm = _bpm;
             _bpm = Math.Max(1.0, value);
+
+            // Update tempo track default if available
+            if (_tempoTrack != null)
+            {
+                _tempoTrack.DefaultBpm = _bpm;
+            }
+
             if (Math.Abs(oldBpm - _bpm) > 0.001)
             {
+                _logger?.LogDebug("BPM changed from {OldBpm} to {NewBpm}", oldBpm, _bpm);
                 BpmChanged?.Invoke(this, new ParameterChangedEventArgs("Bpm", oldBpm, _bpm));
                 UpdateTimingParameters();
 
@@ -151,6 +207,9 @@ public class Sequencer : IDisposable
             }
         }
     }
+
+    /// <summary>Gets the effective BPM at the current position, accounting for tempo changes.</summary>
+    public double EffectiveBpm => _tempoTrack?.GetTempoAt(_beatAccumulator) ?? _bpm;
 
     // Current beat position in the sequencer
     public double CurrentBeat
@@ -258,6 +317,74 @@ public class Sequencer : IDisposable
     /// <summary>Gets the current average timing jitter in milliseconds.</summary>
     public double AverageTimingJitter => _averageTimingJitter;
 
+    /// <summary>Gets or sets the tempo track for advanced tempo and time signature control.</summary>
+    public TempoTrack? TempoTrack
+    {
+        get => _tempoTrack;
+        set
+        {
+            _tempoTrack = value;
+            if (_tempoTrack != null)
+            {
+                _tempoTrack.SampleRate = _sampleRate;
+                _bpm = _tempoTrack.DefaultBpm;
+                UpdateTimingParameters();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Gets or sets the time signature track for managing time signature changes throughout the project.
+    /// This provides a dedicated track for time signature management separate from the tempo track.
+    /// </summary>
+    public TimeSignatureTrack? TimeSignatureTrack
+    {
+        get => _timeSignatureTrack;
+        set
+        {
+            if (_timeSignatureTrack != null)
+            {
+                _timeSignatureTrack.TimeSignatureChanged -= OnTimeSignatureTrackChanged;
+            }
+
+            _timeSignatureTrack = value;
+
+            if (_timeSignatureTrack != null)
+            {
+                _timeSignatureTrack.TimeSignatureChanged += OnTimeSignatureTrackChanged;
+            }
+        }
+    }
+
+    /// <summary>Gets the current time signature at the current position.</summary>
+    public TimeSignature CurrentTimeSignature =>
+        _tempoTrack?.GetTimeSignatureAtBeats(_beatAccumulator) ?? TimeSignature.Common;
+
+    /// <summary>Gets the current bar number (0-indexed).</summary>
+    public int CurrentBar => _tempoTrack?.BeatsToBar(_beatAccumulator) ?? (int)(_beatAccumulator / 4.0);
+
+    /// <summary>Gets the current beat within the current bar (0-indexed).</summary>
+    public double CurrentBeatInBar
+    {
+        get
+        {
+            if (_tempoTrack != null)
+            {
+                var (_, beat) = _tempoTrack.BeatsToBarBeat(_beatAccumulator);
+                return beat;
+            }
+            return _beatAccumulator % 4.0;
+        }
+    }
+
+    /// <summary>Gets the current position in seconds.</summary>
+    public double CurrentTimeSeconds => _tempoTrack?.BeatsToSeconds(_beatAccumulator) ??
+        (_beatAccumulator * 60.0 / _bpm);
+
+    /// <summary>Gets the current position in samples.</summary>
+    public long CurrentTimeSamples => _tempoTrack?.BeatsToSamples(_beatAccumulator) ??
+        (long)(CurrentTimeSeconds * _sampleRate);
+
     /// <summary>Gets the current jitter compensation value in milliseconds.</summary>
     public double JitterCompensation => _jitterCompensationMs;
 
@@ -318,12 +445,167 @@ public class Sequencer : IDisposable
         set => _useMidiClockSync = value;
     }
 
+    /// <summary>Gets the currently assigned arrangement.</summary>
+    public Arrangement? Arrangement
+    {
+        get
+        {
+            lock (_arrangementLock)
+            {
+                return _arrangement;
+            }
+        }
+    }
+
+    /// <summary>Gets or sets whether looping is enabled when an arrangement loop region is set.</summary>
+    public bool LoopingEnabled
+    {
+        get => _loopingEnabled;
+        set => _loopingEnabled = value;
+    }
+
+    /// <summary>Gets the IDs of currently playing audio clips.</summary>
+    public IReadOnlySet<Guid> ActiveAudioClipIds
+    {
+        get
+        {
+            lock (_arrangementLock)
+            {
+                return _activeAudioClipIds.ToHashSet();
+            }
+        }
+    }
+
+    /// <summary>Gets the IDs of currently playing MIDI clips.</summary>
+    public IReadOnlySet<Guid> ActiveMidiClipIds
+    {
+        get
+        {
+            lock (_arrangementLock)
+            {
+                return _activeMidiClipIds.ToHashSet();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Gets or sets the metronome associated with this sequencer.
+    /// When set, the metronome will automatically sync with the sequencer.
+    /// </summary>
+    public Metronome? Metronome
+    {
+        get => _metronome;
+        set
+        {
+            // Detach previous metronome if it was attached
+            if (_metronome != null && _metronome.IsAttachedToSequencer)
+            {
+                _metronome.DetachFromSequencer();
+            }
+
+            _metronome = value;
+
+            // Attach new metronome if provided and EnableMetronome is true
+            if (_metronome != null && _enableMetronome)
+            {
+                _metronome.AttachToSequencer(this);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Gets or sets whether the metronome is enabled.
+    /// When enabled, the metronome will play clicks in sync with the sequencer.
+    /// </summary>
+    public bool EnableMetronome
+    {
+        get => _enableMetronome;
+        set
+        {
+            _enableMetronome = value;
+
+            if (_metronome != null)
+            {
+                if (value && !_metronome.IsAttachedToSequencer)
+                {
+                    _metronome.AttachToSequencer(this);
+                }
+                else if (!value && _metronome.IsAttachedToSequencer)
+                {
+                    _metronome.DetachFromSequencer();
+                }
+
+                _metronome.Enabled = value;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Gets or sets the number of count-in bars before playback starts.
+    /// Delegates to Metronome.CountIn if a metronome is assigned.
+    /// Valid values are 0, 1, 2, or 4.
+    /// </summary>
+    public int MetronomeCountIn
+    {
+        get => _metronome?.CountIn ?? 0;
+        set
+        {
+            if (_metronome != null)
+            {
+                _metronome.CountIn = value;
+            }
+        }
+    }
+
+    /// <summary>Gets whether the sequencer is currently waiting for count-in to complete.</summary>
+    public bool IsWaitingForCountIn => _isWaitingForCountIn;
+
+    /// <summary>
+    /// Gets the punch recording settings for punch in/out recording.
+    /// </summary>
+    public PunchRecording PunchSettings => _punchSettings;
+
+    /// <summary>
+    /// Gets whether the sequencer is currently in the punch recording region.
+    /// Returns true if punch recording is not enabled or if in the punch region.
+    /// </summary>
+    public bool IsInPunchRegion => !_punchSettings.IsActive || _punchSettings.IsInPunchRegion(_beatAccumulator);
+
     /// <summary>
     /// Creates a new sequencer with default settings (backward compatible).
     /// </summary>
     public Sequencer()
     {
+        _tempoTrack = new TempoTrack(_bpm, TimeSignature.Common, _sampleRate);
         UpdateTimingParameters();
+        InitializePunchRecording();
+    }
+
+    /// <summary>
+    /// Initializes punch recording event handlers.
+    /// </summary>
+    private void InitializePunchRecording()
+    {
+        _punchSettings.PunchInTriggered += OnPunchInTriggered;
+        _punchSettings.PunchOutTriggered += OnPunchOutTriggered;
+    }
+
+    /// <summary>
+    /// Handles the punch-in event from PunchRecording.
+    /// </summary>
+    private void OnPunchInTriggered(object? sender, PunchEventArgs e)
+    {
+        _logger?.LogInformation("Punch-in triggered at beat {Beat}", e.Beat);
+        PunchInTriggered?.Invoke(this, e);
+    }
+
+    /// <summary>
+    /// Handles the punch-out event from PunchRecording.
+    /// </summary>
+    private void OnPunchOutTriggered(object? sender, PunchOutEventArgs e)
+    {
+        _logger?.LogInformation("Punch-out triggered at beat {Beat}, recorded {Duration} beats", e.Beat, e.RecordedDurationBeats);
+        PunchOutTriggered?.Invoke(this, e);
     }
 
     /// <summary>
@@ -337,6 +619,30 @@ public class Sequencer : IDisposable
     }
 
     /// <summary>
+    /// Creates a new sequencer with a custom tempo track.
+    /// </summary>
+    /// <param name="tempoTrack">The tempo track to use.</param>
+    public Sequencer(TempoTrack tempoTrack) : this()
+    {
+        _tempoTrack = tempoTrack ?? throw new ArgumentNullException(nameof(tempoTrack));
+        _bpm = _tempoTrack.DefaultBpm;
+        _sampleRate = _tempoTrack.SampleRate;
+        UpdateTimingParameters();
+    }
+
+    /// <summary>
+    /// Creates a new sequencer with specified BPM and time signature.
+    /// </summary>
+    /// <param name="bpm">The initial tempo in BPM.</param>
+    /// <param name="timeSignature">The initial time signature.</param>
+    public Sequencer(double bpm, TimeSignature timeSignature) : this()
+    {
+        _bpm = Math.Max(1.0, bpm);
+        _tempoTrack = new TempoTrack(_bpm, timeSignature, _sampleRate);
+        UpdateTimingParameters();
+    }
+
+    /// <summary>
     /// Creates a new sequencer with specified timing precision and subdivision.
     /// </summary>
     public Sequencer(TimingPrecision precision, BeatSubdivision subdivision) : this()
@@ -344,6 +650,22 @@ public class Sequencer : IDisposable
         _timingPrecision = precision;
         _beatSubdivision = subdivision;
         UpdateTimingParameters();
+    }
+
+    /// <summary>
+    /// Creates a new sequencer with logging support.
+    /// </summary>
+    public Sequencer(ILogger? logger) : this()
+    {
+        _logger = logger;
+    }
+
+    /// <summary>
+    /// Creates a new sequencer with specified timing precision and logging.
+    /// </summary>
+    public Sequencer(TimingPrecision precision, ILogger? logger) : this(precision)
+    {
+        _logger = logger;
     }
 
     private void UpdateTimingParameters()
@@ -387,6 +709,7 @@ public class Sequencer : IDisposable
             pattern.Sequencer = this; // Link pattern to sequencer for event emission
             _patterns.Add(pattern);
         }
+        _logger?.LogDebug("Pattern added: {PatternName}", pattern.Name);
         PatternAdded?.Invoke(this, pattern);
     }
 
@@ -405,6 +728,7 @@ public class Sequencer : IDisposable
         {
             _activeEvents.Clear();
         }
+        _logger?.LogDebug("All patterns cleared");
         PatternsCleared?.Invoke(this, EventArgs.Empty);
     }
 
@@ -421,20 +745,479 @@ public class Sequencer : IDisposable
                 _patterns[i].PatternIndex = i;
             }
         }
+        _logger?.LogDebug("Pattern removed: {PatternName}", pattern.Name);
         PatternRemoved?.Invoke(this, pattern);
     }
+
+    #region Arrangement Support
+
+    /// <summary>
+    /// Sets the arrangement for playback.
+    /// </summary>
+    /// <param name="arrangement">The arrangement to play, or null to clear.</param>
+    public void SetArrangement(Arrangement? arrangement)
+    {
+        lock (_arrangementLock)
+        {
+            // Stop all active clips from previous arrangement
+            StopAllClipsInternal();
+
+            _arrangement = arrangement;
+            _activeAudioClipIds.Clear();
+            _activeMidiClipIds.Clear();
+            _midiClipSynths.Clear();
+
+            // Sync BPM from arrangement if available
+            if (_arrangement != null)
+            {
+                _bpm = _arrangement.Bpm;
+                _logger?.LogInformation("Arrangement set: {ArrangementName} at {Bpm} BPM",
+                    _arrangement.Name, _arrangement.Bpm);
+            }
+            else
+            {
+                _logger?.LogInformation("Arrangement cleared");
+            }
+        }
+
+        ArrangementSet?.Invoke(this, new ArrangementChangedEventArgs(
+            arrangement != null ? ArrangementChangeType.SectionModified : ArrangementChangeType.Cleared));
+    }
+
+    /// <summary>
+    /// Assigns a synthesizer to a MIDI clip for playback.
+    /// </summary>
+    /// <param name="clipId">The MIDI clip ID.</param>
+    /// <param name="synth">The synthesizer to use for the clip.</param>
+    public void AssignSynthToMidiClip(Guid clipId, ISynth synth)
+    {
+        lock (_arrangementLock)
+        {
+            _midiClipSynths[clipId] = synth;
+        }
+        _logger?.LogDebug("Synth assigned to MIDI clip {ClipId}: {SynthName}", clipId, synth.Name);
+    }
+
+    /// <summary>
+    /// Assigns synthesizers to MIDI clips by track index.
+    /// </summary>
+    /// <param name="trackSynths">Dictionary mapping track index to synthesizer.</param>
+    public void AssignSynthsByTrack(Dictionary<int, ISynth> trackSynths)
+    {
+        if (_arrangement == null) return;
+
+        lock (_arrangementLock)
+        {
+            foreach (var clip in _arrangement.MidiClips)
+            {
+                if (trackSynths.TryGetValue(clip.TrackIndex, out var synth))
+                {
+                    _midiClipSynths[clip.Id] = synth;
+                }
+            }
+        }
+        _logger?.LogDebug("Assigned synths to {Count} tracks", trackSynths.Count);
+    }
+
+    /// <summary>
+    /// Gets the synthesizer assigned to a MIDI clip.
+    /// </summary>
+    /// <param name="clipId">The MIDI clip ID.</param>
+    /// <returns>The assigned synthesizer, or null if none.</returns>
+    public ISynth? GetSynthForMidiClip(Guid clipId)
+    {
+        lock (_arrangementLock)
+        {
+            return _midiClipSynths.GetValueOrDefault(clipId);
+        }
+    }
+
+    /// <summary>
+    /// Stops all currently playing clips from the arrangement.
+    /// </summary>
+    public void StopAllClips()
+    {
+        lock (_arrangementLock)
+        {
+            StopAllClipsInternal();
+        }
+    }
+
+    private void StopAllClipsInternal()
+    {
+        // Send note-off to all synths used by active MIDI clips
+        foreach (var clipId in _activeMidiClipIds.ToList())
+        {
+            if (_midiClipSynths.TryGetValue(clipId, out var synth))
+            {
+                synth?.AllNotesOff();
+            }
+
+            // Fire clip ended event
+            if (_arrangement != null)
+            {
+                var clip = _arrangement.GetMidiClip(clipId);
+                if (clip != null)
+                {
+                    MidiClipEnded?.Invoke(this, new MidiClipEventArgs(clip, _beatAccumulator));
+                }
+            }
+        }
+
+        // Fire audio clip ended events
+        foreach (var clipId in _activeAudioClipIds.ToList())
+        {
+            if (_arrangement != null)
+            {
+                var clip = _arrangement.GetAudioClip(clipId);
+                if (clip != null)
+                {
+                    AudioClipEnded?.Invoke(this, new AudioClipEventArgs(clip, _beatAccumulator));
+                }
+            }
+        }
+
+        _activeAudioClipIds.Clear();
+        _activeMidiClipIds.Clear();
+    }
+
+    /// <summary>
+    /// Processes arrangement clips for the given beat range.
+    /// </summary>
+    /// <param name="startBeat">Start of the beat range.</param>
+    /// <param name="endBeat">End of the beat range.</param>
+    private void ProcessArrangementClips(double startBeat, double endBeat)
+    {
+        if (_arrangement == null) return;
+
+        lock (_arrangementLock)
+        {
+            // Process Audio Clips
+            ProcessAudioClips(startBeat, endBeat);
+
+            // Process MIDI Clips
+            ProcessMidiClips(startBeat, endBeat);
+        }
+    }
+
+    /// <summary>
+    /// Processes audio clips in the arrangement for the given beat range.
+    /// </summary>
+    private void ProcessAudioClips(double startBeat, double endBeat)
+    {
+        if (_arrangement == null) return;
+
+        var audioClips = _arrangement.GetAudioClipsInRange(startBeat, endBeat);
+
+        foreach (var clip in audioClips)
+        {
+            if (clip.IsMuted) continue;
+
+            // Check if clip should start
+            if (clip.StartPosition >= startBeat && clip.StartPosition < endBeat)
+            {
+                if (!_activeAudioClipIds.Contains(clip.Id))
+                {
+                    _activeAudioClipIds.Add(clip.Id);
+                    _logger?.LogDebug("Audio clip started: {ClipName} at beat {Beat}", clip.Name, clip.StartPosition);
+                    AudioClipStarted?.Invoke(this, new AudioClipEventArgs(clip, clip.StartPosition));
+                }
+            }
+
+            // Check if clip should end
+            if (clip.EndPosition > startBeat && clip.EndPosition <= endBeat)
+            {
+                if (_activeAudioClipIds.Contains(clip.Id))
+                {
+                    _activeAudioClipIds.Remove(clip.Id);
+                    _logger?.LogDebug("Audio clip ended: {ClipName} at beat {Beat}", clip.Name, clip.EndPosition);
+                    AudioClipEnded?.Invoke(this, new AudioClipEventArgs(clip, clip.EndPosition));
+                }
+            }
+        }
+
+        // Clean up clips that have ended (position moved past them)
+        var clipIdsToRemove = new List<Guid>();
+        foreach (var clipId in _activeAudioClipIds)
+        {
+            var clip = _arrangement.GetAudioClip(clipId);
+            if (clip == null || endBeat >= clip.EndPosition)
+            {
+                clipIdsToRemove.Add(clipId);
+                if (clip != null)
+                {
+                    _logger?.LogDebug("Audio clip ended (cleanup): {ClipName}", clip.Name);
+                    AudioClipEnded?.Invoke(this, new AudioClipEventArgs(clip, clip.EndPosition));
+                }
+            }
+        }
+        foreach (var id in clipIdsToRemove)
+        {
+            _activeAudioClipIds.Remove(id);
+        }
+    }
+
+    /// <summary>
+    /// Processes MIDI clips in the arrangement for the given beat range.
+    /// </summary>
+    private void ProcessMidiClips(double startBeat, double endBeat)
+    {
+        if (_arrangement == null) return;
+
+        var midiClips = _arrangement.GetMidiClipsInRange(startBeat, endBeat);
+
+        foreach (var clip in midiClips)
+        {
+            if (clip.IsMuted) continue;
+
+            // Check if clip should start
+            if (clip.StartPosition >= startBeat && clip.StartPosition < endBeat)
+            {
+                if (!_activeMidiClipIds.Contains(clip.Id))
+                {
+                    _activeMidiClipIds.Add(clip.Id);
+                    _logger?.LogDebug("MIDI clip started: {ClipName} at beat {Beat}", clip.Name, clip.StartPosition);
+                    MidiClipStarted?.Invoke(this, new MidiClipEventArgs(clip, clip.StartPosition));
+                }
+            }
+
+            // Process notes in the clip
+            var synth = _midiClipSynths.GetValueOrDefault(clip.Id) ?? clip.Pattern?.Synth;
+            if (synth != null)
+            {
+                // Get notes that should trigger in this range
+                var notes = clip.GetNotesInRange(startBeat, endBeat);
+
+                foreach (var note in notes)
+                {
+                    TriggerMidiClipNote(synth, note, clip);
+                }
+            }
+
+            // Check if clip should end
+            if (clip.EndPosition > startBeat && clip.EndPosition <= endBeat)
+            {
+                if (_activeMidiClipIds.Contains(clip.Id))
+                {
+                    _activeMidiClipIds.Remove(clip.Id);
+                    _logger?.LogDebug("MIDI clip ended: {ClipName} at beat {Beat}", clip.Name, clip.EndPosition);
+
+                    // Stop all notes from this clip's synth
+                    synth?.AllNotesOff();
+                    MidiClipEnded?.Invoke(this, new MidiClipEventArgs(clip, clip.EndPosition));
+                }
+            }
+        }
+
+        // Clean up MIDI clips that have ended
+        var clipIdsToRemove = new List<Guid>();
+        foreach (var clipId in _activeMidiClipIds)
+        {
+            var clip = _arrangement.GetMidiClip(clipId);
+            if (clip == null || endBeat >= clip.EndPosition)
+            {
+                clipIdsToRemove.Add(clipId);
+                if (clip != null)
+                {
+                    var synth = _midiClipSynths.GetValueOrDefault(clipId) ?? clip.Pattern?.Synth;
+                    synth?.AllNotesOff();
+                    _logger?.LogDebug("MIDI clip ended (cleanup): {ClipName}", clip.Name);
+                    MidiClipEnded?.Invoke(this, new MidiClipEventArgs(clip, clip.EndPosition));
+                }
+            }
+        }
+        foreach (var id in clipIdsToRemove)
+        {
+            _activeMidiClipIds.Remove(id);
+        }
+    }
+
+    /// <summary>
+    /// Triggers a note from a MIDI clip.
+    /// </summary>
+    private void TriggerMidiClipNote(ISynth synth, NoteEvent note, MidiClip clip)
+    {
+        // Trigger note on
+        synth.NoteOn(note.Note, note.Velocity);
+
+        // Calculate duration in milliseconds
+        var durationMs = note.Duration * (60000.0 / _bpm);
+
+        // Schedule note off asynchronously
+        _ = ScheduleMidiClipNoteOffAsync(synth, note.Note, (int)durationMs, clip);
+    }
+
+    /// <summary>
+    /// Schedules a note-off for a MIDI clip note.
+    /// </summary>
+    private async Task ScheduleMidiClipNoteOffAsync(ISynth synth, int note, int durationMs, MidiClip clip)
+    {
+        try
+        {
+            await Task.Delay(durationMs).ConfigureAwait(false);
+            synth.NoteOff(note);
+        }
+        catch (TaskCanceledException)
+        {
+            // Task was cancelled during shutdown - expected behavior
+        }
+    }
+
+    /// <summary>
+    /// Handles loop region from arrangement.
+    /// </summary>
+    /// <param name="currentBeat">Current beat position.</param>
+    /// <returns>The adjusted beat position after loop handling.</returns>
+    private double HandleArrangementLoop(double currentBeat)
+    {
+        if (!_loopingEnabled || _arrangement == null) return currentBeat;
+
+        var loopRegion = _arrangement.GetLoopRegion();
+        if (loopRegion == null || !loopRegion.IsActive) return currentBeat;
+
+        if (currentBeat >= loopRegion.EndPosition)
+        {
+            // Loop back to start
+            var loopLength = loopRegion.Length;
+            var overshoot = currentBeat - loopRegion.EndPosition;
+            var newPosition = loopRegion.StartPosition + (overshoot % loopLength);
+
+            _logger?.LogDebug("Loop triggered: {OldBeat} -> {NewBeat}", currentBeat, newPosition);
+
+            // Stop clips that are outside the loop region on loop back
+            StopClipsOutsideRange(loopRegion.StartPosition, loopRegion.EndPosition);
+
+            return newPosition;
+        }
+
+        return currentBeat;
+    }
+
+    /// <summary>
+    /// Stops clips that are outside the specified range.
+    /// </summary>
+    private void StopClipsOutsideRange(double startPosition, double endPosition)
+    {
+        lock (_arrangementLock)
+        {
+            if (_arrangement == null) return;
+
+            // Stop audio clips outside range
+            var audioClipsToStop = _activeAudioClipIds
+                .Select(id => _arrangement.GetAudioClip(id))
+                .Where(clip => clip != null && (clip.EndPosition <= startPosition || clip.StartPosition >= endPosition))
+                .ToList();
+
+            foreach (var clip in audioClipsToStop)
+            {
+                if (clip != null)
+                {
+                    _activeAudioClipIds.Remove(clip.Id);
+                    AudioClipEnded?.Invoke(this, new AudioClipEventArgs(clip, _beatAccumulator));
+                }
+            }
+
+            // Stop MIDI clips outside range
+            var midiClipsToStop = _activeMidiClipIds
+                .Select(id => _arrangement.GetMidiClip(id))
+                .Where(clip => clip != null && (clip.EndPosition <= startPosition || clip.StartPosition >= endPosition))
+                .ToList();
+
+            foreach (var clip in midiClipsToStop)
+            {
+                if (clip != null)
+                {
+                    _activeMidiClipIds.Remove(clip.Id);
+                    var synth = _midiClipSynths.GetValueOrDefault(clip.Id) ?? clip.Pattern?.Synth;
+                    synth?.AllNotesOff();
+                    MidiClipEnded?.Invoke(this, new MidiClipEventArgs(clip, _beatAccumulator));
+                }
+            }
+        }
+    }
+
+    #endregion
 
     // Start the sequencer
     public void Start()
     {
         if (_running) return;
+
+        // Check if we need to do count-in
+        if (_enableMetronome && _metronome != null && _metronome.CountIn > 0)
+        {
+            StartWithCountIn();
+            return;
+        }
+
+        StartInternal();
+    }
+
+    /// <summary>
+    /// Starts playback with count-in. The metronome will play count-in bars before pattern playback begins.
+    /// </summary>
+    private void StartWithCountIn()
+    {
+        if (_metronome == null || _metronome.CountIn <= 0) return;
+
+        _isWaitingForCountIn = true;
+
+        // Subscribe to count-in complete event
+        _metronome.CountInComplete += OnCountInComplete;
+
+        // Start the count-in
+        _metronome.StartCountIn();
+
+        // Start count-in playback loop (metronome only, no pattern processing)
         _running = true;
+
+        if (_timingPrecision == TimingPrecision.Standard)
+        {
+            _thread = new Thread(RunCountIn) { IsBackground = true, Priority = ThreadPriority.Highest };
+            _thread.Start();
+        }
+        else
+        {
+            _thread = new Thread(RunCountInHighPrecision) { IsBackground = true, Priority = ThreadPriority.Highest };
+            _thread.Start();
+        }
+
+        _logger?.LogInformation("Sequencer count-in started: {CountInBars} bars at {Bpm} BPM",
+            _metronome.CountIn, _bpm);
+    }
+
+    /// <summary>
+    /// Handles count-in completion to start actual playback.
+    /// </summary>
+    private void OnCountInComplete(object? sender, EventArgs e)
+    {
+        if (_metronome != null)
+        {
+            _metronome.CountInComplete -= OnCountInComplete;
+        }
+
+        _isWaitingForCountIn = false;
+
+        // The count-in loop will exit and StartInternal will be called
+        _logger?.LogInformation("Count-in complete, starting playback");
+    }
+
+    /// <summary>
+    /// Internal start method that initializes the sequencer.
+    /// </summary>
+    private void StartInternal()
+    {
+        _running = true;
+        _isWaitingForCountIn = false;
 
         // Reset jitter tracking
         _timingJitterBuffer.Clear();
         _averageTimingJitter = 0;
         _jitterCompensationMs = 0;
         _samplePosition = 0;
+
+        // Reset punch recording state
+        _punchSettings.Reset();
 
         // Start MIDI clock if enabled
         if (_midiClockSync != null && _midiClockSync.Mode != MidiClockMode.External)
@@ -455,6 +1238,7 @@ public class Sequencer : IDisposable
             _thread.Start();
         }
 
+        _logger?.LogInformation("Sequencer started at {Bpm} BPM", _bpm);
         PlaybackStarted?.Invoke(this, new PlaybackStateEventArgs(true, _beatAccumulator, _bpm));
     }
 
@@ -463,6 +1247,7 @@ public class Sequencer : IDisposable
     {
         if (!_running) return;
         _running = false;
+        _isWaitingForCountIn = false;
 
         // Stop high-resolution timer
         lock (_timerLock)
@@ -475,12 +1260,16 @@ public class Sequencer : IDisposable
         // Stop MIDI clock
         _midiClockSync?.Stop();
 
+        // Reset metronome count-in state
+        _metronome?.Reset();
+
         // Clear active events
         lock (_eventLock)
         {
             _activeEvents.Clear();
         }
 
+        _logger?.LogInformation("Sequencer stopped at beat {Beat}", _beatAccumulator);
         PlaybackStopped?.Invoke(this, new PlaybackStateEventArgs(false, _beatAccumulator, _bpm));
     }
 
@@ -491,6 +1280,51 @@ public class Sequencer : IDisposable
         {
             _beatAccumulator += beats;
             _midiClockSync?.SetPosition(_beatAccumulator);
+        }
+    }
+
+    /// <summary>
+    /// Starts playback for punch recording with pre-roll.
+    /// Automatically positions playback at the pre-roll start position before punch-in.
+    /// </summary>
+    /// <param name="beatsPerBar">Number of beats per bar for pre-roll calculation. Default is 4 (for 4/4 time).</param>
+    public void StartWithPunchPreRoll(double beatsPerBar = 4.0)
+    {
+        if (!_punchSettings.PunchInEnabled)
+        {
+            // No punch-in set, just start normally
+            Start();
+            return;
+        }
+
+        // Position at pre-roll start
+        var preRollStart = _punchSettings.GetPreRollStartBeat(beatsPerBar);
+        lock (_patterns)
+        {
+            _beatAccumulator = preRollStart;
+            _midiClockSync?.SetPosition(_beatAccumulator);
+        }
+
+        _logger?.LogInformation("Starting punch recording with pre-roll at beat {PreRollStart}, punch-in at {PunchIn}",
+            preRollStart, _punchSettings.PunchInBeat);
+
+        Start();
+    }
+
+    /// <summary>
+    /// Sets the punch region and optionally starts playback with pre-roll.
+    /// </summary>
+    /// <param name="punchInBeat">The punch-in position in beats.</param>
+    /// <param name="punchOutBeat">The punch-out position in beats.</param>
+    /// <param name="startImmediately">Whether to start playback immediately with pre-roll.</param>
+    /// <param name="beatsPerBar">Number of beats per bar for pre-roll calculation.</param>
+    public void SetPunchRegionAndStart(double punchInBeat, double punchOutBeat, bool startImmediately = true, double beatsPerBar = 4.0)
+    {
+        _punchSettings.SetPunchRegion(punchInBeat, punchOutBeat, true);
+
+        if (startImmediately)
+        {
+            StartWithPunchPreRoll(beatsPerBar);
         }
     }
 
@@ -514,6 +1348,202 @@ public class Sequencer : IDisposable
         NoteEnded?.Invoke(this, new MusicalEventArgs(musicalEvent));
     }
 
+    /// <summary>
+    /// Count-in playback loop for standard timing mode.
+    /// Only processes metronome clicks, no pattern playback.
+    /// </summary>
+    private void RunCountIn()
+    {
+        var stopwatch = Stopwatch.StartNew();
+        double lastTime = stopwatch.Elapsed.TotalSeconds;
+
+        while (_running && _isWaitingForCountIn)
+        {
+            double currentTime = stopwatch.Elapsed.TotalSeconds;
+            double deltaTime = currentTime - lastTime;
+            lastTime = currentTime;
+
+            // Calculate beat delta
+            double secondsPerBeat = 60.0 / _bpm;
+            double beatsInDelta = deltaTime / secondsPerBeat;
+
+            // Process count-in
+            if (_metronome != null)
+            {
+                bool countInComplete = _metronome.ProcessCountIn(beatsInDelta);
+                if (countInComplete)
+                {
+                    break;
+                }
+            }
+
+            Thread.Sleep(Settings.MidiRefreshRateMs);
+        }
+
+        // If still running after count-in, start actual playback
+        if (_running && !_isWaitingForCountIn)
+        {
+            // Reset beat accumulator to start of pattern
+            _beatAccumulator = 0;
+
+            // Continue with standard playback loop
+            RunStandardInternal(Stopwatch.StartNew(), 0);
+        }
+    }
+
+    /// <summary>
+    /// Count-in playback loop for high-precision timing mode.
+    /// </summary>
+    private void RunCountInHighPrecision()
+    {
+        var stopwatch = Stopwatch.StartNew();
+        double lastTime = stopwatch.Elapsed.TotalSeconds;
+
+        while (_running && _isWaitingForCountIn)
+        {
+            double currentTime = stopwatch.Elapsed.TotalSeconds;
+            double deltaTime = currentTime - lastTime;
+            lastTime = currentTime;
+
+            // Calculate beat delta
+            double secondsPerBeat = 60.0 / _bpm;
+            double beatsInDelta = deltaTime / secondsPerBeat;
+
+            // Process count-in
+            if (_metronome != null)
+            {
+                bool countInComplete = _metronome.ProcessCountIn(beatsInDelta);
+                if (countInComplete)
+                {
+                    break;
+                }
+            }
+
+            Thread.Yield();
+        }
+
+        // If still running after count-in, start actual playback
+        if (_running && !_isWaitingForCountIn)
+        {
+            // Reset beat accumulator to start of pattern
+            _beatAccumulator = 0;
+
+            // Fire playback started event now that count-in is complete
+            PlaybackStarted?.Invoke(this, new PlaybackStateEventArgs(true, _beatAccumulator, _bpm));
+
+            // Initialize high-res timer and continue with high-precision playback
+            InitializeHighResTimer();
+            _highResTimer!.Start();
+
+            // Continue with high-precision playback loop using local variables
+            double lastProcessedBeat = 0;
+            double lastBeatEventTime = 0;
+            double beatEventInterval = 1.0 / 120.0;
+            double expectedTickInterval = _highResTimer.TickIntervalMicroseconds / 1_000_000.0;
+            double lastTickTime = 0;
+            var playbackStopwatch = Stopwatch.StartNew();
+
+            while (_running)
+            {
+                double currentTime = playbackStopwatch.Elapsed.TotalSeconds;
+
+                // Calculate timing jitter
+                if (lastTickTime > 0)
+                {
+                    double actualInterval = currentTime - lastTickTime;
+                    double jitter = (actualInterval - expectedTickInterval) * 1000.0;
+
+                    _timingJitterBuffer.Push(jitter);
+                    _averageTimingJitter = _timingJitterBuffer.Average();
+
+                    if (_jitterCompensationEnabled)
+                    {
+                        _jitterCompensationMs = _jitterCompensationMs * 0.95 + _averageTimingJitter * 0.05;
+                    }
+                }
+                lastTickTime = currentTime;
+
+                double nextBeat;
+                lock (_patterns)
+                {
+                    if (!_isScratching)
+                    {
+                        double secondsPerBeat = 60.0 / _bpm;
+                        double deltaTime = currentTime - _lastActualTime;
+                        if (_lastActualTime == 0) deltaTime = 0;
+                        _lastActualTime = currentTime;
+
+                        double beatsInDelta = deltaTime / secondsPerBeat;
+
+                        if (_jitterCompensationEnabled && Math.Abs(_jitterCompensationMs) > 0.001)
+                        {
+                            double compensationBeats = (_jitterCompensationMs / 1000.0) / secondsPerBeat;
+                            beatsInDelta -= compensationBeats * 0.05;
+                        }
+
+                        nextBeat = _beatAccumulator + beatsInDelta;
+                    }
+                    else
+                    {
+                        nextBeat = _beatAccumulator;
+                    }
+
+                    if (nextBeat != lastProcessedBeat)
+                    {
+                        foreach (var pattern in _patterns)
+                        {
+                            pattern.Process(lastProcessedBeat, nextBeat, _bpm);
+                        }
+                        lastProcessedBeat = nextBeat;
+                    }
+
+                    if (!_isScratching)
+                    {
+                        _beatAccumulator = nextBeat;
+                    }
+                }
+
+                if (currentTime - lastBeatEventTime >= beatEventInterval)
+                {
+                    lastBeatEventTime = currentTime;
+                    EmitBeatChanged();
+                }
+
+                Thread.Yield();
+            }
+
+            lock (_timerLock)
+            {
+                _highResTimer?.Stop();
+                _highResTimer?.Dispose();
+                _highResTimer = null;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Initializes the high-resolution timer.
+    /// </summary>
+    private void InitializeHighResTimer()
+    {
+        lock (_timerLock)
+        {
+            _highResTimer = new HighResolutionTimer();
+            _highResTimer.JitterCompensationEnabled = _jitterCompensationEnabled;
+
+            if (_timingPrecision == TimingPrecision.AudioRate)
+            {
+                _highResTimer.TargetTicksPerSecond = _sampleRate / 128.0;
+                _highResTimer.UseSpinWait = true;
+            }
+            else
+            {
+                double ticksPerSecond = (_bpm / 60.0) * (int)_beatSubdivision * 4;
+                _highResTimer.TargetTicksPerSecond = Math.Min(10000, ticksPerSecond);
+            }
+        }
+    }
+
     // Standard playback loop (backward compatible)
     private void RunStandard()
     {
@@ -522,6 +1552,18 @@ public class Sequencer : IDisposable
         double lastProcessedBeat = _beatAccumulator; // Last processed beat position
         double lastBeatEventTime = 0; // For throttling beat events
         const double beatEventInterval = 1.0 / 60.0; // ~60fps for beat events
+
+        RunStandardInternal(stopwatch, lastProcessedBeat);
+    }
+
+    /// <summary>
+    /// Internal standard playback loop implementation.
+    /// </summary>
+    private void RunStandardInternal(Stopwatch stopwatch, double lastProcessedBeat)
+    {
+        double lastTime = stopwatch.Elapsed.TotalSeconds;
+        double lastBeatEventTime = 0;
+        const double beatEventInterval = 1.0 / 60.0;
 
         while (_running)
         {
@@ -551,12 +1593,23 @@ public class Sequencer : IDisposable
                     nextBeat = _beatAccumulator; // In scratching mode, don't advance
                 }
 
+                // Handle arrangement loop region
+                nextBeat = HandleArrangementLoop(nextBeat);
+
                 if (nextBeat != lastProcessedBeat) // Process patterns if beat has changed
                 {
+                    // Process patterns
                     foreach (var pattern in _patterns) // Process each pattern
                     {
                         pattern.Process(lastProcessedBeat, nextBeat, _bpm); // Process pattern for the beat range
                     }
+
+                    // Process arrangement clips (AudioClips and MidiClips)
+                    ProcessArrangementClips(lastProcessedBeat, nextBeat);
+
+                    // Process punch in/out events
+                    _punchSettings.Process(nextBeat);
+
                     lastProcessedBeat = nextBeat; // Update last processed beat
                 }
 
@@ -586,29 +1639,20 @@ public class Sequencer : IDisposable
     // High-precision playback loop with jitter compensation
     private void RunHighPrecision()
     {
-        // Create and configure high-resolution timer
-        lock (_timerLock)
-        {
-            _highResTimer = new HighResolutionTimer();
-            _highResTimer.JitterCompensationEnabled = _jitterCompensationEnabled;
-
-            // Configure based on precision mode
-            if (_timingPrecision == TimingPrecision.AudioRate)
-            {
-                // Audio buffer rate (128 samples at sample rate)
-                _highResTimer.TargetTicksPerSecond = _sampleRate / 128.0;
-                _highResTimer.UseSpinWait = true;
-            }
-            else
-            {
-                // High precision mode - tick at subdivision rate * 4 for smooth timing
-                double ticksPerSecond = (_bpm / 60.0) * (int)_beatSubdivision * 4;
-                _highResTimer.TargetTicksPerSecond = Math.Min(10000, ticksPerSecond);
-            }
-        }
-
         var stopwatch = Stopwatch.StartNew();
         double lastProcessedBeat = _beatAccumulator;
+
+        RunHighPrecisionInternal(stopwatch, lastProcessedBeat);
+    }
+
+    /// <summary>
+    /// Internal high-precision playback loop implementation.
+    /// </summary>
+    private void RunHighPrecisionInternal(Stopwatch stopwatch, double lastProcessedBeat)
+    {
+        // Create and configure high-resolution timer
+        InitializeHighResTimer();
+
         double lastBeatEventTime = 0;
         double beatEventInterval = 1.0 / 120.0; // ~120fps for beat events in high-precision mode
 
@@ -641,6 +1685,7 @@ public class Sequencer : IDisposable
                 double jitterThreshold = expectedTickInterval * 100.0; // 10% in ms
                 if (Math.Abs(jitter) > jitterThreshold)
                 {
+                    _logger?.LogWarning("Timing jitter detected: {JitterMs:F3}ms (average: {AvgJitterMs:F3}ms)", jitter, _averageTimingJitter);
                     TimingJitterDetected?.Invoke(this, new TimingJitterEventArgs(
                         jitter, _averageTimingJitter, _beatAccumulator));
                 }
@@ -681,6 +1726,9 @@ public class Sequencer : IDisposable
                     nextBeat = _beatAccumulator;
                 }
 
+                // Handle arrangement loop region
+                nextBeat = HandleArrangementLoop(nextBeat);
+
                 // Process with finer granularity based on subdivision
                 if (nextBeat != lastProcessedBeat)
                 {
@@ -693,6 +1741,13 @@ public class Sequencer : IDisposable
                     {
                         pattern.Process(lastProcessedBeat, nextBeat, _bpm);
                     }
+
+                    // Process arrangement clips (AudioClips and MidiClips)
+                    ProcessArrangementClips(lastProcessedBeat, nextBeat);
+
+                    // Process punch in/out events
+                    _punchSettings.Process(nextBeat);
+
                     lastProcessedBeat = nextBeat;
                 }
 
@@ -726,6 +1781,14 @@ public class Sequencer : IDisposable
             _highResTimer?.Dispose();
             _highResTimer = null;
         }
+    }
+
+    // Time signature track event handler
+    private void OnTimeSignatureTrackChanged(object? sender, TimeSignatureTrackChangedEventArgs e)
+    {
+        // Relay the event as a TimeSignatureChangedEventArgs
+        var oldTimeSignature = _tempoTrack?.GetTimeSignatureAt(e.BarNumber) ?? TimeSignature.Common;
+        TimeSignatureChanged?.Invoke(this, new TimeSignatureChangedEventArgs(e.BarNumber, oldTimeSignature, e.NewTimeSignature));
     }
 
     // MIDI clock event handlers
@@ -820,6 +1883,196 @@ public class Sequencer : IDisposable
         };
     }
 
+    #region Tempo and Time Signature Methods
+
+    /// <summary>
+    /// Adds a tempo change at the specified beat position.
+    /// </summary>
+    /// <param name="positionBeats">The position in beats (quarter notes).</param>
+    /// <param name="bpm">The tempo in BPM.</param>
+    public void AddTempoChange(double positionBeats, double bpm)
+    {
+        EnsureTempoTrack();
+        _tempoTrack!.AddTempoChange(positionBeats, bpm);
+        _logger?.LogDebug("Tempo change added: {Bpm} BPM at beat {Position}", bpm, positionBeats);
+    }
+
+    /// <summary>
+    /// Adds a tempo ramp between two positions.
+    /// </summary>
+    /// <param name="startBeats">The start position in beats.</param>
+    /// <param name="endBeats">The end position in beats.</param>
+    /// <param name="startBpm">The starting tempo.</param>
+    /// <param name="endBpm">The ending tempo.</param>
+    /// <param name="curve">The curve type (0 = linear).</param>
+    public void AddTempoRamp(double startBeats, double endBeats, double startBpm, double endBpm, double curve = 0.0)
+    {
+        EnsureTempoTrack();
+        _tempoTrack!.AddTempoRamp(startBeats, endBeats, startBpm, endBpm, curve);
+        _logger?.LogDebug("Tempo ramp added: {StartBpm}->{EndBpm} BPM from beat {Start} to {End}",
+            startBpm, endBpm, startBeats, endBeats);
+    }
+
+    /// <summary>
+    /// Adds a time signature change at the specified bar.
+    /// </summary>
+    /// <param name="bar">The bar number (0-indexed).</param>
+    /// <param name="timeSignature">The time signature.</param>
+    public void AddTimeSignatureChange(int bar, TimeSignature timeSignature)
+    {
+        EnsureTempoTrack();
+        var oldTimeSignature = _tempoTrack!.GetTimeSignatureAt(bar);
+        _tempoTrack.AddTimeSignatureChange(bar, timeSignature);
+        _logger?.LogDebug("Time signature change added: {TimeSignature} at bar {Bar}", timeSignature, bar);
+        TimeSignatureChanged?.Invoke(this, new TimeSignatureChangedEventArgs(bar, oldTimeSignature, timeSignature));
+    }
+
+    /// <summary>
+    /// Adds a time signature change at the specified bar.
+    /// </summary>
+    /// <param name="bar">The bar number (0-indexed).</param>
+    /// <param name="numerator">The time signature numerator.</param>
+    /// <param name="denominator">The time signature denominator.</param>
+    public void AddTimeSignatureChange(int bar, int numerator, int denominator)
+    {
+        AddTimeSignatureChange(bar, new TimeSignature(numerator, denominator));
+    }
+
+    /// <summary>
+    /// Gets the tempo at the specified position.
+    /// </summary>
+    /// <param name="positionBeats">The position in beats.</param>
+    /// <returns>The tempo in BPM.</returns>
+    public double GetTempoAt(double positionBeats)
+    {
+        return _tempoTrack?.GetTempoAt(positionBeats) ?? _bpm;
+    }
+
+    /// <summary>
+    /// Gets the time signature at the specified bar.
+    /// </summary>
+    /// <param name="bar">The bar number (0-indexed).</param>
+    /// <returns>The time signature.</returns>
+    public TimeSignature GetTimeSignatureAt(int bar)
+    {
+        return _tempoTrack?.GetTimeSignatureAt(bar) ?? TimeSignature.Common;
+    }
+
+    /// <summary>
+    /// Converts a position in beats to seconds.
+    /// </summary>
+    /// <param name="beats">The position in beats.</param>
+    /// <returns>The time in seconds.</returns>
+    public double BeatsToSeconds(double beats)
+    {
+        return _tempoTrack?.BeatsToSeconds(beats) ?? (beats * 60.0 / _bpm);
+    }
+
+    /// <summary>
+    /// Converts a time in seconds to beats.
+    /// </summary>
+    /// <param name="seconds">The time in seconds.</param>
+    /// <returns>The position in beats.</returns>
+    public double SecondsToBeats(double seconds)
+    {
+        return _tempoTrack?.SecondsToBeats(seconds) ?? (seconds * _bpm / 60.0);
+    }
+
+    /// <summary>
+    /// Converts a position in beats to samples.
+    /// </summary>
+    /// <param name="beats">The position in beats.</param>
+    /// <returns>The position in samples.</returns>
+    public long BeatsToSamples(double beats)
+    {
+        return _tempoTrack?.BeatsToSamples(beats) ?? (long)(BeatsToSeconds(beats) * _sampleRate);
+    }
+
+    /// <summary>
+    /// Converts a position in samples to beats.
+    /// </summary>
+    /// <param name="samples">The position in samples.</param>
+    /// <returns>The position in beats.</returns>
+    public double SamplesToBeats(long samples)
+    {
+        return _tempoTrack?.SamplesToBeats(samples) ?? SecondsToBeats((double)samples / _sampleRate);
+    }
+
+    /// <summary>
+    /// Converts a bar and beat position to beats (quarter notes).
+    /// </summary>
+    /// <param name="bar">The bar number (0-indexed).</param>
+    /// <param name="beat">The beat within the bar.</param>
+    /// <returns>The position in beats.</returns>
+    public double BarBeatToBeats(int bar, double beat)
+    {
+        return _tempoTrack?.BarBeatToBeats(bar, beat) ?? (bar * 4.0 + beat);
+    }
+
+    /// <summary>
+    /// Converts a position in beats to bar and beat.
+    /// </summary>
+    /// <param name="beats">The position in beats.</param>
+    /// <returns>A tuple of (bar, beat).</returns>
+    public (int Bar, double Beat) BeatsToBarBeat(double beats)
+    {
+        return _tempoTrack?.BeatsToBarBeat(beats) ?? ((int)(beats / 4.0), beats % 4.0);
+    }
+
+    /// <summary>
+    /// Gets the full musical position information at the specified beat position.
+    /// </summary>
+    /// <param name="beats">The position in beats.</param>
+    /// <returns>Complete position information.</returns>
+    public MusicalPosition GetMusicalPosition(double beats)
+    {
+        if (_tempoTrack != null)
+        {
+            return _tempoTrack.GetPositionFromBeats(beats);
+        }
+
+        // Fallback without tempo track
+        var (bar, beat) = BeatsToBarBeat(beats);
+        double seconds = BeatsToSeconds(beats);
+        long samples = (long)(seconds * _sampleRate);
+        return new MusicalPosition(bar, beat, beats, seconds, samples, TimeSignature.Common, _bpm);
+    }
+
+    /// <summary>
+    /// Gets the current musical position.
+    /// </summary>
+    /// <returns>Complete position information for the current position.</returns>
+    public MusicalPosition GetCurrentMusicalPosition()
+    {
+        return GetMusicalPosition(_beatAccumulator);
+    }
+
+    /// <summary>
+    /// Seeks to a specific bar and beat position.
+    /// </summary>
+    /// <param name="bar">The bar number (0-indexed).</param>
+    /// <param name="beat">The beat within the bar.</param>
+    public void SeekToBarBeat(int bar, double beat)
+    {
+        CurrentBeat = BarBeatToBeats(bar, beat);
+    }
+
+    /// <summary>
+    /// Seeks to a specific time in seconds.
+    /// </summary>
+    /// <param name="seconds">The time in seconds.</param>
+    public void SeekToSeconds(double seconds)
+    {
+        CurrentBeat = SecondsToBeats(seconds);
+    }
+
+    private void EnsureTempoTrack()
+    {
+        _tempoTrack ??= new TempoTrack(_bpm, TimeSignature.Common, _sampleRate);
+    }
+
+    #endregion
+
     public void Dispose()
     {
         if (_disposed) return;
@@ -827,9 +2080,27 @@ public class Sequencer : IDisposable
 
         Stop();
 
+        // Detach metronome if attached
+        if (_metronome != null && _metronome.IsAttachedToSequencer)
+        {
+            _metronome.DetachFromSequencer();
+        }
+        _metronome = null;
+
         // Dispose MIDI clock sync
         _midiClockSync?.Dispose();
         _midiClockSync = null;
+
+        // Unsubscribe from time signature track
+        if (_timeSignatureTrack != null)
+        {
+            _timeSignatureTrack.TimeSignatureChanged -= OnTimeSignatureTrackChanged;
+            _timeSignatureTrack = null;
+        }
+
+        // Detach punch recording events
+        _punchSettings.PunchInTriggered -= OnPunchInTriggered;
+        _punchSettings.PunchOutTriggered -= OnPunchOutTriggered;
 
         GC.SuppressFinalize(this);
     }
@@ -903,5 +2174,71 @@ public class TimingStatistics
                $"Jitter: {AverageJitterMs:F3}ms, Compensation: {JitterCompensationMs:F3}ms, " +
                $"HiRes: {(HighResTimerActive ? "Active" : "Inactive")}, " +
                $"MIDI Clock: {(MidiClockActive ? "Active" : "Inactive")}";
+    }
+}
+
+/// <summary>
+/// Event arguments for time signature changes.
+/// </summary>
+public class TimeSignatureChangedEventArgs : EventArgs
+{
+    /// <summary>The bar where the time signature changed.</summary>
+    public int Bar { get; }
+
+    /// <summary>The previous time signature.</summary>
+    public TimeSignature OldTimeSignature { get; }
+
+    /// <summary>The new time signature.</summary>
+    public TimeSignature NewTimeSignature { get; }
+
+    public TimeSignatureChangedEventArgs(int bar, TimeSignature oldTimeSignature, TimeSignature newTimeSignature)
+    {
+        Bar = bar;
+        OldTimeSignature = oldTimeSignature;
+        NewTimeSignature = newTimeSignature;
+    }
+}
+
+/// <summary>
+/// Event arguments for audio clip events (start/end).
+/// </summary>
+public class AudioClipEventArgs : EventArgs
+{
+    /// <summary>The audio clip associated with this event.</summary>
+    public AudioClip Clip { get; }
+
+    /// <summary>The beat position when the event occurred.</summary>
+    public double BeatPosition { get; }
+
+    /// <summary>The time when the event occurred.</summary>
+    public DateTime Timestamp { get; }
+
+    public AudioClipEventArgs(AudioClip clip, double beatPosition)
+    {
+        Clip = clip ?? throw new ArgumentNullException(nameof(clip));
+        BeatPosition = beatPosition;
+        Timestamp = DateTime.UtcNow;
+    }
+}
+
+/// <summary>
+/// Event arguments for MIDI clip events (start/end).
+/// </summary>
+public class MidiClipEventArgs : EventArgs
+{
+    /// <summary>The MIDI clip associated with this event.</summary>
+    public MidiClip Clip { get; }
+
+    /// <summary>The beat position when the event occurred.</summary>
+    public double BeatPosition { get; }
+
+    /// <summary>The time when the event occurred.</summary>
+    public DateTime Timestamp { get; }
+
+    public MidiClipEventArgs(MidiClip clip, double beatPosition)
+    {
+        Clip = clip ?? throw new ArgumentNullException(nameof(clip));
+        BeatPosition = beatPosition;
+        Timestamp = DateTime.UtcNow;
     }
 }

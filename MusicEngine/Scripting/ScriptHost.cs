@@ -1,8 +1,7 @@
-//Engine License (MEL) – Honor-Based Commercial Support
-// copyright (c) 2026 MusicEngine Watermann420 and Contributors
-// Created by Watermann420
-// Description: A class to host and execute C# scripts for controlling the MusicEngine audio engine and sequencer.
-
+﻿// MusicEngine License (MEL) - Honor-Based Commercial Support
+// Copyright (c) 2025-2026 Yannis Watermann (watermann420, nullonebinary)
+// https://github.com/watermann420/MusicEngine
+// Description: MusicEngine component.
 
 using System;
 using System.IO;
@@ -254,20 +253,20 @@ public class ScriptGlobals
 
     // === VST Plugin Methods ===
 
-    // Load a VST plugin by name
-    public VstPlugin? LoadVst(string nameOrPath)
+    // Load a VST plugin by name (returns IVstPlugin to support both VST2 and VST3)
+    public IVstPlugin? LoadVst(string nameOrPath)
     {
         return Engine.LoadVstPlugin(nameOrPath);
     }
 
-    // Load a VST plugin by index
-    public VstPlugin? LoadVstByIndex(int index)
+    // Load a VST plugin by index (returns IVstPlugin to support both VST2 and VST3)
+    public IVstPlugin? LoadVstByIndex(int index)
     {
         return Engine.LoadVstPluginByIndex(index);
     }
 
-    // Get a loaded VST plugin
-    public VstPlugin? GetVst(string name)
+    // Get a loaded VST plugin (returns IVstPlugin to support both VST2 and VST3)
+    public IVstPlugin? GetVst(string name)
     {
         return Engine.GetVstPlugin(name);
     }

@@ -1,8 +1,7 @@
-﻿//Engine License (MEL) – Honor-Based Commercial Support
-// copyright (c) 2026 MusicEngine Watermann420 and Contributors
-// Created by Watermann420
-// Description: A simple synthesizer implementation using NAudio.
-
+﻿// MusicEngine License (MEL) - Honor-Based Commercial Support
+// Copyright (c) 2025-2026 Yannis Watermann (watermann420, nullonebinary)
+// https://github.com/watermann420/MusicEngine
+// Description: Basic monophonic/polyphonic synthesizer.
 
 using System;
 using System.Collections.Generic;
@@ -48,6 +47,9 @@ public class SimpleSynth : ISynth
     // Note on event to start a note
     public void NoteOn(int note, int velocity)
     {
+        MidiValidation.ValidateNote(note);
+        MidiValidation.ValidateVelocity(velocity);
+
         lock (_lock)
         {
             var frequency = (float)(440.0 * Math.Pow(2.0, (note - 69.0) / 12.0)); // Convert MIDI note to frequency
@@ -55,10 +57,12 @@ public class SimpleSynth : ISynth
             _activeOscillators.Add(osc); // Add to active oscillators
         }
     }
-    
+
     // Note off event to stop a note
     public void NoteOff(int note)
     {
+        MidiValidation.ValidateNote(note);
+
         lock (_lock)
         {
             var frequency = (float)(440.0 * Math.Pow(2.0, (note - 69.0) / 12.0)); // Convert MIDI note to frequency

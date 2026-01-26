@@ -1,192 +1,47 @@
-//Engine License (MEL) - Honor-Based Commercial Support
-// copyright (c) 2026 MusicEngine Watermann420 and Contributors
-// Created by Watermann420
-// Description: Audio recording functionality for capturing master output to WAV/MP3 files.
-
+﻿// MusicEngine License (MEL) - Honor-Based Commercial Support
+// Copyright (c) 2025-2026 Yannis Watermann (watermann420, nullonebinary)
+// https://github.com/watermann420/MusicEngine
+// Description: Core engine component.
 
 using System;
 using System.IO;
+using System.Reflection;
 using System.Threading;
+using System.Threading.Tasks;
+using MusicEngine.Core.AudioEncoding;
 using NAudio.Wave;
-
 
 namespace MusicEngine.Core;
 
-
 /// <summary>
-/// Event arguments for recording events.
-/// </summary>
-public class RecordingEventArgs : EventArgs
-{
-    public string OutputPath { get; }
-    public TimeSpan Duration { get; }
-
-    public RecordingEventArgs(string outputPath, TimeSpan duration)
-    {
-        OutputPath = outputPath;
-        Duration = duration;
-    }
-}
-
-/// <summary>
-/// A sample provider wrapper that captures audio while passing it through.
-/// Thread-safe implementation for real-time audio capture.
-/// </summary>
-public class RecordingCaptureSampleProvider : ISampleProvider
-{
-    private readonly ISampleProvider _source;
-    private readonly object _bufferLock = new();
-    private float[]? _captureBuffer;
-    private int _captureWritePosition;
-    private int _captureReadPosition;
-    private bool _isCapturing;
-    private long _totalSamplesCaptured;
-
-    /// <summary>
-    /// Gets the wave format of the source provider.
-    /// </summary>
-    public WaveFormat WaveFormat => _source.WaveFormat;
-
-    /// <summary>
-    /// Gets the total number of samples captured since recording started.
-    /// </summary>
-    public long TotalSamplesCaptured
-    {
-        get
-        {
-            lock (_bufferLock)
-            {
-                return _totalSamplesCaptured;
-            }
-        }
-    }
-
-    /// <summary>
-    /// Gets the recording duration based on samples captured.
-    /// </summary>
-    public TimeSpan RecordingDuration
-    {
-        get
-        {
-            long samples = TotalSamplesCaptured;
-            return TimeSpan.FromSeconds((double)samples / WaveFormat.SampleRate / WaveFormat.Channels);
-        }
-    }
-
-    public RecordingCaptureSampleProvider(ISampleProvider source)
-    {
-        _source = source ?? throw new ArgumentNullException(nameof(source));
-    }
-
-    /// <summary>
-    /// Starts capturing audio to the internal buffer.
-    /// </summary>
-    /// <param name="bufferSizeInSeconds">Size of the circular buffer in seconds.</param>
-    public void StartCapture(int bufferSizeInSeconds = 60)
-    {
-        lock (_bufferLock)
-        {
-            int bufferSize = WaveFormat.SampleRate * WaveFormat.Channels * bufferSizeInSeconds;
-            _captureBuffer = new float[bufferSize];
-            _captureWritePosition = 0;
-            _captureReadPosition = 0;
-            _totalSamplesCaptured = 0;
-            _isCapturing = true;
-        }
-    }
-
-    /// <summary>
-    /// Stops capturing audio.
-    /// </summary>
-    public void StopCapture()
-    {
-        lock (_bufferLock)
-        {
-            _isCapturing = false;
-        }
-    }
-
-    /// <summary>
-    /// Reads samples from the source and optionally captures them.
-    /// </summary>
-    public int Read(float[] buffer, int offset, int count)
-    {
-        int samplesRead = _source.Read(buffer, offset, count);
-
-        if (samplesRead > 0)
-        {
-            lock (_bufferLock)
-            {
-                if (_isCapturing && _captureBuffer != null)
-                {
-                    for (int i = 0; i < samplesRead; i++)
-                    {
-                        _captureBuffer[_captureWritePosition] = buffer[offset + i];
-                        _captureWritePosition = (_captureWritePosition + 1) % _captureBuffer.Length;
-                    }
-                    _totalSamplesCaptured += samplesRead;
-                }
-            }
-        }
-
-        return samplesRead;
-    }
-
-    /// <summary>
-    /// Reads captured samples from the buffer.
-    /// </summary>
-    /// <param name="buffer">Destination buffer.</param>
-    /// <param name="offset">Offset in the destination buffer.</param>
-    /// <param name="count">Number of samples to read.</param>
-    /// <returns>Number of samples actually read.</returns>
-    public int ReadCapturedSamples(float[] buffer, int offset, int count)
-    {
-        lock (_bufferLock)
-        {
-            if (_captureBuffer == null) return 0;
-
-            int available = GetAvailableSamples();
-            int toRead = Math.Min(count, available);
-
-            for (int i = 0; i < toRead; i++)
-            {
-                buffer[offset + i] = _captureBuffer[_captureReadPosition];
-                _captureReadPosition = (_captureReadPosition + 1) % _captureBuffer.Length;
-            }
-
-            return toRead;
-        }
-    }
-
-    /// <summary>
-    /// Gets the number of samples available in the capture buffer.
-    /// </summary>
-    private int GetAvailableSamples()
-    {
-        if (_captureBuffer == null) return 0;
-
-        int diff = _captureWritePosition - _captureReadPosition;
-        if (diff < 0) diff += _captureBuffer.Length;
-        return diff;
-    }
-}
-
-/// <summary>
-/// Audio recorder for capturing master output to WAV or MP3 files.
+/// Audio recorder for capturing audio from any ISampleProvider to WAV or MP3 files.
+/// Supports pause/resume, progress reporting, and multiple output formats.
+/// Thread-safe implementation with proper resource cleanup.
 /// </summary>
 public class AudioRecorder : IDisposable
 {
+    private readonly ISampleProvider _source;
+    private readonly int _sampleRate;
+    private readonly int _channels;
     private readonly object _recordingLock = new();
-    private WaveFileWriter? _waveWriter;
-    private RecordingCaptureSampleProvider? _captureProvider;
+
+    private WaveFileRecorder? _waveRecorder;
     private Thread? _recordingThread;
     private volatile bool _isRecording;
+    private volatile bool _isPaused;
     private volatile bool _stopRequested;
-    private string _currentOutputPath = string.Empty;
+    private string? _outputPath;
     private DateTime _recordingStartTime;
-    private int _sampleRate;
-    private int _channels;
-    private int _bitDepth;
+    private TimeSpan _pausedDuration;
+    private DateTime _pauseStartTime;
+    private long _totalSamplesRecorded;
+    private float _currentPeakLevel;
+    private RecordingFormat _format = RecordingFormat.Wav16Bit;
+    private bool _disposed;
+
+    // Progress reporting
+    private readonly Timer? _progressTimer;
+    private const int ProgressIntervalMs = 100;
 
     /// <summary>
     /// Gets whether recording is currently in progress.
@@ -203,161 +58,156 @@ public class AudioRecorder : IDisposable
     }
 
     /// <summary>
-    /// Gets the current recording duration.
+    /// Gets whether recording is currently paused.
     /// </summary>
-    public TimeSpan RecordingDuration
+    public bool IsPaused
     {
         get
         {
             lock (_recordingLock)
             {
-                if (!_isRecording) return TimeSpan.Zero;
-                return _captureProvider?.RecordingDuration ?? TimeSpan.Zero;
+                return _isPaused;
             }
         }
     }
 
     /// <summary>
-    /// Gets the current output file path.
+    /// Gets the duration of audio recorded so far.
     /// </summary>
-    public string CurrentOutputPath
+    public TimeSpan RecordedDuration
     {
         get
         {
             lock (_recordingLock)
             {
-                return _currentOutputPath;
+                if (_totalSamplesRecorded == 0) return TimeSpan.Zero;
+                return TimeSpan.FromSeconds((double)_totalSamplesRecorded / _sampleRate / _channels);
             }
         }
     }
 
     /// <summary>
-    /// Gets or sets the sample rate for recording. Default uses Settings.SampleRate.
+    /// Gets the current output file path, or null if not recording.
     /// </summary>
-    public int SampleRate
+    public string? OutputPath
     {
-        get => _sampleRate;
-        set
+        get
         {
-            if (_isRecording)
-                throw new InvalidOperationException("Cannot change sample rate while recording.");
-            _sampleRate = value;
+            lock (_recordingLock)
+            {
+                return _outputPath;
+            }
         }
     }
 
     /// <summary>
-    /// Gets or sets the number of channels for recording. Default uses Settings.Channels.
+    /// Gets or sets the recording format.
+    /// Cannot be changed while recording is in progress.
     /// </summary>
-    public int Channels
+    public RecordingFormat Format
     {
-        get => _channels;
+        get => _format;
         set
         {
-            if (_isRecording)
-                throw new InvalidOperationException("Cannot change channels while recording.");
-            _channels = value;
+            lock (_recordingLock)
+            {
+                if (_isRecording)
+                    throw new InvalidOperationException("Cannot change format while recording is in progress.");
+                _format = value;
+            }
         }
     }
 
     /// <summary>
-    /// Gets or sets the bit depth for WAV export (16 or 24). Default is 16.
+    /// Gets the sample rate for recording.
     /// </summary>
-    public int BitDepth
-    {
-        get => _bitDepth;
-        set
-        {
-            if (value != 16 && value != 24 && value != 32)
-                throw new ArgumentException("BitDepth must be 16, 24, or 32.");
-            if (_isRecording)
-                throw new InvalidOperationException("Cannot change bit depth while recording.");
-            _bitDepth = value;
-        }
-    }
+    public int SampleRate => _sampleRate;
+
+    /// <summary>
+    /// Gets the number of channels for recording.
+    /// </summary>
+    public int Channels => _channels;
+
+    /// <summary>
+    /// Event raised to report recording progress.
+    /// </summary>
+    public event EventHandler<RecordingProgressEventArgs>? Progress;
 
     /// <summary>
     /// Event raised when recording starts.
     /// </summary>
-    public event EventHandler<RecordingEventArgs>? RecordingStarted;
+    public event EventHandler? RecordingStarted;
 
     /// <summary>
-    /// Event raised when recording stops.
+    /// Event raised when recording completes (successfully or with error).
     /// </summary>
-    public event EventHandler<RecordingEventArgs>? RecordingStopped;
-
-    public AudioRecorder()
-    {
-        _sampleRate = Settings.SampleRate;
-        _channels = Settings.Channels;
-        _bitDepth = 16;
-    }
+    public event EventHandler<RecordingCompletedEventArgs>? RecordingCompleted;
 
     /// <summary>
-    /// Creates a capture wrapper around the given sample provider.
-    /// Use the returned provider in place of the original to enable recording.
+    /// Creates a new AudioRecorder.
     /// </summary>
-    /// <param name="source">The source sample provider (e.g., master volume output).</param>
-    /// <returns>A sample provider that can be used for recording.</returns>
-    public RecordingCaptureSampleProvider CreateCaptureProvider(ISampleProvider source)
+    /// <param name="source">The audio source to record from.</param>
+    /// <param name="sampleRate">Sample rate in Hz. Default is 44100.</param>
+    /// <param name="channels">Number of channels. Default is 2 (stereo).</param>
+    public AudioRecorder(ISampleProvider source, int sampleRate = 44100, int channels = 2)
     {
-        lock (_recordingLock)
-        {
-            _captureProvider = new RecordingCaptureSampleProvider(source);
-            return _captureProvider;
-        }
-    }
+        _source = source ?? throw new ArgumentNullException(nameof(source));
 
-    /// <summary>
-    /// Gets the current capture provider, or null if not created.
-    /// </summary>
-    public RecordingCaptureSampleProvider? CaptureProvider
-    {
-        get
-        {
-            lock (_recordingLock)
-            {
-                return _captureProvider;
-            }
-        }
+        if (sampleRate <= 0)
+            throw new ArgumentOutOfRangeException(nameof(sampleRate), "Sample rate must be positive.");
+        if (channels <= 0)
+            throw new ArgumentOutOfRangeException(nameof(channels), "Channels must be positive.");
+
+        _sampleRate = sampleRate;
+        _channels = channels;
+
+        // Initialize progress timer (not started until recording begins)
+        _progressTimer = new Timer(OnProgressTimer, null, Timeout.Infinite, Timeout.Infinite);
     }
 
     /// <summary>
     /// Starts recording to the specified output file.
     /// </summary>
-    /// <param name="outputPath">Path for the output WAV file.</param>
-    /// <param name="captureProvider">Optional capture provider. If null, uses the previously created one.</param>
-    public void StartRecording(string outputPath, RecordingCaptureSampleProvider? captureProvider = null)
+    /// <param name="outputPath">Path for the output file.</param>
+    /// <exception cref="InvalidOperationException">Thrown if recording is already in progress.</exception>
+    /// <exception cref="ArgumentException">Thrown if outputPath is null or empty.</exception>
+    public void StartRecording(string outputPath)
     {
+        if (string.IsNullOrWhiteSpace(outputPath))
+            throw new ArgumentException("Output path cannot be null or empty.", nameof(outputPath));
+
         lock (_recordingLock)
         {
             if (_isRecording)
                 throw new InvalidOperationException("Recording is already in progress.");
+            if (_disposed)
+                throw new ObjectDisposedException(nameof(AudioRecorder));
 
-            if (captureProvider != null)
-            {
-                _captureProvider = captureProvider;
-            }
-
-            if (_captureProvider == null)
-                throw new InvalidOperationException("No capture provider available. Call CreateCaptureProvider first.");
-
-            // Ensure directory exists
-            var directory = Path.GetDirectoryName(outputPath);
-            if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
-            {
-                Directory.CreateDirectory(directory);
-            }
-
-            // Create wave format for output file
-            var waveFormat = new WaveFormat(_sampleRate, _bitDepth, _channels);
-            _waveWriter = new WaveFileWriter(outputPath, waveFormat);
-            _currentOutputPath = outputPath;
-            _recordingStartTime = DateTime.Now;
+            _outputPath = outputPath;
             _stopRequested = false;
-            _isRecording = true;
+            _isPaused = false;
+            _totalSamplesRecorded = 0;
+            _currentPeakLevel = 0;
+            _pausedDuration = TimeSpan.Zero;
 
-            // Start capture
-            _captureProvider.StartCapture();
+            // Ensure correct file extension
+            string actualPath = EnsureCorrectExtension(outputPath);
+            _outputPath = actualPath;
+
+            // Create recorder based on format
+            if (_format.IsWavFormat())
+            {
+                _waveRecorder = new WaveFileRecorder(actualPath, _sampleRate, _channels, _format);
+            }
+            else
+            {
+                // For MP3, we'll record to a temp WAV first, then convert
+                string tempWavPath = Path.Combine(Path.GetTempPath(), $"recording_{Guid.NewGuid()}.wav");
+                _waveRecorder = new WaveFileRecorder(tempWavPath, _sampleRate, _channels, RecordingFormat.Wav16Bit);
+            }
+
+            _recordingStartTime = DateTime.Now;
+            _isRecording = true;
 
             // Start recording thread
             _recordingThread = new Thread(RecordingLoop)
@@ -368,215 +218,639 @@ public class AudioRecorder : IDisposable
             };
             _recordingThread.Start();
 
-            Console.WriteLine($"Recording started: {outputPath}");
-            RecordingStarted?.Invoke(this, new RecordingEventArgs(outputPath, TimeSpan.Zero));
+            // Start progress reporting
+            _progressTimer?.Change(ProgressIntervalMs, ProgressIntervalMs);
         }
+
+        // Raise event outside lock to prevent deadlocks
+        RecordingStarted?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>
     /// Stops the current recording.
     /// </summary>
-    /// <returns>The path of the recorded file, or null if not recording.</returns>
-    public string? StopRecording()
+    /// <exception cref="InvalidOperationException">Thrown if not currently recording.</exception>
+    public void StopRecording()
     {
-        string? outputPath;
+        RecordingCompletedEventArgs? completedArgs = null;
 
         lock (_recordingLock)
         {
-            if (!_isRecording) return null;
+            if (!_isRecording)
+                throw new InvalidOperationException("Not currently recording.");
 
             _stopRequested = true;
-            outputPath = _currentOutputPath;
+            _isPaused = false;
         }
 
         // Wait for recording thread to finish
         _recordingThread?.Join(TimeSpan.FromSeconds(5));
 
+        // Stop progress timer
+        _progressTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+
         lock (_recordingLock)
         {
-            var duration = RecordingDuration;
-
-            _captureProvider?.StopCapture();
-
             try
             {
-                _waveWriter?.Flush();
-                _waveWriter?.Dispose();
+                string finalPath = _outputPath ?? string.Empty;
+                long fileSize = 0;
+
+                // Finalize the WAV file
+                if (_waveRecorder != null)
+                {
+                    _waveRecorder.FinalizeFile();
+                    string wavPath = _waveRecorder.FilePath;
+                    _waveRecorder.Dispose();
+                    _waveRecorder = null;
+
+                    // Convert to MP3 if needed
+                    if (_format.IsMp3Format())
+                    {
+                        bool converted = ConvertToMp3(wavPath, finalPath, _format.GetMp3Bitrate());
+                        if (converted)
+                        {
+                            // Delete temp WAV file
+                            try { File.Delete(wavPath); }
+                            catch (IOException) { /* Ignore cleanup errors */ }
+                        }
+                        else
+                        {
+                            // Conversion failed, keep WAV and update path
+                            finalPath = Path.ChangeExtension(finalPath, ".wav");
+                            if (wavPath != finalPath)
+                            {
+                                File.Move(wavPath, finalPath, true);
+                            }
+                        }
+                    }
+
+                    if (File.Exists(finalPath))
+                    {
+                        fileSize = new FileInfo(finalPath).Length;
+                    }
+
+                    completedArgs = new RecordingCompletedEventArgs(
+                        finalPath,
+                        RecordedDuration,
+                        fileSize,
+                        _format,
+                        _sampleRate,
+                        _channels,
+                        _totalSamplesRecorded);
+                }
+
+                _isRecording = false;
+                _recordingThread = null;
+                _outputPath = null;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error finalizing recording: {ex.Message}");
+                _isRecording = false;
+                _recordingThread = null;
+                completedArgs = new RecordingCompletedEventArgs(_outputPath ?? string.Empty, RecordedDuration, ex);
             }
+        }
 
-            _waveWriter = null;
-            _isRecording = false;
-            _recordingThread = null;
-
-            Console.WriteLine($"Recording stopped: {outputPath} (Duration: {duration:hh\\:mm\\:ss\\.fff})");
-            RecordingStopped?.Invoke(this, new RecordingEventArgs(outputPath, duration));
-
-            return outputPath;
+        // Raise event outside lock
+        if (completedArgs != null)
+        {
+            RecordingCompleted?.Invoke(this, completedArgs);
         }
     }
 
     /// <summary>
-    /// Recording loop that writes captured samples to the WAV file.
+    /// Pauses the current recording.
     /// </summary>
-    private void RecordingLoop()
+    /// <exception cref="InvalidOperationException">Thrown if not recording or already paused.</exception>
+    public void PauseRecording()
     {
-        float[] buffer = new float[4096];
-        byte[] byteBuffer = new byte[buffer.Length * (_bitDepth / 8)];
-
-        while (!_stopRequested)
+        lock (_recordingLock)
         {
-            int samplesRead;
-            lock (_recordingLock)
-            {
-                if (_captureProvider == null || _waveWriter == null) break;
-                samplesRead = _captureProvider.ReadCapturedSamples(buffer, 0, buffer.Length);
-            }
+            if (!_isRecording)
+                throw new InvalidOperationException("Not currently recording.");
+            if (_isPaused)
+                throw new InvalidOperationException("Recording is already paused.");
 
-            if (samplesRead > 0)
-            {
-                lock (_recordingLock)
-                {
-                    if (_waveWriter == null) break;
-
-                    // Convert float samples to bytes based on bit depth
-                    int bytesWritten = ConvertFloatToBytes(buffer, 0, samplesRead, byteBuffer, _bitDepth);
-                    _waveWriter.Write(byteBuffer, 0, bytesWritten);
-                }
-            }
-            else
-            {
-                // No samples available, sleep briefly
-                Thread.Sleep(1);
-            }
+            _isPaused = true;
+            _pauseStartTime = DateTime.Now;
         }
     }
 
     /// <summary>
-    /// Converts float samples to byte array based on bit depth.
+    /// Resumes a paused recording.
     /// </summary>
-    private static int ConvertFloatToBytes(float[] source, int sourceOffset, int sampleCount, byte[] dest, int bitDepth)
+    /// <exception cref="InvalidOperationException">Thrown if not recording or not paused.</exception>
+    public void ResumeRecording()
     {
-        int bytesPerSample = bitDepth / 8;
-        int destOffset = 0;
-
-        for (int i = 0; i < sampleCount; i++)
+        lock (_recordingLock)
         {
-            float sample = source[sourceOffset + i];
+            if (!_isRecording)
+                throw new InvalidOperationException("Not currently recording.");
+            if (!_isPaused)
+                throw new InvalidOperationException("Recording is not paused.");
 
-            // Clamp sample to [-1, 1]
-            sample = Math.Max(-1.0f, Math.Min(1.0f, sample));
-
-            switch (bitDepth)
-            {
-                case 16:
-                    short sample16 = (short)(sample * 32767);
-                    dest[destOffset++] = (byte)(sample16 & 0xFF);
-                    dest[destOffset++] = (byte)((sample16 >> 8) & 0xFF);
-                    break;
-
-                case 24:
-                    int sample24 = (int)(sample * 8388607);
-                    dest[destOffset++] = (byte)(sample24 & 0xFF);
-                    dest[destOffset++] = (byte)((sample24 >> 8) & 0xFF);
-                    dest[destOffset++] = (byte)((sample24 >> 16) & 0xFF);
-                    break;
-
-                case 32:
-                    // 32-bit float - write directly
-                    byte[] floatBytes = BitConverter.GetBytes(sample);
-                    Array.Copy(floatBytes, 0, dest, destOffset, 4);
-                    destOffset += 4;
-                    break;
-            }
+            _pausedDuration += DateTime.Now - _pauseStartTime;
+            _isPaused = false;
         }
-
-        return destOffset;
     }
 
     /// <summary>
-    /// Exports a WAV file to MP3 format using NAudio.Lame if available.
+    /// Records audio for a specified duration asynchronously.
     /// </summary>
-    /// <param name="wavPath">Path to the source WAV file.</param>
-    /// <param name="mp3Path">Path for the output MP3 file. If null, uses the same name with .mp3 extension.</param>
-    /// <param name="bitRate">MP3 bit rate in kbps (default 320).</param>
-    /// <returns>True if export succeeded, false otherwise.</returns>
-    public bool ExportToMp3(string wavPath, string? mp3Path = null, int bitRate = 320)
+    /// <param name="outputPath">Path for the output file.</param>
+    /// <param name="duration">Duration to record.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Path to the recorded file.</returns>
+    public async Task<string> RecordAsync(string outputPath, TimeSpan duration, CancellationToken ct = default)
     {
-        if (!File.Exists(wavPath))
-        {
-            Console.WriteLine($"WAV file not found: {wavPath}");
-            return false;
-        }
+        if (duration <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(duration), "Duration must be positive.");
 
-        mp3Path ??= Path.ChangeExtension(wavPath, ".mp3");
+        StartRecording(outputPath);
 
         try
         {
-            // Try to use NAudio.Lame for MP3 encoding
-            // This requires the NAudio.Lame NuGet package to be installed
-            return TryExportMp3WithLame(wavPath, mp3Path, bitRate);
+            var startTime = DateTime.Now;
+            while (RecordedDuration < duration && !ct.IsCancellationRequested)
+            {
+                await Task.Delay(100, ct).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            if (IsRecording)
+            {
+                StopRecording();
+            }
+        }
+
+        return _outputPath ?? outputPath;
+    }
+
+    /// <summary>
+    /// Exports an audio file with the specified preset settings.
+    /// Supports WAV, MP3, FLAC, OGG Vorbis, and AIFF formats.
+    /// Loudness normalization is not yet implemented.
+    /// </summary>
+    /// <param name="inputPath">Path to the input audio file.</param>
+    /// <param name="outputPath">Path for the output file.</param>
+    /// <param name="preset">Export preset with format and loudness settings.</param>
+    /// <param name="progress">Optional progress callback.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Export result with success status and measurements.</returns>
+    public static async Task<ExportResult> ExportWithPresetAsync(
+        string inputPath,
+        string outputPath,
+        ExportPreset preset,
+        IProgress<ExportProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(inputPath))
+            throw new ArgumentException("Input path cannot be null or empty.", nameof(inputPath));
+        if (string.IsNullOrWhiteSpace(outputPath))
+            throw new ArgumentException("Output path cannot be null or empty.", nameof(outputPath));
+        if (!System.IO.File.Exists(inputPath))
+            return ExportResult.Failed($"Input file not found: {inputPath}");
+
+        var startTime = DateTime.Now;
+
+        try
+        {
+            progress?.Report(new ExportProgress(ExportPhase.Starting, 0, "Starting export..."));
+
+            bool exportSuccess = await Task.Run(async () =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                progress?.Report(new ExportProgress(ExportPhase.Analyzing, 0.1, "Analyzing source..."));
+
+                using var reader = new NAudio.Wave.AudioFileReader(inputPath);
+
+                cancellationToken.ThrowIfCancellationRequested();
+                progress?.Report(new ExportProgress(ExportPhase.Writing, 0.3, "Writing output..."));
+
+                // Create output based on format
+                switch (preset.Format)
+                {
+                    case AudioFormat.Wav:
+                        return ExportToWav(reader, outputPath, preset, progress, cancellationToken);
+
+                    case AudioFormat.Mp3:
+                        return ExportToMp3(reader, outputPath, preset, progress, cancellationToken);
+
+                    case AudioFormat.Flac:
+                        return await ExportToFlacAsync(inputPath, outputPath, preset, progress, cancellationToken);
+
+                    case AudioFormat.Ogg:
+                        return await ExportToOggAsync(inputPath, outputPath, preset, progress, cancellationToken);
+
+                    case AudioFormat.Aiff:
+                        return await ExportToAiffAsync(inputPath, outputPath, preset, progress, cancellationToken);
+
+                    default:
+                        // Fallback: copy file
+                        System.IO.File.Copy(inputPath, outputPath, true);
+                        return true;
+                }
+            }, cancellationToken);
+
+            if (!exportSuccess)
+            {
+                return ExportResult.Failed($"Export to {preset.Format} format failed. Check if required encoder packages are installed.");
+            }
+
+            progress?.Report(new ExportProgress(ExportPhase.Complete, 1.0, "Export complete!"));
+
+            var exportDuration = DateTime.Now - startTime;
+            var result = ExportResult.Succeeded(outputPath);
+            result.ExportDuration = exportDuration;
+
+            if (System.IO.File.Exists(outputPath))
+            {
+                result.OutputFileSize = new System.IO.FileInfo(outputPath).Length;
+            }
+
+            return result;
+        }
+        catch (OperationCanceledException)
+        {
+            return ExportResult.Failed("Export cancelled by user");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"MP3 export failed: {ex.Message}");
-            Console.WriteLine("Make sure NAudio.Lame is installed: dotnet add package NAudio.Lame");
-            return false;
+            return ExportResult.Failed(ex.Message, ex);
         }
     }
 
     /// <summary>
-    /// Attempts to export to MP3 using NAudio.Lame via reflection.
-    /// This allows the feature to work if NAudio.Lame is installed, without requiring a compile-time dependency.
+    /// Exports audio to WAV format.
     /// </summary>
-    private bool TryExportMp3WithLame(string wavPath, string mp3Path, int bitRate)
+    private static bool ExportToWav(
+        NAudio.Wave.AudioFileReader reader,
+        string outputPath,
+        ExportPreset preset,
+        IProgress<ExportProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        var format = new NAudio.Wave.WaveFormat(preset.SampleRate, preset.BitDepth, reader.WaveFormat.Channels);
+        using var writer = new NAudio.Wave.WaveFileWriter(outputPath, format);
+
+        float[] buffer = new float[4096];
+        int samplesRead;
+        long totalSamples = reader.Length / (reader.WaveFormat.BitsPerSample / 8);
+        long processedSamples = 0;
+
+        while ((samplesRead = reader.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            writer.WriteSamples(buffer, 0, samplesRead);
+            processedSamples += samplesRead;
+
+            double progressValue = 0.3 + (0.6 * processedSamples / totalSamples);
+            progress?.Report(new ExportProgress(ExportPhase.Writing, progressValue,
+                $"Writing WAV: {progressValue * 100:F0}%"));
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Exports audio to MP3 format using NAudio.Lame via reflection.
+    /// </summary>
+    private static bool ExportToMp3(
+        NAudio.Wave.AudioFileReader reader,
+        string outputPath,
+        ExportPreset preset,
+        IProgress<ExportProgress>? progress,
+        CancellationToken cancellationToken)
     {
         try
         {
-            // Try to load NAudio.Lame assembly
+            // Try to use NAudio.Lame for MP3 encoding via reflection
             var lameType = Type.GetType("NAudio.Lame.LameMP3FileWriter, NAudio.Lame");
 
             if (lameType == null)
             {
-                // Try loading the assembly explicitly
-                var assembly = System.Reflection.Assembly.Load("NAudio.Lame");
-                lameType = assembly.GetType("NAudio.Lame.LameMP3FileWriter");
+                try
+                {
+                    var assembly = System.Reflection.Assembly.Load("NAudio.Lame");
+                    lameType = assembly.GetType("NAudio.Lame.LameMP3FileWriter");
+                }
+                catch (FileNotFoundException)
+                {
+                    System.Diagnostics.Debug.WriteLine("NAudio.Lame not found. Install with: dotnet add package NAudio.Lame");
+                    return false;
+                }
+            }
+
+            if (lameType == null)
+                return false;
+
+            // Get constructor: LameMP3FileWriter(string, WaveFormat, int)
+            var constructor = lameType.GetConstructor(new[] { typeof(string), typeof(WaveFormat), typeof(int) });
+            if (constructor == null)
+                return false;
+
+            int bitRate = preset.BitRate ?? 320;
+            using var writer = (IDisposable)constructor.Invoke(new object[] { outputPath, reader.WaveFormat, bitRate });
+
+            var writeMethod = lameType.GetMethod("Write", new[] { typeof(byte[]), typeof(int), typeof(int) });
+            if (writeMethod == null)
+                return false;
+
+            // Convert float to 16-bit PCM for MP3 encoding
+            float[] floatBuffer = new float[4096];
+            byte[] byteBuffer = new byte[floatBuffer.Length * 2]; // 16-bit = 2 bytes per sample
+            int samplesRead;
+            long totalSamples = reader.Length / (reader.WaveFormat.BitsPerSample / 8);
+            long processedSamples = 0;
+
+            while ((samplesRead = reader.Read(floatBuffer, 0, floatBuffer.Length)) > 0)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                // Convert float samples to 16-bit PCM
+                int byteCount = samplesRead * 2;
+                for (int i = 0; i < samplesRead; i++)
+                {
+                    short sample = (short)(Math.Clamp(floatBuffer[i], -1.0f, 1.0f) * 32767f);
+                    byteBuffer[i * 2] = (byte)(sample & 0xFF);
+                    byteBuffer[i * 2 + 1] = (byte)((sample >> 8) & 0xFF);
+                }
+
+                writeMethod.Invoke(writer, new object[] { byteBuffer, 0, byteCount });
+                processedSamples += samplesRead;
+
+                double progressValue = 0.3 + (0.6 * processedSamples / totalSamples);
+                progress?.Report(new ExportProgress(ExportPhase.Writing, progressValue,
+                    $"Writing MP3: {progressValue * 100:F0}%"));
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"MP3 export failed: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Exports audio to FLAC format using the encoder system.
+    /// </summary>
+    private static async Task<bool> ExportToFlacAsync(
+        string inputPath,
+        string outputPath,
+        ExportPreset preset,
+        IProgress<ExportProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        var settings = EncoderSettings.FromExportPreset(preset);
+        var encoder = EncoderFactory.CreateAndInitialize(settings);
+
+        if (encoder == null)
+        {
+            System.Diagnostics.Debug.WriteLine("FLAC encoder not available. Install NAudio.Flac package.");
+            return false;
+        }
+
+        try
+        {
+            var encoderProgress = new Progress<double>(p =>
+            {
+                double progressValue = 0.3 + (0.6 * p);
+                progress?.Report(new ExportProgress(ExportPhase.Writing, progressValue,
+                    $"Encoding FLAC: {progressValue * 100:F0}%"));
+            });
+
+            return await encoder.EncodeFileAsync(inputPath, outputPath, encoderProgress, cancellationToken);
+        }
+        finally
+        {
+            encoder.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Exports audio to OGG Vorbis format using the encoder system.
+    /// </summary>
+    private static async Task<bool> ExportToOggAsync(
+        string inputPath,
+        string outputPath,
+        ExportPreset preset,
+        IProgress<ExportProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        var settings = EncoderSettings.FromExportPreset(preset);
+        var encoder = EncoderFactory.CreateAndInitialize(settings);
+
+        if (encoder == null)
+        {
+            System.Diagnostics.Debug.WriteLine("OGG Vorbis encoder not available. Install OggVorbisEncoder package.");
+            return false;
+        }
+
+        try
+        {
+            var encoderProgress = new Progress<double>(p =>
+            {
+                double progressValue = 0.3 + (0.6 * p);
+                progress?.Report(new ExportProgress(ExportPhase.Writing, progressValue,
+                    $"Encoding OGG: {progressValue * 100:F0}%"));
+            });
+
+            return await encoder.EncodeFileAsync(inputPath, outputPath, encoderProgress, cancellationToken);
+        }
+        finally
+        {
+            encoder.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Exports audio to AIFF format using the built-in encoder.
+    /// </summary>
+    private static async Task<bool> ExportToAiffAsync(
+        string inputPath,
+        string outputPath,
+        ExportPreset preset,
+        IProgress<ExportProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        var settings = new EncoderSettings
+        {
+            Format = AudioFormat.Aiff,
+            BitDepth = preset.BitDepth,
+            SampleRate = preset.SampleRate,
+            Channels = 2 // Stereo default
+        };
+
+        using var encoder = new AiffEncoder();
+
+        if (!encoder.Initialize(settings))
+        {
+            System.Diagnostics.Debug.WriteLine("AIFF encoder initialization failed.");
+            return false;
+        }
+
+        var encoderProgress = new Progress<double>(p =>
+        {
+            double progressValue = 0.3 + (0.6 * p);
+            progress?.Report(new ExportProgress(ExportPhase.Writing, progressValue,
+                $"Writing AIFF: {progressValue * 100:F0}%"));
+        });
+
+        return await encoder.EncodeFileAsync(inputPath, outputPath, encoderProgress, cancellationToken);
+    }
+
+    /// <summary>
+    /// Main recording loop that reads samples from the source and writes to the file.
+    /// </summary>
+    private void RecordingLoop()
+    {
+        float[] buffer = new float[4096];
+        Exception? recordingError = null;
+
+        try
+        {
+            while (!_stopRequested)
+            {
+                // Check if paused
+                lock (_recordingLock)
+                {
+                    if (_isPaused)
+                    {
+                        Monitor.Wait(_recordingLock, 10);
+                        continue;
+                    }
+                }
+
+                // Read samples from source
+                int samplesRead = _source.Read(buffer, 0, buffer.Length);
+
+                if (samplesRead > 0)
+                {
+                    lock (_recordingLock)
+                    {
+                        if (_waveRecorder != null && !_stopRequested && !_isPaused)
+                        {
+                            _waveRecorder.WriteSamples(buffer, 0, samplesRead);
+                            _totalSamplesRecorded += samplesRead;
+
+                            // Update peak level
+                            float peak = _waveRecorder.PeakLevel;
+                            if (peak > _currentPeakLevel)
+                            {
+                                _currentPeakLevel = peak;
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    // No samples available, sleep briefly
+                    Thread.Sleep(1);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            recordingError = ex;
+            System.Diagnostics.Debug.WriteLine($"Recording error: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Progress timer callback.
+    /// </summary>
+    private void OnProgressTimer(object? state)
+    {
+        if (!_isRecording) return;
+
+        lock (_recordingLock)
+        {
+            if (!_isRecording) return;
+
+            float peakDb = _currentPeakLevel > 0
+                ? 20f * (float)Math.Log10(_currentPeakLevel)
+                : float.NegativeInfinity;
+
+            long estimatedFileSize = _waveRecorder?.FileSize ?? 0;
+
+            var args = new RecordingProgressEventArgs(
+                RecordedDuration,
+                _totalSamplesRecorded,
+                peakDb,
+                estimatedFileSize);
+
+            // Reset peak for next interval
+            _currentPeakLevel = 0;
+
+            // Invoke on thread pool to avoid blocking
+            ThreadPool.QueueUserWorkItem(_ => Progress?.Invoke(this, args));
+        }
+    }
+
+    /// <summary>
+    /// Ensures the output path has the correct file extension for the format.
+    /// </summary>
+    private string EnsureCorrectExtension(string path)
+    {
+        string expectedExtension = _format.GetFileExtension();
+        string currentExtension = Path.GetExtension(path);
+
+        if (!currentExtension.Equals(expectedExtension, StringComparison.OrdinalIgnoreCase))
+        {
+            return Path.ChangeExtension(path, expectedExtension);
+        }
+
+        return path;
+    }
+
+    /// <summary>
+    /// Converts a WAV file to MP3 using NAudio.Lame.
+    /// </summary>
+    private bool ConvertToMp3(string wavPath, string mp3Path, int bitRate)
+    {
+        try
+        {
+            // Try to use NAudio.Lame for MP3 encoding via reflection
+            var lameType = Type.GetType("NAudio.Lame.LameMP3FileWriter, NAudio.Lame");
+
+            if (lameType == null)
+            {
+                try
+                {
+                    var assembly = System.Reflection.Assembly.Load("NAudio.Lame");
+                    lameType = assembly.GetType("NAudio.Lame.LameMP3FileWriter");
+                }
+                catch (FileNotFoundException)
+                {
+                    System.Diagnostics.Debug.WriteLine("NAudio.Lame not found. Install with: dotnet add package NAudio.Lame");
+                    return false;
+                }
             }
 
             if (lameType == null)
             {
-                Console.WriteLine("NAudio.Lame not found. Install with: dotnet add package NAudio.Lame");
                 return false;
             }
 
             using var reader = new WaveFileReader(wavPath);
 
-            // Create LameMP3FileWriter instance
-            // Constructor: LameMP3FileWriter(string path, WaveFormat format, int quality)
-            var constructor = lameType.GetConstructor(new[] { typeof(string), typeof(WaveFormat), typeof(int) });
-
+            // Get constructor: LameMP3FileWriter(Stream, WaveFormat, int)
+            var constructor = lameType.GetConstructor(new[] { typeof(Stream), typeof(WaveFormat), typeof(int) });
             if (constructor == null)
             {
-                // Try alternative constructor
-                constructor = lameType.GetConstructor(new[] { typeof(Stream), typeof(WaveFormat), typeof(int) });
-                if (constructor == null)
-                {
-                    Console.WriteLine("Could not find suitable LameMP3FileWriter constructor.");
-                    return false;
-                }
+                return false;
             }
 
             using var mp3Stream = File.Create(mp3Path);
             using var writer = (IDisposable)constructor.Invoke(new object[] { mp3Stream, reader.WaveFormat, bitRate });
 
-            // Get the Write method
             var writeMethod = lameType.GetMethod("Write", new[] { typeof(byte[]), typeof(int), typeof(int) });
             if (writeMethod == null)
             {
-                Console.WriteLine("Could not find Write method on LameMP3FileWriter.");
                 return false;
             }
 
@@ -587,116 +861,58 @@ public class AudioRecorder : IDisposable
                 writeMethod.Invoke(writer, new object[] { buffer, 0, bytesRead });
             }
 
-            Console.WriteLine($"MP3 exported successfully: {mp3Path}");
             return true;
-        }
-        catch (FileNotFoundException)
-        {
-            Console.WriteLine("NAudio.Lame assembly not found. Install with: dotnet add package NAudio.Lame");
-            return false;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"MP3 export error: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"MP3 conversion failed: {ex.Message}");
             return false;
         }
     }
 
     /// <summary>
-    /// Exports a WAV file with different sample rate and/or bit depth.
-    /// </summary>
-    /// <param name="inputPath">Path to the source WAV file.</param>
-    /// <param name="outputPath">Path for the output WAV file.</param>
-    /// <param name="sampleRate">Target sample rate (null to keep original).</param>
-    /// <param name="bitDepth">Target bit depth (null to keep original).</param>
-    /// <returns>True if export succeeded, false otherwise.</returns>
-    public bool ExportWav(string inputPath, string outputPath, int? sampleRate = null, int? bitDepth = null)
-    {
-        if (!File.Exists(inputPath))
-        {
-            Console.WriteLine($"Input file not found: {inputPath}");
-            return false;
-        }
-
-        try
-        {
-            using var reader = new WaveFileReader(inputPath);
-
-            int targetSampleRate = sampleRate ?? reader.WaveFormat.SampleRate;
-            int targetBitDepth = bitDepth ?? reader.WaveFormat.BitsPerSample;
-            int channels = reader.WaveFormat.Channels;
-
-            // Ensure directory exists
-            var directory = Path.GetDirectoryName(outputPath);
-            if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
-            {
-                Directory.CreateDirectory(directory);
-            }
-
-            // Check if resampling is needed
-            if (targetSampleRate != reader.WaveFormat.SampleRate)
-            {
-                // Use resampling
-                var resampler = new MediaFoundationResampler(reader,
-                    new WaveFormat(targetSampleRate, targetBitDepth, channels));
-
-                using var writer = new WaveFileWriter(outputPath, resampler.WaveFormat);
-                byte[] buffer = new byte[4096];
-                int bytesRead;
-                while ((bytesRead = resampler.Read(buffer, 0, buffer.Length)) > 0)
-                {
-                    writer.Write(buffer, 0, bytesRead);
-                }
-                resampler.Dispose();
-            }
-            else if (targetBitDepth != reader.WaveFormat.BitsPerSample)
-            {
-                // Convert bit depth without resampling
-                var targetFormat = new WaveFormat(targetSampleRate, targetBitDepth, channels);
-                using var writer = new WaveFileWriter(outputPath, targetFormat);
-
-                // Convert via float samples
-                var sampleReader = reader.ToSampleProvider();
-                float[] sampleBuffer = new float[4096];
-                byte[] byteBuffer = new byte[sampleBuffer.Length * (targetBitDepth / 8)];
-
-                int samplesRead;
-                while ((samplesRead = sampleReader.Read(sampleBuffer, 0, sampleBuffer.Length)) > 0)
-                {
-                    int bytesWritten = ConvertFloatToBytes(sampleBuffer, 0, samplesRead, byteBuffer, targetBitDepth);
-                    writer.Write(byteBuffer, 0, bytesWritten);
-                }
-            }
-            else
-            {
-                // Simple copy if no conversion needed
-                File.Copy(inputPath, outputPath, overwrite: true);
-            }
-
-            Console.WriteLine($"WAV exported successfully: {outputPath}");
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"WAV export error: {ex.Message}");
-            return false;
-        }
-    }
-
-    /// <summary>
-    /// Disposes resources used by the recorder.
+    /// Disposes of the recorder and releases all resources.
     /// </summary>
     public void Dispose()
     {
-        if (_isRecording)
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    /// <summary>
+    /// Disposes of managed and unmanaged resources.
+    /// </summary>
+    /// <param name="disposing">True if called from Dispose(), false if from finalizer.</param>
+    protected virtual void Dispose(bool disposing)
+    {
+        if (_disposed) return;
+
+        if (disposing)
         {
-            StopRecording();
+            // Stop recording if in progress
+            if (_isRecording)
+            {
+                _stopRequested = true;
+                _recordingThread?.Join(TimeSpan.FromSeconds(2));
+            }
+
+            _progressTimer?.Dispose();
+
+            lock (_recordingLock)
+            {
+                _waveRecorder?.Dispose();
+                _waveRecorder = null;
+            }
         }
 
-        lock (_recordingLock)
-        {
-            _waveWriter?.Dispose();
-            _waveWriter = null;
-        }
+        _disposed = true;
+    }
+
+    /// <summary>
+    /// Finalizer.
+    /// </summary>
+    ~AudioRecorder()
+    {
+        Dispose(false);
     }
 }

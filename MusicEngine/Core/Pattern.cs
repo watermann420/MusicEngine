@@ -1,8 +1,7 @@
-//Engine License (MEL) – Honor-Based Commercial Support
-// copyright (c) 2026 MusicEngine Watermann420 and Contributors
-// Created by Watermann420
-// Description: A class representing a musical pattern with note events and playback properties.
-
+﻿// MusicEngine License (MEL) - Honor-Based Commercial Support
+// Copyright (c) 2025-2026 Yannis Watermann (watermann420, nullonebinary)
+// https://github.com/watermann420/MusicEngine
+// Description: Pattern container for musical events.
 
 using System;
 using System.Collections.Generic;
@@ -62,6 +61,10 @@ public class Pattern
     /// <returns>This pattern for chaining</returns>
     public Pattern Note(int note, double beat, double duration, int velocity)
     {
+        MidiValidation.ValidateNote(note);
+        MidiValidation.ValidateVelocity(velocity);
+        Guard.NotNegative((int)(beat * 1000), nameof(beat)); // beat must be non-negative
+
         Events.Add(new NoteEvent
         {
             Note = note,
