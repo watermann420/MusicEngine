@@ -703,6 +703,51 @@ public class CollaborationSession : IDisposable
     }
 
     /// <summary>
+    /// Creates a transport sync message for broadcasting to peers.
+    /// </summary>
+    /// <param name="state">The transport state (Playing, Stopped, Paused, Recording).</param>
+    /// <param name="positionBeats">Current playback position in beats.</param>
+    /// <param name="tempo">Tempo in BPM.</param>
+    /// <param name="loopEnabled">Whether loop playback is enabled.</param>
+    /// <param name="loopStart">Loop start position in beats.</param>
+    /// <param name="loopEnd">Loop end position in beats.</param>
+    /// <param name="timeSignatureNumerator">Time signature numerator (default 4).</param>
+    /// <param name="timeSignatureDenominator">Time signature denominator (default 4).</param>
+    /// <returns>The transport sync message ready for broadcasting.</returns>
+    public TransportSyncMessage SendTransportSync(
+        TransportState state,
+        double positionBeats,
+        double tempo,
+        bool loopEnabled = false,
+        double loopStart = 0,
+        double loopEnd = 0,
+        int timeSignatureNumerator = 4,
+        int timeSignatureDenominator = 4)
+    {
+        ThrowIfDisposed();
+
+        if (_localPeer == null)
+        {
+            throw new InvalidOperationException("Not in a session.");
+        }
+
+        return new TransportSyncMessage
+        {
+            PeerId = _localPeer.Id,
+            SessionId = SessionId,
+            State = state,
+            PositionBeats = positionBeats,
+            Tempo = tempo,
+            LoopEnabled = loopEnabled,
+            LoopStart = loopStart,
+            LoopEnd = loopEnd,
+            TimeSignatureNumerator = timeSignatureNumerator,
+            TimeSignatureDenominator = timeSignatureDenominator,
+            VectorClock = _localPeer.GetVectorClockCopy()
+        };
+    }
+
+    /// <summary>
     /// Gets peer by ID.
     /// </summary>
     public CollaborationPeer? GetPeer(Guid peerId)
