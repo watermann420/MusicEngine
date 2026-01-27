@@ -99,8 +99,9 @@ MusicEngine/
 ```
 MusicEngine:       0 Fehler, 2 Warnungen (NetAnalyzers)
 MusicEngine.Tests: 760 Tests bestanden, 14 fehlgeschlagen (vorbestehend)
-MusicEngineEditor: 0 Fehler, 2 Warnungen (pre-existing)
+MusicEngineEditor: 0 Fehler, 2 Warnungen (NetAnalyzers)
 Phase 2 Update:    73 neue Features implementiert
+Phase 5 Update:    4 kritische Editor Features implementiert
 ```
 
 ## Massive Feature Update Phase 2 (Januar 2026)
@@ -187,6 +188,14 @@ Phase 2 Update:    73 neue Features implementiert
 | LyricSyncEditor | Controls/ | Sync Lyrics to Timeline |
 | TranscriptionView | Views/ | Audio to Notation |
 
+### Phase 5 Editor Features (4 kritische Features)
+| Feature | Pfad | Beschreibung |
+|---------|------|--------------|
+| Tap Tempo | ViewModels/TransportViewModel.cs | BPM aus Taps berechnen, 2-8 Tap Durchschnitt, Auto-Reset nach 2s |
+| MIDI Note Preview | Services/NotePreviewService.cs | SimpleSynth Preview, Low-Latency, Shift für Sustain |
+| Project Browser Operations | ViewModels/ProjectBrowserViewModel.cs | Export, Delete, Rename, Duplicate, Archive (ZIP) |
+| Track Management | MainWindow.xaml.cs | Duplicate/Delete/Freeze Integration, FreezeTrackData Metadaten |
+
 ---
 
 ## Feature Update Phase 1 (Januar 2026)
@@ -270,6 +279,7 @@ Die folgenden kritischen Probleme wurden behoben:
 - WPF Shapes: `using Shapes = System.Windows.Shapes;` wegen Konflikten
 - MIDI Export: Eigene WriteMidiFile() Methode (MidiFile.Export existiert nicht)
 - VST3 SafeScanMode: `VstHost.SafeScanMode = true` (default) verhindert AccessViolationException
+- TrackType Mehrdeutigkeit: `Models.TrackType` in MainWindow.xaml.cs verwenden (Konflikt zwischen Views.Dialogs.TrackType und Models.TrackType)
 
 ### Build Commands (Git Bash)
 ```bash
@@ -441,6 +451,10 @@ sequencer.Start();
 | Time Signature Marker | Meter Changes auf Timeline, Custom Time Signatures |
 | Warp Marker Control (NEW) | Elastic Audio Editor, Draggable Warp Markers, Auto-Warp |
 | Elastic Audio Editor (NEW) | BPM Detection, Tempo Matching, Waveform Warping UI |
+| Tap Tempo (NEW) | BPM aus Taps berechnen, 2-8 Tap Durchschnitt, Auto-Reset |
+| MIDI Note Preview (NEW) | Piano Roll Note Vorschau mit SimpleSynth, Shift für Sustain |
+| Project Browser Ops (NEW) | Export, Delete, Rename, Duplicate, Archive mit ZIP Support |
+| Track Freeze/Unfreeze (NEW) | Track Management mit Metadaten-Speicherung, Audio Render |
 
 ### Project Management Features (Januar 2026)
 | Feature | Beschreibung |
