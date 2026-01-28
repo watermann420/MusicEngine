@@ -20,12 +20,34 @@ public class ScriptHost
     private readonly AudioEngine _engine; // The audio engine instance
     private readonly Sequencer _sequencer; // The sequencer instance
 
+    /// <summary>
+    /// Event fired when a refresh is requested (e.g., via MIDI binding).
+    /// Subscribe to this to reload the script.
+    /// </summary>
+    public event Action? OnRefreshRequested;
+
+    /// <summary>
+    /// Event fired when a custom action is triggered via MIDI.
+    /// The string parameter is the action name.
+    /// </summary>
+    public event Action<string>? OnActionTriggered;
+
     // Constructor to initialize the script host with engine and sequencer
     public ScriptHost(AudioEngine engine, Sequencer sequencer)
     {
         _engine = engine; // Initialize the audio engine
         _sequencer = sequencer; // Initialize the sequencer
     }
+
+    /// <summary>
+    /// Triggers the refresh event. Call this to request a script reload.
+    /// </summary>
+    public void TriggerRefresh() => OnRefreshRequested?.Invoke();
+
+    /// <summary>
+    /// Triggers a custom action event.
+    /// </summary>
+    public void TriggerAction(string actionName) => OnActionTriggered?.Invoke(actionName);
 
     // Executes a C# script asynchronously
     public async Task ExecuteScriptAsync(string code)
@@ -34,7 +56,7 @@ public class ScriptHost
             .WithReferences(typeof(AudioEngine).Assembly, typeof(NAudio.Wave.ISampleProvider).Assembly)  // Add necessary assembly references
             .WithImports("System", "MusicEngine.Core", "System.Collections.Generic"); // Add common namespaces
 
-        var globals = new ScriptGlobals { Engine = _engine, Sequencer = _sequencer }; // Create globals for the script
+        var globals = new ScriptGlobals { Engine = _engine, Sequencer = _sequencer, Host = this }; // Create globals for the script
 
         try
         {
@@ -60,6 +82,7 @@ public class ScriptGlobals
 {
     public AudioEngine Engine { get; set; } = null!; // The audio engine instance
     public Sequencer Sequencer { get; set; } = null!; // The sequencer instance
+    public ScriptHost? Host { get; set; } // Reference to the script host for events
 
     private SimpleSynth? _synth; // Default synth instance
 
@@ -166,6 +189,78 @@ public class ScriptGlobals
             if (val > 0) Sequencer.Stop();
         });
     }
+
+    // Maps a MIDI note to refresh/reload the script
+    public void MapRefresh(int deviceIndex, int note)
+    {
+        Engine.MapTransportNote(deviceIndex, note, val => {
+            if (val > 0) Host?.TriggerRefresh();
+        });
+    }
+
+    /// <summary>Alias for MapRefresh - Binds a note to reload the script</summary>
+    public void mapRefresh(int deviceIndex, int note) => MapRefresh(deviceIndex, note);
+    /// <summary>Alias for MapRefresh - Binds a note to reload the script</summary>
+    public void bindRefresh(int deviceIndex, int note) => MapRefresh(deviceIndex, note);
+
+    // Maps a MIDI CC to refresh/reload the script (triggers when value > 64)
+    public void MapRefreshCC(int deviceIndex, int cc)
+    {
+        Engine.MapTransportControl(deviceIndex, cc, val => {
+            if (val > 0.5f) Host?.TriggerRefresh();
+        });
+    }
+
+    // Maps a MIDI note to trigger a custom action by name
+    public void MapAction(int deviceIndex, int note, string actionName)
+    {
+        Engine.MapTransportNote(deviceIndex, note, val => {
+            if (val > 0) Host?.TriggerAction(actionName);
+        });
+    }
+
+    /// <summary>Alias for MapAction - Binds a note to a custom action</summary>
+    public void mapAction(int deviceIndex, int note, string actionName) => MapAction(deviceIndex, note, actionName);
+    /// <summary>Alias for MapAction - Binds a note to a custom action</summary>
+    public void bindAction(int deviceIndex, int note, string actionName) => MapAction(deviceIndex, note, actionName);
+
+    // Maps a MIDI CC to trigger a custom action by name (triggers when value > 64)
+    public void MapActionCC(int deviceIndex, int cc, string actionName)
+    {
+        Engine.MapTransportControl(deviceIndex, cc, val => {
+            if (val > 0.5f) Host?.TriggerAction(actionName);
+        });
+    }
+
+    // Maps a MIDI note to execute any Action callback
+    public void MapNote(int deviceIndex, int note, Action action)
+    {
+        Engine.MapTransportNote(deviceIndex, note, val => {
+            if (val > 0) action();
+        });
+    }
+
+    /// <summary>Alias for MapNote - Binds a note to a callback</summary>
+    public void mapNote(int deviceIndex, int note, Action action) => MapNote(deviceIndex, note, action);
+    /// <summary>Alias for MapNote - Binds a note to a callback</summary>
+    public void onNote(int deviceIndex, int note, Action action) => MapNote(deviceIndex, note, action);
+
+    // Maps a MIDI note to execute any Action callback with velocity
+    public void MapNoteWithVelocity(int deviceIndex, int note, Action<float> action)
+    {
+        Engine.MapTransportNote(deviceIndex, note, action);
+    }
+
+    // Maps a MIDI CC to execute any Action callback
+    public void MapCC(int deviceIndex, int cc, Action<float> action)
+    {
+        Engine.MapTransportControl(deviceIndex, cc, action);
+    }
+
+    /// <summary>Alias for MapCC - Binds a CC to a callback</summary>
+    public void mapCC(int deviceIndex, int cc, Action<float> action) => MapCC(deviceIndex, cc, action);
+    /// <summary>Alias for MapCC - Binds a CC to a callback</summary>
+    public void onCC(int deviceIndex, int cc, Action<float> action) => MapCC(deviceIndex, cc, action);
 
     // Maps a MIDI control to skip beats in the sequencer
     public void MapSkip(int deviceIndex, int cc, double beats)

@@ -106,6 +106,9 @@ midi.device(0).route(synth);
 
 
 
+
+
+
 // OPTIONAL: PLAY A PATTERN
 var playPattern = false;  // Set to true to play
 
