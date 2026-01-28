@@ -107,7 +107,7 @@ midi.device(0).route(synth);
 
 
 // OPTIONAL: PLAY A PATTERN
-var playPattern = true;
+var playPattern = false;  // Set to true to play
 
 if (playPattern)
 {
@@ -124,6 +124,47 @@ if (playPattern)
     pattern.Note(60, 3.0, 1.0, 100);   // C4
 
     pattern.Play();
+}
+
+
+// OPTIONAL: PLAY TETRIS THEME (Korobeiniki)
+var playTetris = true;  // Set to true to play
+
+if (playTetris)
+{
+    var tetris = CreatePattern(synth);
+    tetris.LoopLength = 16.0;  // 16 beats for the full melody
+
+
+
+    // Bar 1: E - B C - D - C B
+    tetris.Note(76, 0.0, 0.9, 100);    // E5 (quarter)
+    tetris.Note(71, 1.0, 0.4, 90);     // B4 (eighth)
+    tetris.Note(72, 1.5, 0.4, 90);     // C5 (eighth)
+    tetris.Note(74, 2.0, 0.9, 100);    // D5 (quarter)
+    tetris.Note(72, 3.0, 0.4, 90);     // C5 (eighth)
+    tetris.Note(71, 3.5, 0.4, 90);     // B4 (eighth)
+
+    // Bar 2: A - A C - E - D C
+    tetris.Note(69, 4.0, 0.9, 100);    // A4 (quarter)
+    tetris.Note(69, 5.0, 0.4, 85);     // A4 (eighth)
+    tetris.Note(72, 5.5, 0.4, 90);     // C5 (eighth)
+    tetris.Note(76, 6.0, 0.9, 100);    // E5 (quarter)
+    tetris.Note(74, 7.0, 0.4, 90);     // D5 (eighth)
+    tetris.Note(72, 7.5, 0.4, 90);     // C5 (eighth)
+
+    // Bar 3: B - - C - D - E -
+    tetris.Note(71, 8.0, 1.4, 100);    // B4 (dotted quarter)
+    tetris.Note(72, 9.5, 0.4, 90);     // C5 (eighth)
+    tetris.Note(74, 10.0, 0.9, 100);   // D5 (quarter)
+    tetris.Note(76, 11.0, 0.9, 100);   // E5 (quarter)
+
+    // Bar 4: C - A - A - - -
+    tetris.Note(72, 12.0, 0.9, 100);   // C5 (quarter)
+    tetris.Note(69, 13.0, 0.9, 95);    // A4 (quarter)
+    tetris.Note(69, 14.0, 1.9, 90);    // A4 (half - held)
+
+    tetris.Play();
 }
 
 

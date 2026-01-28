@@ -630,10 +630,13 @@ public class SimpleSynth : ISynth
         // Filter state (stereo one-pole lowpass)
         private float _filterState1; // Left channel
         private float _filterState2; // Right channel
+        private float _smoothedCutoff; // Smoothed cutoff to prevent zipper noise
 
-        // Anti-click ramp for voice start
+        // Anti-click ramp for voice start/end
         private float _startRamp;
-        private const float StartRampRate = 0.0005f; // ~2ms ramp at 44.1kHz (smoother)
+        private float _endRamp = 1f;
+        private const float StartRampRate = 0.002f; // ~0.5ms ramp at 44.1kHz (fast but smooth)
+        private const float EndRampRate = 0.0005f;  // ~2ms end ramp for smooth cutoff
 
         private readonly Random _random = new();
 
@@ -661,11 +664,14 @@ public class SimpleSynth : ISynth
             // Keep current envelope values for smooth retrigger (no click)
             // The attack phase will rise from current level, not from 0
             // Only reset if envelope is nearly silent
-            if (_ampEnv < 0.01f)
+            if (_ampEnv < 0.02f)
             {
-                _ampEnv = 0;
-                _filterEnv = 0;
+                _ampEnv = 0.001f; // Start just above zero to avoid click
+                _filterEnv = 0.001f;
+                _startRamp = 0f; // Reset start ramp for new attack
             }
+            // Reset end ramp in case voice was fading out
+            _endRamp = 1f;
             // Don't reset filter state - keeps continuity
         }
 
@@ -765,19 +771,29 @@ public class SimpleSynth : ISynth
             _ampEnv = ProcessEnvelope(_ampStage, _ampEnv, synth.Attack, synth.Decay, synth.Sustain, synth.Release, sampleRate, ref _ampStage);
             _filterEnv = ProcessEnvelope(_filterStage, _filterEnv, synth.FilterAttack, synth.FilterDecay, synth.FilterSustain, synth.FilterRelease, sampleRate, ref _filterStage);
 
-            // Check if voice is finished
-            if (_ampStage == 3 && _ampEnv <= 0.0001f)
+            // Check if voice is finished - use end ramp to prevent pop
+            if (_ampStage == 3 && _ampEnv <= 0.001f)
             {
-                IsFinished = true;
-                return (0, 0);
+                _endRamp -= EndRampRate;
+                if (_endRamp <= 0f)
+                {
+                    IsFinished = true;
+                    return (0, 0);
+                }
             }
 
             // Calculate filter cutoff
             float baseCutoff = synth.Cutoff * synth.Cutoff * 18000f + 20f;
             float keyTrack = (Note - 60) / 60f * synth.FilterKeyTrack;
             float envMod = _filterEnv * synth.FilterEnvAmount;
-            float cutoffHz = baseCutoff * (float)Math.Pow(2, keyTrack + envMod * 4 + filterMod * 2);
-            cutoffHz = Math.Clamp(cutoffHz, 20f, Math.Min(20000f, sampleRate * 0.45f));
+            float targetCutoff = baseCutoff * (float)Math.Pow(2, keyTrack + envMod * 4 + filterMod * 2);
+            targetCutoff = Math.Clamp(targetCutoff, 20f, Math.Min(20000f, sampleRate * 0.45f));
+
+            // Smooth cutoff changes to prevent zipper noise and clicks
+            const float cutoffSmoothRate = 0.005f;
+            if (_smoothedCutoff == 0f) _smoothedCutoff = targetCutoff; // Initialize on first call
+            _smoothedCutoff += (targetCutoff - _smoothedCutoff) * cutoffSmoothRate;
+            float cutoffHz = _smoothedCutoff;
 
             // Simple but stable one-pole lowpass filter
             // This avoids the instability issues of higher-order filters
@@ -814,6 +830,13 @@ public class SimpleSynth : ISynth
                 _startRamp = Math.Min(1f, _startRamp + StartRampRate);
                 signalL *= _startRamp;
                 signalR *= _startRamp;
+            }
+
+            // Apply end ramp for smooth voice termination
+            if (_endRamp < 1f)
+            {
+                signalL *= _endRamp;
+                signalR *= _endRamp;
             }
 
             return (signalL, signalR);
@@ -891,14 +914,17 @@ public class SimpleSynth : ISynth
         {
             // Use exponential curves for natural-sounding envelopes
             // This prevents clicks and pops at transitions
-            const float expCoeff = 0.0001f; // Controls curve steepness
+            // Minimum times prevent too-fast transitions that cause pops
+            const float minTime = 0.005f; // 5ms minimum for any stage
 
             switch (stage)
             {
-                case 0: // Attack - exponential rise (fast start, slow finish)
-                    float attackRate = 1f / (Math.Max(attack, 0.002f) * sampleRate);
-                    // Asymptotic approach to 1.0 - never overshoots
-                    current += attackRate * (1.01f - current);
+                case 0: // Attack - exponential rise
+                    float attackTime = Math.Max(attack, minTime);
+                    float attackRate = 1f / (attackTime * sampleRate);
+                    // Smooth asymptotic approach - coefficient controls curve shape
+                    float attackTarget = 1.02f; // Slightly overshoot target for smooth arrival
+                    current += attackRate * (attackTarget - current) * 6f;
                     if (current >= 0.999f)
                     {
                         current = 1f;
@@ -907,26 +933,35 @@ public class SimpleSynth : ISynth
                     break;
 
                 case 1: // Decay - exponential fall to sustain
-                    float decayRate = 1f / (Math.Max(decay, 0.002f) * sampleRate);
-                    current += decayRate * (sustain - current);
-                    if (Math.Abs(current - sustain) < 0.001f)
+                    float decayTime = Math.Max(decay, minTime);
+                    float decayRate = 1f / (decayTime * sampleRate);
+                    // Smooth exponential decay
+                    current += decayRate * (sustain - current) * 5f;
+                    if (Math.Abs(current - sustain) < 0.002f)
                     {
                         current = sustain;
                         stageRef = 2;
                     }
                     break;
 
-                case 2: // Sustain - hold at sustain level
-                    current = sustain;
+                case 2: // Sustain - smoothly approach sustain level (handles level changes)
+                    float sustainDiff = sustain - current;
+                    if (Math.Abs(sustainDiff) > 0.001f)
+                    {
+                        current += sustainDiff * 0.01f; // Gentle smoothing
+                    }
+                    else
+                    {
+                        current = sustain;
+                    }
                     break;
 
-                case 3: // Release - exponential fall to zero
-                    float releaseRate = 1f / (Math.Max(release, 0.002f) * sampleRate);
-                    current += releaseRate * (0f - current);
-                    if (current <= 0.0001f)
-                    {
-                        current = 0f;
-                    }
+                case 3: // Release - smooth exponential fall to zero
+                    float releaseTime = Math.Max(release, minTime);
+                    float releaseRate = 1f / (releaseTime * sampleRate);
+                    // Smooth release - never goes negative
+                    current *= (1f - releaseRate * 4f);
+                    current = Math.Max(0f, current);
                     break;
             }
 
