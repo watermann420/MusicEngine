@@ -1,4 +1,4 @@
-audio.all.gain(0.3); // Master volume
+audio.all.gain(0.1); // Master volume //0 to 1.0 // Adjust as needed // Default is 0.1 is 10% volume
 
 
 
@@ -7,7 +7,7 @@ audio.all.gain(0.3); // Master volume
 var synth = CreateSynth();
 
 // OSCILLATOR 1 SETTINGS
-synth.Waveform = WaveType.Square;  // Sine, Square, Sawtooth, Triangle, Pulse, Noise
+synth.Waveform = WaveType.Square;    // Sine, Square, Sawtooth, Triangle, Pulse, Noise
 synth.Osc1Octave = 0;                // Octave offset: -3 to +3
 synth.Osc1Semi = 0;                  // Semitone detune: -12 to +12
 synth.Osc1Fine = 0f;                 // Fine tune in cents: -100 to +100
@@ -15,34 +15,34 @@ synth.Osc1Level = 0.7f;              // Volume: 0 to 1
 synth.Osc1PulseWidth = 0.5f;         // Pulse width (for Pulse wave): 0.1 to 0.9
 
 // OSCILLATOR 2 SETTINGS
-synth.Osc2Enabled = true;            // Enable second oscillator
+synth.Osc2Enabled = true;               // Enable second oscillator
 synth.Osc2Waveform = WaveType.Sawtooth; // Waveform type
-synth.Osc2Octave = 0;               // Octave offset: -3 to +3
-synth.Osc2Semi = 0;                 // Semitone detune: -12 to +12
-synth.Osc2Fine = 7f;                 // Slight detune for fat sound
-synth.Osc2Level = 0.5f;             // Volume: 0 to 1
-synth.Osc2PulseWidth = 0.5f;        // Pulse width (for Pulse wave): 0.1 to 0.9
+synth.Osc2Octave = 0;                   // Octave offset: -3 to +3
+synth.Osc2Semi = 0;                     // Semitone detune: -12 to +12
+synth.Osc2Fine = 7f;                    // Slight detune for fat sound
+synth.Osc2Level = 0.5f;                 // Volume: 0 to 1
+synth.Osc2PulseWidth = 0.5f;            // Pulse width (for Pulse wave): 0.1 to 0.9
 
 // SUB OSCILLATOR & NOISE
-synth.SubOscLevel = 0.9f;            // Sub oscillator (1 octave down): 0 to 1
+synth.SubOscLevel = 0.9f;             // Sub oscillator (1 octave down): 0 to 1
 synth.SubOscWaveform = WaveType.Sine; // Sine or Square work best
-synth.NoiseLevel = 0.0f;             // White noise: 0 to 1
+synth.NoiseLevel = 0.0f;              // White noise: 0 to 1
 
 // FILTER SETTINGS
-synth.Cutoff = 1f;                 // Filter cutoff: 0 to 1 (maps to 20-20000 Hz)
+synth.Cutoff = 1f;                   // Filter cutoff: 0 to 1 (maps to 20-20000 Hz)
 synth.Resonance = 0.5f;              // Resonance/Q: 0 to 1
 synth.FilterEnvAmount = 0.0f;        // Envelope to filter: -1 to +1
 synth.FilterKeyTrack = 0.5f;         // Keyboard tracking: 0 to 1
 synth.FilterDrive = 0.0f;            // Filter saturation: 0 to 1
 
 // AMPLITUDE ENVELOPE (ADSR)
-synth.Attack = 0.01f;                // Attack time in seconds: 0.001 to 10
+synth.Attack = 0.01f;                 // Attack time in seconds: 0.001 to 10
 synth.Decay = 0.01f;                  // Decay time: 0.001 to 10
-synth.Sustain = 0.2f;                // Sustain level: 0 to 1
+synth.Sustain = 0.2f;                 // Sustain level: 0 to 1
 synth.Release = 0.08f;                // Release time: 0.001 to 10
 
 // FILTER ENVELOPE (ADSR)
-synth.FilterAttack = 0.01f;          // Filter envelope attack
+synth.FilterAttack = 0.01f;           // Filter envelope attack
 synth.FilterDecay = 0.03f;            // Filter envelope decay
 synth.FilterSustain = 0.03f;          // Filter envelope sustain
 synth.FilterRelease = 0.03f;          // Filter envelope release
@@ -62,8 +62,8 @@ synth.PitchBendRange = 2;            // Pitch bend range in semitones: 1 to 24
 
 // MOD WHEEL (CC#1 is auto-routed)
 synth.VibratoRate = 20.0f;            // Vibrato speed (mod wheel controls depth): 0.1 to 20 Hz
-synth.VibratoDepth = 0.3f;           // Max vibrato depth (semitones): 0 to 2
-// synth.ModWheel = 0.0f;            // Current mod wheel value: 0 to 1 (set by MIDI CC#1)
+synth.VibratoDepth = 0.3f;            // Max vibrato depth (semitones): 0 to 2
+// synth.ModWheel = 0.0f;             // Current mod wheel value: 0 to 1 (set by MIDI CC#1)
 
 // PERFORMANCE
 synth.Portamento = 0.0f;             // Glide time in seconds: 0 to 2 (0 = off)
@@ -81,7 +81,7 @@ synth.DelayTime = 250f;              // Delay time in ms: 1 to 2000
 synth.DelayFeedback = 0.4f;          // Delay feedback: 0 to 0.95
 
 // Reverb
-synth.ReverbMix = 0f;             // Reverb wet/dry mix: 0 to 1
+synth.ReverbMix = 0f;                // Reverb wet/dry mix: 0 to 1
 synth.ReverbSize = 0.1f;             // Room size: 0 to 1
 synth.ReverbDamping = 0.5f;          // High frequency damping: 0 to 1
 
@@ -91,13 +91,9 @@ synth.Pan = 0.0f;                    // Pan: -1 (left) to +1 (right)
 synth.MaxPolyphony = 16;             // Max simultaneous notes: 1 to 64
 synth.VelocitySensitivity = 0.7f;    // Velocity response: 0 to 1
 
+
+
 // ROUTE MIDI TO SYNTH
-// This automatically handles:
-// - Note On/Off
-// - Pitch Wheel (sets synth.PitchBend)
-// - Mod Wheel CC#1 (sets synth.ModWheel for vibrato)
-// - CC#7 Volume, CC#10 Pan, CC#74 Cutoff, CC#71 Resonance
-// - CC#73 Attack, CC#72 Release
 midi.device(0).route(synth);
 
 
@@ -135,7 +131,7 @@ if (playPattern)
 
 
 // OPTIONAL: PLAY TETRIS THEME (Korobeiniki)
-var playTetris = true;  // Set to true to play
+var playTetris = false;  // Set to true to play
 
 if (playTetris)
 {
