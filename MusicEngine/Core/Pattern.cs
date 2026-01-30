@@ -5,6 +5,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 
 
@@ -182,6 +183,9 @@ public class Pattern
         }
     }
 
+    // Stopwatch for high-precision note-off timing
+    private static readonly System.Diagnostics.Stopwatch _noteTimer = System.Diagnostics.Stopwatch.StartNew();
+
     private void TriggerNote(NoteEvent ev, int noteIndex, double absoluteBeat, int cycleNumber, double bpm)
     {
         // Create the musical event with full information
@@ -215,23 +219,38 @@ public class Pattern
         // Trigger the note on the synth
         Synth.NoteOn(ev.Note, ev.Velocity);
 
-        // Schedule note off using Task.Delay for non-blocking async timing
-        // This is preferred over ThreadPool.QueueUserWorkItem + Thread.Sleep because:
-        // 1. Task.Delay uses system timers instead of blocking a thread
-        // 2. Reduces thread pool pressure when many notes are playing simultaneously
-        // 3. More efficient resource usage for short-duration delays
-        _ = ScheduleNoteOffAsync(ev.Note, (int)durationMs, musicalEvent);
+        // Schedule note off with high-precision timing
+        // Task.Delay has ~15ms resolution on Windows which causes audible gaps/overlaps.
+        // For short durations (<50ms), use spin-wait for precise timing.
+        // For longer durations, sleep most of the time then spin-wait the remainder.
+        _ = ScheduleNoteOffAsync(ev.Note, durationMs, musicalEvent);
     }
 
     /// <summary>
-    /// Schedules a note-off event after the specified duration using async/await.
-    /// Uses Task.Delay instead of Thread.Sleep for efficient non-blocking timing.
+    /// Schedules a note-off event after the specified duration with high-precision timing.
+    /// Uses a hybrid approach: Task.Delay for the bulk of long waits, then a Stopwatch
+    /// spin-wait for the final milliseconds to achieve sub-millisecond accuracy.
     /// </summary>
-    private async Task ScheduleNoteOffAsync(int note, int durationMs, MusicalEvent musicalEvent)
+    private async Task ScheduleNoteOffAsync(int note, double durationMs, MusicalEvent musicalEvent)
     {
         try
         {
-            await Task.Delay(durationMs).ConfigureAwait(false);
+            long startTicks = _noteTimer.ElapsedTicks;
+            double targetTicks = durationMs * System.Diagnostics.Stopwatch.Frequency / 1000.0;
+
+            if (durationMs > 30)
+            {
+                // Sleep for most of the duration (leave 10ms margin for spin-wait precision)
+                int sleepMs = (int)(durationMs - 10);
+                await Task.Delay(sleepMs).ConfigureAwait(false);
+            }
+
+            // Spin-wait for the remaining time for precise note-off
+            while ((_noteTimer.ElapsedTicks - startTicks) < targetTicks)
+            {
+                Thread.SpinWait(1);
+            }
+
             Synth.NoteOff(note);
 
             // Notify sequencer that note ended

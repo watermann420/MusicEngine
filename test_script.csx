@@ -130,13 +130,17 @@ if (playPattern)
 }
 
 
+
+
+
+
 // OPTIONAL: PLAY TETRIS THEME (Korobeiniki)
 var playTetris = true;  // Set to true to play
 
 if (playTetris)
 {
     var tetris = CreatePattern(synth);
-    tetris.LoopLength = 16.0;  // 16 beats for the full melody
+    tetris.LoopLength = 16.0;  
 
 
 

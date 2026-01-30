@@ -1570,6 +1570,9 @@ public class Sequencer : IDisposable
             lastTime = currentTime; // Update last time
 
             double nextBeat; // Next beat position
+            Pattern[] patternsSnapshot;
+            double currentBpm;
+
             lock (_patterns)
             {
                 if (!_isScratching)
@@ -1594,28 +1597,30 @@ public class Sequencer : IDisposable
                 // Handle arrangement loop region
                 nextBeat = HandleArrangementLoop(nextBeat);
 
-                if (nextBeat != lastProcessedBeat) // Process patterns if beat has changed
-                {
-                    // Process patterns - take snapshot to avoid lock scope issues
-                    var patternsSnapshot = _patterns.ToArray();
-                    foreach (var pattern in patternsSnapshot) // Process each pattern
-                    {
-                        pattern.Process(lastProcessedBeat, nextBeat, _bpm); // Process pattern for the beat range
-                    }
-
-                    // Process arrangement clips (AudioClips and MidiClips)
-                    ProcessArrangementClips(lastProcessedBeat, nextBeat);
-
-                    // Process punch in/out events
-                    _punchSettings.Process(nextBeat);
-
-                    lastProcessedBeat = nextBeat; // Update last processed beat
-                }
+                // Take snapshot under lock, then release before processing
+                patternsSnapshot = _patterns.ToArray();
+                currentBpm = _bpm;
 
                 if (!_isScratching) // Update beat accumulator if not scratching
                 {
                     _beatAccumulator = nextBeat; // Update current beat position
                 }
+            }
+
+            if (nextBeat != lastProcessedBeat) // Process patterns if beat has changed
+            {
+                foreach (var pattern in patternsSnapshot) // Process each pattern
+                {
+                    pattern.Process(lastProcessedBeat, nextBeat, currentBpm); // Process pattern for the beat range
+                }
+
+                // Process arrangement clips (AudioClips and MidiClips)
+                ProcessArrangementClips(lastProcessedBeat, nextBeat);
+
+                // Process punch in/out events
+                _punchSettings.Process(nextBeat);
+
+                lastProcessedBeat = nextBeat; // Update last processed beat
             }
 
             // Emit beat changed event at ~60fps
@@ -1692,6 +1697,9 @@ public class Sequencer : IDisposable
             lastTickTime = currentTime;
 
             double nextBeat;
+            Pattern[] patternsSnapshot;
+            double currentBpm;
+
             lock (_patterns)
             {
                 if (!_isScratching)
@@ -1728,32 +1736,31 @@ public class Sequencer : IDisposable
                 // Handle arrangement loop region
                 nextBeat = HandleArrangementLoop(nextBeat);
 
-                // Process with finer granularity based on subdivision
-                if (nextBeat != lastProcessedBeat)
-                {
-                    double subdivisionSize = 1.0 / (int)_beatSubdivision;
-                    double startSubdiv = Math.Floor(lastProcessedBeat / subdivisionSize) * subdivisionSize;
-                    double endSubdiv = Math.Ceiling(nextBeat / subdivisionSize) * subdivisionSize;
-
-                    // Process patterns
-                    foreach (var pattern in _patterns)
-                    {
-                        pattern.Process(lastProcessedBeat, nextBeat, _bpm);
-                    }
-
-                    // Process arrangement clips (AudioClips and MidiClips)
-                    ProcessArrangementClips(lastProcessedBeat, nextBeat);
-
-                    // Process punch in/out events
-                    _punchSettings.Process(nextBeat);
-
-                    lastProcessedBeat = nextBeat;
-                }
+                // Take snapshot of patterns and BPM under lock, then release lock before processing
+                patternsSnapshot = _patterns.ToArray();
+                currentBpm = _bpm;
 
                 if (!_isScratching)
                 {
                     _beatAccumulator = nextBeat;
                 }
+            }
+
+            // Process patterns OUTSIDE the lock to prevent blocking NoteOn/NoteOff from MIDI thread
+            if (nextBeat != lastProcessedBeat)
+            {
+                foreach (var pattern in patternsSnapshot)
+                {
+                    pattern.Process(lastProcessedBeat, nextBeat, currentBpm);
+                }
+
+                // Process arrangement clips (AudioClips and MidiClips)
+                ProcessArrangementClips(lastProcessedBeat, nextBeat);
+
+                // Process punch in/out events
+                _punchSettings.Process(nextBeat);
+
+                lastProcessedBeat = nextBeat;
             }
 
             // Emit beat changed event at higher rate for high-precision mode
