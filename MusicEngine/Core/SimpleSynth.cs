@@ -1,212 +1,973 @@
-﻿// MusicEngine License (MEL) - Honor-Based Commercial Support
+// MusicEngine License (MEL) - Honor-Based Commercial Support
 // Copyright (c) 2025-2026 Yannis Watermann (watermann420, nullonebinary)
 // https://github.com/watermann420/MusicEngine
-// Description: Basic monophonic/polyphonic synthesizer.
+// Description: Polyphonic synthesizer with ADSR, filter, LFO, and effects.
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Threading;
 using NAudio.Wave;
-using NAudio.Wave.SampleProviders;
-
 
 namespace MusicEngine.Core;
 
-
-// Enum for different waveform types
+/// <summary>
+/// Waveform types for oscillators
+/// </summary>
 public enum WaveType
 {
-    Sine, // Default waveform 
-    Square, // 50% duty cycle
-    Sawtooth, // Ramp up
-    Triangle, // Linear up and down
-    Noise // White noise
+    Sine,
+    Square,
+    Sawtooth,
+    Triangle,
+    Pulse,
+    Noise
 }
 
-/// A simple synthesizer implementation
+/// <summary>
+/// Polyphonic synthesizer with extensive sound design capabilities.
+/// Features: Dual oscillators, ADSR envelopes, filter, LFO, and built-in effects.
+/// Uses lock-free data structures for minimal MIDI latency.
+/// </summary>
 public class SimpleSynth : ISynth
 {
-    private readonly WaveFormat _waveFormat; // Audio format
-    private readonly List<Oscillator> _activeOscillators = new(); // Currently active oscillators
-    private readonly object _lock = new(); // Thread safety lock
+    private readonly WaveFormat _waveFormat;
+    private readonly ConcurrentDictionary<int, Voice> _voices = new(); // Key = MIDI note (lock-free)
+    private readonly ConcurrentQueue<Voice> _voicesToRelease = new(); // Queue for voices to move to releasing
+    private readonly List<Voice> _releasingVoices = new(); // Voices in release phase (only accessed by audio thread)
+    private readonly object _releaseLock = new(); // Only for releasing voices list
+    private int _activeVoiceCount; // Atomic counter for polyphony
 
-    public WaveType Waveform { get; set; } = WaveType.Sine; // Default waveform
-    public float Cutoff { get; set; } = 1.0f; // 0.0 to 1.0 // Lowpass filter cutoff
-    public float Resonance { get; set; } = 0.0f; // 0.0 to 1.0 // Lowpass filter resonance
-    public string Name { get; set; } = "SimpleSynth"; // Synth name for identification
-    
-    // ISampleProvider implementation
+    // LFO state
+    private float _lfoPhase;
+
+    // Effect buffers
+    private readonly float[] _delayBuffer;
+    private int _delayWritePos;
+    private readonly float[] _reverbBuffer;
+    private int _reverbWritePos;
+    private const int MaxDelaySamples = 96000;
+    private const int ReverbBufferSize = 44100;
+
+    #region ========== OSCILLATOR 1 SETTINGS ==========
+
+    /// <summary>Oscillator 1 waveform type</summary>
+    public WaveType Waveform { get; set; } = WaveType.Sawtooth;
+
+    /// <summary>Oscillator 1 octave offset (-3 to +3)</summary>
+    public int Osc1Octave { get; set; } = 0;
+
+    /// <summary>Oscillator 1 semitone detune (-12 to +12)</summary>
+    public int Osc1Semi { get; set; } = 0;
+
+    /// <summary>Oscillator 1 fine tune in cents (-100 to +100)</summary>
+    public float Osc1Fine { get; set; } = 0f;
+
+    /// <summary>Oscillator 1 level (0 to 1)</summary>
+    public float Osc1Level { get; set; } = 0.7f;
+
+    /// <summary>Oscillator 1 pulse width for pulse wave (0.1 to 0.9)</summary>
+    public float Osc1PulseWidth { get; set; } = 0.5f;
+
+    #endregion
+
+    #region ========== OSCILLATOR 2 SETTINGS ==========
+
+    /// <summary>Oscillator 2 waveform type</summary>
+    public WaveType Osc2Waveform { get; set; } = WaveType.Sawtooth;
+
+    /// <summary>Oscillator 2 octave offset (-3 to +3)</summary>
+    public int Osc2Octave { get; set; } = 0;
+
+    /// <summary>Oscillator 2 semitone detune (-12 to +12)</summary>
+    public int Osc2Semi { get; set; } = 0;
+
+    /// <summary>Oscillator 2 fine tune in cents (-100 to +100)</summary>
+    public float Osc2Fine { get; set; } = 7f;
+
+    /// <summary>Oscillator 2 level (0 to 1)</summary>
+    public float Osc2Level { get; set; } = 0.5f;
+
+    /// <summary>Oscillator 2 pulse width (0.1 to 0.9)</summary>
+    public float Osc2PulseWidth { get; set; } = 0.5f;
+
+    /// <summary>Enable oscillator 2</summary>
+    public bool Osc2Enabled { get; set; } = true;
+
+    #endregion
+
+    #region ========== SUB OSCILLATOR & NOISE ==========
+
+    /// <summary>Sub oscillator level (0 to 1) - plays one octave below</summary>
+    public float SubOscLevel { get; set; } = 0f;
+
+    /// <summary>Sub oscillator waveform (Sine or Square)</summary>
+    public WaveType SubOscWaveform { get; set; } = WaveType.Sine;
+
+    /// <summary>Noise level (0 to 1)</summary>
+    public float NoiseLevel { get; set; } = 0f;
+
+    #endregion
+
+    #region ========== FILTER SETTINGS ==========
+
+    /// <summary>Filter cutoff frequency normalized (0 to 1, maps to 20-20000 Hz)</summary>
+    public float Cutoff { get; set; } = 0.8f;
+
+    /// <summary>Filter resonance (0 to 1)</summary>
+    public float Resonance { get; set; } = 0.2f;
+
+    /// <summary>Filter envelope amount (-1 to 1)</summary>
+    public float FilterEnvAmount { get; set; } = 0.3f;
+
+    /// <summary>Filter keyboard tracking (0 to 1)</summary>
+    public float FilterKeyTrack { get; set; } = 0.5f;
+
+    /// <summary>Filter drive/saturation (0 to 1)</summary>
+    public float FilterDrive { get; set; } = 0f;
+
+    #endregion
+
+    #region ========== AMPLITUDE ENVELOPE (ADSR) ==========
+
+    /// <summary>Amplitude attack time in seconds (0.001 to 10)</summary>
+    public float Attack { get; set; } = 0.005f;
+
+    /// <summary>Amplitude decay time in seconds (0.001 to 10)</summary>
+    public float Decay { get; set; } = 0.2f;
+
+    /// <summary>Amplitude sustain level (0 to 1)</summary>
+    public float Sustain { get; set; } = 0.7f;
+
+    /// <summary>Amplitude release time in seconds (0.001 to 10)</summary>
+    public float Release { get; set; } = 0.3f;
+
+    #endregion
+
+    #region ========== FILTER ENVELOPE (ADSR) ==========
+
+    /// <summary>Filter envelope attack time</summary>
+    public float FilterAttack { get; set; } = 0.005f;
+
+    /// <summary>Filter envelope decay time</summary>
+    public float FilterDecay { get; set; } = 0.3f;
+
+    /// <summary>Filter envelope sustain level</summary>
+    public float FilterSustain { get; set; } = 0.4f;
+
+    /// <summary>Filter envelope release time</summary>
+    public float FilterRelease { get; set; } = 0.3f;
+
+    #endregion
+
+    #region ========== LFO SETTINGS ==========
+
+    /// <summary>LFO rate in Hz (0.01 to 50)</summary>
+    public float LfoRate { get; set; } = 5f;
+
+    /// <summary>LFO waveform</summary>
+    public WaveType LfoWaveform { get; set; } = WaveType.Sine;
+
+    /// <summary>LFO to pitch amount in semitones (0 to 12)</summary>
+    public float LfoToPitch { get; set; } = 0f;
+
+    /// <summary>LFO to filter cutoff amount (0 to 1)</summary>
+    public float LfoToFilter { get; set; } = 0f;
+
+    /// <summary>LFO to amplitude amount (0 to 1)</summary>
+    public float LfoToAmp { get; set; } = 0f;
+
+    /// <summary>LFO to pulse width amount (0 to 0.4)</summary>
+    public float LfoToPulseWidth { get; set; } = 0f;
+
+    #endregion
+
+    #region ========== MODULATION ==========
+
+    /// <summary>Pitch bend value (-1 to 1)</summary>
+    public float PitchBend { get; set; } = 0f;
+
+    /// <summary>Pitch bend range in semitones (1 to 24)</summary>
+    public int PitchBendRange { get; set; } = 2;
+
+    /// <summary>Mod wheel value (0 to 1) - controls vibrato</summary>
+    public float ModWheel { get; set; } = 0f;
+
+    /// <summary>Vibrato rate in Hz</summary>
+    public float VibratoRate { get; set; } = 5f;
+
+    /// <summary>Vibrato depth in semitones</summary>
+    public float VibratoDepth { get; set; } = 0.3f;
+
+    /// <summary>Portamento time in seconds (0 = off)</summary>
+    public float Portamento { get; set; } = 0f;
+
+    #endregion
+
+    #region ========== UNISON ==========
+
+    /// <summary>Unison voices (1 to 8)</summary>
+    public int UnisonVoices { get; set; } = 1;
+
+    /// <summary>Unison detune in cents (0 to 50)</summary>
+    public float UnisonDetune { get; set; } = 15f;
+
+    /// <summary>Unison stereo spread (0 to 1)</summary>
+    public float UnisonSpread { get; set; } = 0.5f;
+
+    #endregion
+
+    #region ========== EFFECTS ==========
+
+    /// <summary>Delay mix (0 to 1)</summary>
+    public float DelayMix { get; set; } = 0f;
+
+    /// <summary>Delay time in milliseconds (1 to 2000)</summary>
+    public float DelayTime { get; set; } = 300f;
+
+    /// <summary>Delay feedback (0 to 0.95)</summary>
+    public float DelayFeedback { get; set; } = 0.4f;
+
+    /// <summary>Reverb mix (0 to 1)</summary>
+    public float ReverbMix { get; set; } = 0.15f;
+
+    /// <summary>Reverb size (0 to 1)</summary>
+    public float ReverbSize { get; set; } = 0.5f;
+
+    /// <summary>Reverb damping (0 to 1)</summary>
+    public float ReverbDamping { get; set; } = 0.5f;
+
+    #endregion
+
+    #region ========== OUTPUT ==========
+
+    /// <summary>Master volume (0 to 1)</summary>
+    public float Volume { get; set; } = 0.7f;
+
+    /// <summary>Pan position (-1 left, 0 center, 1 right)</summary>
+    public float Pan { get; set; } = 0f;
+
+    /// <summary>Maximum polyphony (1 to 64)</summary>
+    public int MaxPolyphony { get; set; } = 16;
+
+    /// <summary>Velocity sensitivity (0 to 1)</summary>
+    public float VelocitySensitivity { get; set; } = 0.7f;
+
+    #endregion
+
+    /// <summary>Synth name for identification</summary>
+    public string Name { get; set; } = "SimpleSynth";
+
+    /// <summary>Wave format for audio output</summary>
     public WaveFormat WaveFormat => _waveFormat;
-    
-    // Constructor with an optional sample rate
+
+    // Track last played note for portamento
+    private float _lastNote = 60f;
+    private readonly Random _random = new();
+
+    /// <summary>
+    /// Creates a new SimpleSynth instance
+    /// </summary>
+    /// <param name="sampleRate">Optional sample rate override</param>
     public SimpleSynth(int? sampleRate = null)
     {
-        int rate = sampleRate ?? Settings.SampleRate; // Use provided or default sample rate
-        _waveFormat = WaveFormat.CreateIeeeFloatWaveFormat(rate, Settings.Channels); // Create the wave format
+        int rate = sampleRate ?? Settings.SampleRate;
+        _waveFormat = WaveFormat.CreateIeeeFloatWaveFormat(rate, Settings.Channels);
+
+        // Initialize effect buffers
+        _delayBuffer = new float[MaxDelaySamples];
+        _reverbBuffer = new float[ReverbBufferSize];
     }
-    
-    // Note on event to start a note
+
+    /// <summary>
+    /// Triggers a note on event (lock-free for MIDI thread)
+    /// </summary>
     public void NoteOn(int note, int velocity)
     {
-        MidiValidation.ValidateNote(note);
-        MidiValidation.ValidateVelocity(velocity);
+        // Clamp values instead of throwing exceptions for faster MIDI handling
+        note = Math.Clamp(note, 0, 127);
+        velocity = Math.Clamp(velocity, 1, 127);
 
-        lock (_lock)
+        // Pre-calculate values
+        float vel = 1f - VelocitySensitivity + (velocity / 127f) * VelocitySensitivity;
+        int sampleRate = _waveFormat.SampleRate;
+
+        // If note is already playing, retrigger it (lock-free)
+        if (_voices.TryGetValue(note, out var existingVoice))
         {
-            var frequency = (float)(440.0 * Math.Pow(2.0, (note - 69.0) / 12.0)); // Convert MIDI note to frequency
-            var osc = new Oscillator(frequency, (float)velocity / 127f, _waveFormat.SampleRate, Waveform); // Create oscillator
-            _activeOscillators.Add(osc); // Add to active oscillators
+            existingVoice.Retrigger(vel);
+            return;
+        }
+
+        // Voice stealing: if at max polyphony, steal oldest voice
+        int currentCount = Interlocked.CompareExchange(ref _activeVoiceCount, 0, 0);
+        if (currentCount >= MaxPolyphony)
+        {
+            // Find oldest voice
+            int oldestNote = -1;
+            long oldestTime = long.MaxValue;
+            foreach (var kvp in _voices)
+            {
+                if (kvp.Value.StartTime < oldestTime)
+                {
+                    oldestTime = kvp.Value.StartTime;
+                    oldestNote = kvp.Key;
+                }
+            }
+
+            if (oldestNote >= 0 && _voices.TryRemove(oldestNote, out var stolen))
+            {
+                Interlocked.Decrement(ref _activeVoiceCount);
+                stolen.TriggerRelease();
+                _voicesToRelease.Enqueue(stolen);
+            }
+        }
+
+        // Determine starting note for portamento
+        float startNote = Portamento > 0 && !_voices.IsEmpty
+            ? _lastNote
+            : note;
+
+        // Create new voice and add atomically
+        var voice = new Voice(this, note, vel, startNote, sampleRate);
+        if (_voices.TryAdd(note, voice))
+        {
+            Interlocked.Increment(ref _activeVoiceCount);
+            _lastNote = note;
         }
     }
 
-    // Note off event to stop a note
+    /// <summary>
+    /// Triggers a note off event (lock-free for MIDI thread)
+    /// </summary>
     public void NoteOff(int note)
     {
-        MidiValidation.ValidateNote(note);
+        // Clamp instead of validate
+        note = Math.Clamp(note, 0, 127);
 
-        lock (_lock)
+        // Remove voice atomically
+        if (_voices.TryRemove(note, out var voice))
         {
-            var frequency = (float)(440.0 * Math.Pow(2.0, (note - 69.0) / 12.0)); // Convert MIDI note to frequency
-            foreach (var osc in _activeOscillators) // Find matching oscillators
-            {
-                if (Math.Abs(osc.Frequency - frequency) < 0.1f) // Frequency match tolerance
-                {
-                    osc.Stop(); // Stop the oscillator
-                }
-            }
+            Interlocked.Decrement(ref _activeVoiceCount);
+            voice.TriggerRelease();
+            _voicesToRelease.Enqueue(voice);
         }
     }
-    
-    // Stop all currently playing notes
+
+    /// <summary>
+    /// Stops all playing notes immediately (lock-free)
+    /// </summary>
     public void AllNotesOff()
     {
-        lock (_lock)
+        // Move all active voices to release queue
+        foreach (var kvp in _voices)
         {
-            foreach (var osc in _activeOscillators) // Stop all oscillators
+            if (_voices.TryRemove(kvp.Key, out var voice))
             {
-                osc.Stop(); // Stop the oscillator
+                Interlocked.Decrement(ref _activeVoiceCount);
+                voice.TriggerRelease();
+                _voicesToRelease.Enqueue(voice);
             }
         }
     }
-    
-    // Set synthesizer parameters by name
+
+    /// <summary>
+    /// Sets a parameter by name
+    /// </summary>
     public void SetParameter(string name, float value)
     {
-        switch (name.ToLower()) // Case-insensitive parameter names
+        switch (name.ToLowerInvariant())
         {
-            case "waveform":
-                Waveform = (WaveType)(int)value; // Set waveform type
-                break;
-            case "cutoff":
-                Cutoff = Math.Clamp(value, 0f, 1f); // Set cutoff with clamping
-                break;
-            case "resonance":
-                Resonance = Math.Clamp(value, 0f, 1f); // Set resonance with clamping
-                break;
+            // Oscillator
+            case "waveform": Waveform = (WaveType)(int)Math.Clamp(value, 0, 5); break;
+            case "osc1octave": Osc1Octave = (int)Math.Clamp(value, -3, 3); break;
+            case "osc1semi": Osc1Semi = (int)Math.Clamp(value, -12, 12); break;
+            case "osc1fine": Osc1Fine = Math.Clamp(value, -100, 100); break;
+            case "osc1level": Osc1Level = Math.Clamp(value, 0, 1); break;
+            case "osc1pulsewidth": Osc1PulseWidth = Math.Clamp(value, 0.1f, 0.9f); break;
+
+            case "osc2waveform": Osc2Waveform = (WaveType)(int)Math.Clamp(value, 0, 5); break;
+            case "osc2octave": Osc2Octave = (int)Math.Clamp(value, -3, 3); break;
+            case "osc2semi": Osc2Semi = (int)Math.Clamp(value, -12, 12); break;
+            case "osc2fine": Osc2Fine = Math.Clamp(value, -100, 100); break;
+            case "osc2level": Osc2Level = Math.Clamp(value, 0, 1); break;
+            case "osc2enabled": Osc2Enabled = value > 0.5f; break;
+
+            case "subosclevel": SubOscLevel = Math.Clamp(value, 0, 1); break;
+            case "noiselevel": NoiseLevel = Math.Clamp(value, 0, 1); break;
+
+            // Filter
+            case "cutoff": Cutoff = Math.Clamp(value, 0, 1); break;
+            case "resonance": Resonance = Math.Clamp(value, 0, 1); break;
+            case "filterenvamount": FilterEnvAmount = Math.Clamp(value, -1, 1); break;
+            case "filterkeytrack": FilterKeyTrack = Math.Clamp(value, 0, 1); break;
+            case "filterdrive": FilterDrive = Math.Clamp(value, 0, 1); break;
+
+            // Amp Envelope
+            case "attack": Attack = Math.Clamp(value, 0.001f, 10); break;
+            case "decay": Decay = Math.Clamp(value, 0.001f, 10); break;
+            case "sustain": Sustain = Math.Clamp(value, 0, 1); break;
+            case "release": Release = Math.Clamp(value, 0.001f, 10); break;
+
+            // Filter Envelope
+            case "filterattack": FilterAttack = Math.Clamp(value, 0.001f, 10); break;
+            case "filterdecay": FilterDecay = Math.Clamp(value, 0.001f, 10); break;
+            case "filtersustain": FilterSustain = Math.Clamp(value, 0, 1); break;
+            case "filterrelease": FilterRelease = Math.Clamp(value, 0.001f, 10); break;
+
+            // LFO
+            case "lforate": LfoRate = Math.Clamp(value, 0.01f, 50); break;
+            case "lfowaveform": LfoWaveform = (WaveType)(int)Math.Clamp(value, 0, 4); break;
+            case "lfotopitch": LfoToPitch = Math.Clamp(value, 0, 12); break;
+            case "lfotofilter": LfoToFilter = Math.Clamp(value, 0, 1); break;
+            case "lfotoamp": LfoToAmp = Math.Clamp(value, 0, 1); break;
+
+            // Modulation
+            case "pitchbend": PitchBend = Math.Clamp(value, -1, 1); break;
+            case "pitchbendrange": PitchBendRange = (int)Math.Clamp(value, 1, 24); break;
+            case "modwheel": ModWheel = Math.Clamp(value, 0, 1); break;
+            case "portamento": Portamento = Math.Clamp(value, 0, 2); break;
+
+            // Unison
+            case "unisonvoices": UnisonVoices = (int)Math.Clamp(value, 1, 8); break;
+            case "unisondetune": UnisonDetune = Math.Clamp(value, 0, 50); break;
+            case "unisonspread": UnisonSpread = Math.Clamp(value, 0, 1); break;
+
+            // Effects
+            case "delaymix": DelayMix = Math.Clamp(value, 0, 1); break;
+            case "delaytime": DelayTime = Math.Clamp(value, 1, 2000); break;
+            case "delayfeedback": DelayFeedback = Math.Clamp(value, 0, 0.95f); break;
+            case "reverbmix": ReverbMix = Math.Clamp(value, 0, 1); break;
+            case "reverbsize": ReverbSize = Math.Clamp(value, 0, 1); break;
+
+            // Output
+            case "volume": Volume = Math.Clamp(value, 0, 1); break;
+            case "pan": Pan = Math.Clamp(value, -1, 1); break;
+            case "maxpolyphony": MaxPolyphony = (int)Math.Clamp(value, 1, 64); break;
+            case "velocitysensitivity": VelocitySensitivity = Math.Clamp(value, 0, 1); break;
         }
     }
-    
-    // Read audio samples into the buffer
+
+    /// <summary>
+    /// Reads audio samples into the buffer (optimized, minimal locking)
+    /// </summary>
     public int Read(float[] buffer, int offset, int count)
     {
-        for (int n = 0; n < count; n++) buffer[offset + n] = 0; // Clear buffer
+        int sampleRate = _waveFormat.SampleRate;
+        int channels = _waveFormat.Channels;
+        int samples = count / channels;
 
-        int channels = _waveFormat.Channels; // Number of audio channels
-        lock (_lock) // Ensure thread safety
+        // Clear buffer
+        Array.Clear(buffer, offset, count);
+
+        // Move voices from release queue to releasing list (only place we need lock)
+        while (_voicesToRelease.TryDequeue(out var voiceToRelease))
         {
-            for (int i = _activeOscillators.Count - 1; i >= 0; i--)  // Iterate backwards to allow removal
+            lock (_releaseLock)
             {
-                var osc = _activeOscillators[i]; // Get the oscillator
-                for (int n = 0; n < count; n += channels) // For each sample frame
-                {
-                    float sample = osc.NextSample(); // Get the next sample
-                    
-                    // Simple lowpass filter implementation
-                    float alpha = Cutoff * Cutoff * 0.5f;  // Calculate filter coefficient
-                    osc.LastSample = osc.LastSample + alpha * (sample - osc.LastSample); // Apply filter
-                    sample = osc.LastSample; // Use filtered sample
-
-                    for (int c = 0; c < channels; c++) // For each channel
-                    {
-                        if (offset + n + c < buffer.Length)
-                        {
-                            buffer[offset + n + c] += sample;
-                        }
-                    }
-                }
-                if (osc.IsFinished) _activeOscillators.RemoveAt(i); // Remove finished oscillators
+                _releasingVoices.Add(voiceToRelease);
             }
         }
+
+        // Process LFO
+        float lfoIncrement = LfoRate / sampleRate;
+
+        for (int s = 0; s < samples; s++)
+        {
+            // Calculate LFO value
+            float lfoValue = GenerateWaveform(LfoWaveform, _lfoPhase, 0.5f);
+            _lfoPhase += lfoIncrement;
+            if (_lfoPhase >= 1f) _lfoPhase -= 1f;
+
+            // Calculate vibrato (mod wheel controlled)
+            float vibratoPhase = _lfoPhase * VibratoRate / LfoRate;
+            float vibrato = (float)Math.Sin(vibratoPhase * Math.PI * 2) * VibratoDepth * ModWheel;
+
+            // Calculate modulations
+            float pitchMod = PitchBend * PitchBendRange + lfoValue * LfoToPitch + vibrato;
+            float filterMod = lfoValue * LfoToFilter * 0.5f;
+            float ampMod = 1f - (lfoValue * 0.5f + 0.5f) * LfoToAmp;
+            float pwMod = lfoValue * LfoToPulseWidth;
+
+            float mixL = 0f;
+            float mixR = 0f;
+
+            // Process active voices (ConcurrentDictionary is safe to iterate)
+            foreach (var voice in _voices.Values)
+            {
+                var (left, right) = voice.Process(sampleRate, pitchMod, filterMod, pwMod, this);
+                mixL += left * ampMod;
+                mixR += right * ampMod;
+            }
+
+            // Process releasing voices
+            lock (_releaseLock)
+            {
+                for (int i = _releasingVoices.Count - 1; i >= 0; i--)
+                {
+                    var voice = _releasingVoices[i];
+                    if (voice.IsFinished)
+                    {
+                        _releasingVoices.RemoveAt(i);
+                        continue;
+                    }
+                    var (left, right) = voice.Process(sampleRate, pitchMod, filterMod, pwMod, this);
+                    mixL += left * ampMod;
+                    mixR += right * ampMod;
+                }
+            }
+
+            // Apply effects
+            float mono = (mixL + mixR) * 0.5f;
+
+            // Delay
+            if (DelayMix > 0.001f)
+            {
+                int delaySamples = Math.Min((int)(DelayTime * sampleRate / 1000f), MaxDelaySamples - 1);
+                int readPos = (_delayWritePos - delaySamples + MaxDelaySamples) % MaxDelaySamples;
+                float delayed = _delayBuffer[readPos];
+                _delayBuffer[_delayWritePos] = mono + delayed * DelayFeedback;
+                _delayWritePos = (_delayWritePos + 1) % MaxDelaySamples;
+
+                mixL += delayed * DelayMix;
+                mixR += delayed * DelayMix;
+            }
+
+            // Simple reverb
+            if (ReverbMix > 0.001f)
+            {
+                int reverbDelay = (int)(ReverbSize * 15000 + 1000);
+                int readPos = (_reverbWritePos - reverbDelay + ReverbBufferSize) % ReverbBufferSize;
+                float reverbed = _reverbBuffer[readPos];
+                _reverbBuffer[_reverbWritePos] = mono + reverbed * (1f - ReverbDamping) * 0.6f;
+                _reverbWritePos = (_reverbWritePos + 1) % ReverbBufferSize;
+
+                mixL += reverbed * ReverbMix;
+                mixR += reverbed * ReverbMix;
+            }
+
+            // Apply pan
+            float panL = Math.Min(1f, 1f - Pan);
+            float panR = Math.Min(1f, 1f + Pan);
+
+            // Apply master volume
+            mixL *= Volume * panL;
+            mixR *= Volume * panR;
+
+            // Soft-clip to prevent harsh digital clipping (causes pops)
+            mixL = SoftClip(mixL);
+            mixR = SoftClip(mixR);
+
+            // Write to buffer
+            int idx = offset + s * channels;
+            buffer[idx] = mixL;
+            if (channels > 1)
+            {
+                buffer[idx + 1] = mixR;
+            }
+        }
+
         return count;
     }
-    
-    // Internal oscillator class
-    private class Oscillator
+
+    private static float GenerateWaveform(WaveType type, float phase, float pulseWidth)
     {
-        private float _phase; // Current phase of the oscillator
-        private readonly float _phaseIncrement; // Phase increment per sample
-        private float _amplitude; // Amplitude of the oscillator
-        private float _currentGain; // Current gain for fade in/out
-        private bool _stopping; // Is the oscillator stopping?
-        private readonly int _sampleRate; // Sample rate
-        private readonly WaveType _waveType; // Waveform type
-        private readonly Random _random = new(); // Random generator for noise
-        
-        public float Frequency { get; } // Frequency in Hz
-        public bool IsFinished { get; private set; } // Is the oscillator finished?
-        public float LastSample { get; set; } // For filter state
-    
-        // Constructor 
-        public Oscillator(float frequency, float amplitude, int sampleRate, WaveType waveType)
+        return type switch
         {
-            Frequency = frequency; // Set frequency
-            _sampleRate = sampleRate; // Set sample rate
-            _phaseIncrement = (float)(2.0 * Math.PI * frequency / _sampleRate); // Calculate phase increment
-            _amplitude = amplitude; // Set amplitude
-            _currentGain = 0f; // Start with zero gain for fade in
-            _waveType = waveType; // Set waveform type
+            WaveType.Sine => (float)Math.Sin(phase * Math.PI * 2),
+            WaveType.Square => phase < 0.5f ? 1f : -1f,
+            WaveType.Sawtooth => 2f * phase - 1f,
+            WaveType.Triangle => phase < 0.5f ? 4f * phase - 1f : 3f - 4f * phase,
+            WaveType.Pulse => phase < pulseWidth ? 1f : -1f,
+            WaveType.Noise => 0f, // Handled separately with random
+            _ => 0f
+        };
+    }
+
+    /// <summary>
+    /// Soft-clip function to prevent harsh digital clipping.
+    /// Uses tanh for smooth saturation above threshold.
+    /// </summary>
+    private static float SoftClip(float x)
+    {
+        const float threshold = 0.8f;
+        if (x > threshold)
+            return threshold + (1f - threshold) * (float)Math.Tanh((x - threshold) / (1f - threshold));
+        if (x < -threshold)
+            return -threshold - (1f - threshold) * (float)Math.Tanh((-x - threshold) / (1f - threshold));
+        return x;
+    }
+
+    /// <summary>
+    /// Internal voice class for polyphonic playback
+    /// </summary>
+    private class Voice
+    {
+        public int Note { get; }
+        public long StartTime { get; }
+        public bool IsFinished { get; private set; }
+
+        private readonly SimpleSynth _synth;
+        private float _velocity;
+        private float _currentNote;
+        private float _targetNote;
+
+        // Oscillator phases
+        private float _osc1Phase;
+        private float _osc2Phase;
+        private float _subPhase;
+
+        // Unison phases
+        private readonly float[] _unisonPhases = new float[8];
+        private readonly float[] _unisonDetunes = new float[8];
+
+        // Envelopes
+        private float _ampEnv;
+        private float _filterEnv;
+        private int _ampStage; // 0=attack, 1=decay, 2=sustain, 3=release
+        private int _filterStage;
+
+        // Filter state (stereo one-pole lowpass)
+        private float _filterState1; // Left channel
+        private float _filterState2; // Right channel
+        private float _smoothedCutoff; // Smoothed cutoff to prevent zipper noise
+
+        // Anti-click ramp for voice start/end
+        private float _startRamp;
+        private float _endRamp = 1f;
+        private const float StartRampRate = 0.005f; // ~0.2ms ramp at 44.1kHz - fast but avoids click
+        private const float EndRampRate = 0.002f;   // ~0.5ms end ramp - fast enough to avoid long tail but prevents pop
+
+        private readonly Random _random = new();
+
+        public Voice(SimpleSynth synth, int note, float velocity, float startNote, int sampleRate)
+        {
+            _synth = synth;
+            Note = note;
+            _velocity = velocity;
+            _targetNote = note;
+            _currentNote = startNote;
+            StartTime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+            // Initialize unison detunes
+            for (int i = 0; i < 8; i++)
+            {
+                _unisonDetunes[i] = (i - 3.5f) / 3.5f; // Spread from -1 to +1
+            }
         }
-        
-        // Generate the next audio sample
-        public float NextSample()
+
+        public void Retrigger(float velocity)
         {
-            if (IsFinished) return 0; // Return silence if finished
-            
-            // Fade in
-            if (!_stopping && _currentGain < 1.0f)
+            _velocity = velocity;
+            _ampStage = 0;
+            _filterStage = 0;
+            // Keep current envelope values for smooth retrigger (no click)
+            // The attack phase will rise from current level, not from 0
+            // Only reset if envelope is nearly silent
+            if (_ampEnv < 0.02f)
             {
-                _currentGain += 0.01f; // Linear fade in
-                if (_currentGain > 1.0f) _currentGain = 1.0f; // Clamp to max gain
+                _ampEnv = 0.001f; // Start just above zero to avoid click
+                _filterEnv = 0.001f;
+                _startRamp = 0f; // Reset start ramp for new attack
             }
-            
-            // Generate a waveform sample based on type
-            float rawSample = _waveType switch
+            // Reset end ramp in case voice was fading out
+            _endRamp = 1f;
+            // Don't reset filter state - keeps continuity
+        }
+
+        public void TriggerRelease()
+        {
+            _ampStage = 3;
+            _filterStage = 3;
+        }
+
+        public (float left, float right) Process(int sampleRate, float pitchMod, float filterMod, float pwMod, SimpleSynth synth)
+        {
+            if (IsFinished) return (0, 0);
+
+            // Portamento
+            if (synth.Portamento > 0 && Math.Abs(_currentNote - _targetNote) > 0.01f)
             {
-                WaveType.Sine => (float)Math.Sin(_phase), // Sine wave
-                WaveType.Square => _phase < Math.PI ? 1.0f : -1.0f, // Square wave
-                WaveType.Sawtooth => (float)(2.0 * (_phase / (2.0 * Math.PI)) - 1.0), // Sawtooth wave
-                WaveType.Triangle => (float)(_phase < Math.PI ? (2.0 * (_phase / Math.PI) - 1.0) : (3.0 - 2.0 * (_phase / Math.PI))), // Triangle wave
-                WaveType.Noise => (float)(_random.NextDouble() * 2.0 - 1.0), // White noise
-                _ => 0
-            };
-            
-            // Apply amplitude and current gain
-            float sample = rawSample * _amplitude * _currentGain; // Final sample
-            _phase += _phaseIncrement; // Increment phase
-            if (_phase > 2.0 * Math.PI) _phase -= (float)(2.0 * Math.PI); // Wrap phase
-            
-            // Handle fade out
-            if (_stopping)
-            {
-                _currentGain *= 0.995f; // Exponential fade out
-                if (_currentGain < 0.001f) IsFinished = true; // Mark as finished
+                float speed = 12f / (synth.Portamento * sampleRate);
+                float diff = _targetNote - _currentNote;
+                _currentNote += Math.Sign(diff) * Math.Min(Math.Abs(diff), speed);
             }
+            else
+            {
+                _currentNote = _targetNote;
+            }
+
+            // Calculate base frequency
+            float baseFreq = 440f * (float)Math.Pow(2, (_currentNote - 69 + pitchMod) / 12f);
+
+            // Calculate oscillator frequencies with octave/semi/fine
+            float freq1 = baseFreq * (float)Math.Pow(2, synth.Osc1Octave + synth.Osc1Semi / 12f + synth.Osc1Fine / 1200f);
+            float freq2 = baseFreq * (float)Math.Pow(2, synth.Osc2Octave + synth.Osc2Semi / 12f + synth.Osc2Fine / 1200f);
+            float subFreq = baseFreq * 0.5f;
+
+            float signal = 0f;
+            float signalL = 0f;
+            float signalR = 0f;
+
+            // Unison processing
+            int unisonCount = Math.Max(1, synth.UnisonVoices);
+            float unisonGain = 1f / (float)Math.Sqrt(unisonCount);
+
+            for (int u = 0; u < unisonCount; u++)
+            {
+                float detuneCents = _unisonDetunes[u] * synth.UnisonDetune;
+                float detuneRatio = (float)Math.Pow(2, detuneCents / 1200f);
+                float osc1PhaseInc = freq1 * detuneRatio / sampleRate;
+
+                // Oscillator 1 with band-limiting
+                float pw1 = Math.Clamp(synth.Osc1PulseWidth + pwMod, 0.1f, 0.9f);
+                float osc1 = GenerateOsc(synth.Waveform, _unisonPhases[u], pw1, _random, osc1PhaseInc) * synth.Osc1Level;
+                _unisonPhases[u] += osc1PhaseInc;
+                if (_unisonPhases[u] >= 1f) _unisonPhases[u] -= 1f;
+
+                // Calculate stereo position for unison
+                float unisonPan = (u - (unisonCount - 1) / 2f) / Math.Max(1, (unisonCount - 1) / 2f) * synth.UnisonSpread;
+                float panL = Math.Min(1f, 1f - unisonPan);
+                float panR = Math.Min(1f, 1f + unisonPan);
+
+                signalL += osc1 * panL * unisonGain;
+                signalR += osc1 * panR * unisonGain;
+            }
+
+            // Oscillator 2 with band-limiting
+            if (synth.Osc2Enabled)
+            {
+                float osc2PhaseInc = freq2 / sampleRate;
+                float pw2 = Math.Clamp(synth.Osc2PulseWidth + pwMod, 0.1f, 0.9f);
+                float osc2 = GenerateOsc(synth.Osc2Waveform, _osc2Phase, pw2, _random, osc2PhaseInc) * synth.Osc2Level;
+                _osc2Phase += osc2PhaseInc;
+                if (_osc2Phase >= 1f) _osc2Phase -= 1f;
+
+                signalL += osc2;
+                signalR += osc2;
+            }
+
+            // Sub oscillator with band-limiting
+            if (synth.SubOscLevel > 0)
+            {
+                float subPhaseInc = subFreq / sampleRate;
+                float sub = GenerateOsc(synth.SubOscWaveform, _subPhase, 0.5f, _random, subPhaseInc) * synth.SubOscLevel;
+                _subPhase += subPhaseInc;
+                if (_subPhase >= 1f) _subPhase -= 1f;
+
+                signalL += sub;
+                signalR += sub;
+            }
+
+            // Noise
+            if (synth.NoiseLevel > 0)
+            {
+                float noise = ((float)_random.NextDouble() * 2f - 1f) * synth.NoiseLevel;
+                signalL += noise;
+                signalR += noise;
+            }
+
+            // Process envelopes
+            _ampEnv = ProcessEnvelope(_ampStage, _ampEnv, synth.Attack, synth.Decay, synth.Sustain, synth.Release, sampleRate, ref _ampStage);
+            _filterEnv = ProcessEnvelope(_filterStage, _filterEnv, synth.FilterAttack, synth.FilterDecay, synth.FilterSustain, synth.FilterRelease, sampleRate, ref _filterStage);
+
+            // Check if voice is finished
+            if (_ampStage == 3 && _ampEnv <= 0.0001f)
+            {
+                // Envelope has fully released - apply end ramp to smoothly terminate
+                _endRamp -= EndRampRate;
+                if (_endRamp <= 0f)
+                {
+                    _endRamp = 0f;
+                    IsFinished = true;
+                    return (0, 0);
+                }
+            }
+
+            // Calculate filter cutoff
+            float baseCutoff = synth.Cutoff * synth.Cutoff * 18000f + 20f;
+            float keyTrack = (Note - 60) / 60f * synth.FilterKeyTrack;
+            float envMod = _filterEnv * synth.FilterEnvAmount;
+            float targetCutoff = baseCutoff * (float)Math.Pow(2, keyTrack + envMod * 4 + filterMod * 2);
+            targetCutoff = Math.Clamp(targetCutoff, 20f, Math.Min(20000f, sampleRate * 0.45f));
+
+            // Smooth cutoff changes to prevent zipper noise and clicks
+            // Rate of 0.02 gives ~1ms response at 44.1kHz - fast enough for musical changes, smooth enough to avoid zippering
+            const float cutoffSmoothRate = 0.02f;
+            if (_smoothedCutoff == 0f) _smoothedCutoff = targetCutoff; // Initialize on first call
+            _smoothedCutoff += (targetCutoff - _smoothedCutoff) * cutoffSmoothRate;
+            float cutoffHz = _smoothedCutoff;
+
+            // Simple but stable one-pole lowpass filter
+            // This avoids the instability issues of higher-order filters
+            float rc = 1f / (2f * (float)Math.PI * cutoffHz);
+            float dt = 1f / sampleRate;
+            float filterAlpha = dt / (rc + dt);
+
+            // Add resonance as gentle feedback
+            float resonanceBoost = 1f + synth.Resonance * 2f;
+
+            // Apply filter drive before filtering
+            if (synth.FilterDrive > 0)
+            {
+                signalL = (float)Math.Tanh(signalL * (1f + synth.FilterDrive * 3f));
+                signalR = (float)Math.Tanh(signalR * (1f + synth.FilterDrive * 3f));
+            }
+
+            // Filter left channel
+            _filterState1 += filterAlpha * (signalL * resonanceBoost - _filterState1);
+            signalL = _filterState1;
+
+            // Filter right channel
+            _filterState2 += filterAlpha * (signalR * resonanceBoost - _filterState2);
+            signalR = _filterState2;
+
+            // Apply amplitude envelope and velocity
+            float ampMult = _ampEnv * _velocity;
+            signalL *= ampMult;
+            signalR *= ampMult;
+
+            // Apply anti-click start ramp
+            if (_startRamp < 1f)
+            {
+                _startRamp = Math.Min(1f, _startRamp + StartRampRate);
+                signalL *= _startRamp;
+                signalR *= _startRamp;
+            }
+
+            // Apply end ramp for smooth voice termination
+            if (_endRamp < 1f)
+            {
+                signalL *= _endRamp;
+                signalR *= _endRamp;
+            }
+
+            return (signalL, signalR);
+        }
+
+        // PolyBLEP for anti-aliased waveforms
+        private static float PolyBlep(float t, float dt)
+        {
+            // t = phase position, dt = phase increment (freq/sampleRate)
+            if (t < dt)
+            {
+                t /= dt;
+                return t + t - t * t - 1f;
+            }
+            else if (t > 1f - dt)
+            {
+                t = (t - 1f) / dt;
+                return t * t + t + t + 1f;
+            }
+            return 0f;
+        }
+
+        private float _lastPhase; // Track for PolyBLEP
+
+        private float GenerateOsc(WaveType type, float phase, float pulseWidth, Random random, float phaseInc)
+        {
+            float sample;
+            float dt = phaseInc; // Normalized frequency
+
+            switch (type)
+            {
+                case WaveType.Sine:
+                    sample = (float)Math.Sin(phase * Math.PI * 2);
+                    break;
+
+                case WaveType.Sawtooth:
+                    // Band-limited sawtooth using PolyBLEP
+                    sample = 2f * phase - 1f;
+                    sample -= PolyBlep(phase, dt);
+                    break;
+
+                case WaveType.Square:
+                    // Band-limited square using PolyBLEP
+                    sample = phase < 0.5f ? 0.9f : -0.9f;
+                    sample += PolyBlep(phase, dt);
+                    sample -= PolyBlep((phase + 0.5f) % 1f, dt);
+                    break;
+
+                case WaveType.Pulse:
+                    // Band-limited pulse using PolyBLEP
+                    sample = phase < pulseWidth ? 0.9f : -0.9f;
+                    sample += PolyBlep(phase, dt);
+                    sample -= PolyBlep((phase + (1f - pulseWidth)) % 1f, dt);
+                    break;
+
+                case WaveType.Triangle:
+                    // Triangle derived from integrated square (naturally band-limited)
+                    sample = phase < 0.5f ? 4f * phase - 1f : 3f - 4f * phase;
+                    break;
+
+                case WaveType.Noise:
+                    sample = (float)random.NextDouble() * 2f - 1f;
+                    break;
+
+                default:
+                    sample = 0f;
+                    break;
+            }
+
             return sample;
         }
-        
-        // Stop the oscillator with fade out
-        public void Stop()
+
+        private static float ProcessEnvelope(int stage, float current, float attack, float decay,
+            float sustain, float release, int sampleRate, ref int stageRef)
         {
-            _stopping = true;
+            // Use exponential curves for natural-sounding envelopes
+            // This prevents clicks and pops at transitions
+            // Minimum times prevent too-fast transitions that cause pops
+            const float minTime = 0.002f; // 2ms minimum for any stage
+
+            switch (stage)
+            {
+                case 0: // Attack - exponential rise
+                    float attackTime = Math.Max(attack, minTime);
+                    float attackCoeff = 1f - (float)Math.Exp(-1.0 / (attackTime * sampleRate));
+                    current += attackCoeff * (1.02f - current);
+                    if (current >= 0.999f)
+                    {
+                        current = 1f;
+                        stageRef = 1;
+                    }
+                    break;
+
+                case 1: // Decay - exponential fall to sustain
+                    float decayTime = Math.Max(decay, minTime);
+                    float decayCoeff = 1f - (float)Math.Exp(-1.0 / (decayTime * sampleRate));
+                    current += decayCoeff * (sustain - current);
+                    if (Math.Abs(current - sustain) < 0.001f)
+                    {
+                        current = sustain;
+                        stageRef = 2;
+                    }
+                    break;
+
+                case 2: // Sustain - smoothly approach sustain level (handles level changes)
+                    float sustainDiff = sustain - current;
+                    if (Math.Abs(sustainDiff) > 0.0005f)
+                    {
+                        current += sustainDiff * 0.005f; // Gentle smoothing
+                    }
+                    else
+                    {
+                        current = sustain;
+                    }
+                    break;
+
+                case 3: // Release - true exponential decay using exp coefficient (never goes negative or unstable)
+                    float releaseTime = Math.Max(release, minTime);
+                    float releaseCoeff = (float)Math.Exp(-1.0 / (releaseTime * sampleRate));
+                    current *= releaseCoeff;
+                    if (current < 0.0001f)
+                    {
+                        current = 0f;
+                    }
+                    break;
+            }
+
+            return current;
         }
     }
 }

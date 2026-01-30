@@ -44,7 +44,7 @@ public class AudioEngine : IDisposable
     private readonly VolumeSampleProvider _masterVolume; // Master Volume Control
     private readonly WaveFormat _waveFormat; // Audio Format
     private readonly List<VolumeSampleProvider> _channels = new(); // Individual Channel Volume Controls
-    private float _masterGain = 1.0f; // Master Gain
+    private volatile float _masterGain = 1.0f; // Master Gain
 
     // VST Host
     private readonly VstHost _vstHost = new(); // VST Plugin Host
@@ -96,7 +96,7 @@ public class AudioEngine : IDisposable
 
         _logger?.LogInformation("AudioEngine initialized with sample rate {SampleRate}Hz", rate);
     }
-    
+
     // MIDI Routing and Mapping Methods
     public void RouteMidiInput(int deviceIndex, ISynth synth)
     {
@@ -105,11 +105,16 @@ public class AudioEngine : IDisposable
             _midiInputRouting[deviceIndex] = synth; // Route MIDI input to synth
         }
 
-        var deviceName = _midiInputNames.TryGetValue(deviceIndex, out var name) ? name : null;
-        MidiRoutingChanged?.Invoke(this, new MidiRoutingEventArgs(deviceIndex, deviceName, synth.Name));
+        string? deviceName;
+        lock (_midiInputNames)
+        {
+            deviceName = _midiInputNames.TryGetValue(deviceIndex, out var name) ? name : null;
+        }
+        var handler = MidiRoutingChanged;
+        handler?.Invoke(this, new MidiRoutingEventArgs(deviceIndex, deviceName, synth.Name));
         _logger?.LogDebug("MIDI input {DeviceIndex} routed to {SynthName}", deviceIndex, synth.Name);
     }
-    
+
     // Map a MIDI control change to a synth parameter
     public void MapMidiControl(int deviceIndex, int controlNumber, ISynth synth, string parameter) // Map MIDI control
     {
@@ -118,7 +123,7 @@ public class AudioEngine : IDisposable
             _midiMappings.Add((deviceIndex, controlNumber, synth, parameter)); // Add control mapping
         }
     }
-    
+
     // Map a transport control (like play, stop) to an action
     public void MapTransportControl(int deviceIndex, int controlNumber, Action<float> action) // Map transport control
     {
@@ -127,7 +132,7 @@ public class AudioEngine : IDisposable
             _transportMappings.Add((deviceIndex, controlNumber.ToString(), action)); // Add control mapping
         }
     }
-    
+
     // Map a transport note (like start/stop) to an action
     public void MapTransportNote(int deviceIndex, int noteNumber, Action<float> action) // Map transport note
     {
@@ -136,7 +141,7 @@ public class AudioEngine : IDisposable
             _transportMappings.Add((deviceIndex, "note_" + noteNumber, action)); // Add note mapping
         }
     }
-    
+
     // Map a range of MIDI notes to a synth
     public void MapRange(int deviceIndex, int startNote, int endNote, ISynth synth, bool reversed = false) // Map range of notes
     {
@@ -145,11 +150,11 @@ public class AudioEngine : IDisposable
             _rangeMappings.Add((deviceIndex, startNote, endNote, synth, reversed)); // Add range mapping
         }
     }
-    
+
     // Clear all MIDI mappings
     public void ClearMappings()
     {
-        lock (_midiInputRouting) 
+        lock (_midiInputRouting)
         {
             _midiInputRouting.Clear(); // Clear routing
         }
@@ -170,7 +175,7 @@ public class AudioEngine : IDisposable
             _frequencyMappings.Clear(); // Clear frequency mappings
         }
     }
-    
+
     // Add a frequency to MIDI mapping
     public void AddFrequencyMapping(FrequencyMidiMapping mapping)
     {
@@ -180,7 +185,7 @@ public class AudioEngine : IDisposable
         }
         StartInputCapture(mapping.DeviceIndex);
     }
-    
+
     // Start capturing audio input for frequency analysis
     private void StartInputCapture(int deviceIndex)
     {
@@ -251,7 +256,7 @@ public class AudioEngine : IDisposable
             }
         }
     }
-    
+
     // Clear all channels from the mixer
     public void ClearMixer()
     {
@@ -261,7 +266,7 @@ public class AudioEngine : IDisposable
             _channels.Clear(); // Clear channel list
         }
     }
-    
+
     // Initialize Audio Engine
     public void Initialize()
     {
@@ -312,13 +317,60 @@ public class AudioEngine : IDisposable
                 EventHandler<MidiInMessageEventArgs> midiHandler = (s, e) => {
                     if (e.MidiEvent is ControlChangeEvent ccEvent) // Handle Control Change events
                     {
+                        float normalizedValue = ccEvent.ControllerValue / 127f;
+
+                        // Auto-route common CCs to routed synth
+                        ISynth? ccRoutedSynth = null;
+                        lock (_midiInputRouting)
+                        {
+                            _midiInputRouting.TryGetValue(deviceIndex, out ccRoutedSynth);
+                        }
+                        if (ccRoutedSynth != null)
+                        {
+                            // CC#1 = Mod Wheel
+                            if ((int)ccEvent.Controller == 1)
+                            {
+                                ccRoutedSynth.SetParameter("modwheel", normalizedValue);
+                            }
+                            // CC#7 = Volume
+                            else if ((int)ccEvent.Controller == 7)
+                            {
+                                ccRoutedSynth.SetParameter("volume", normalizedValue);
+                            }
+                            // CC#10 = Pan
+                            else if ((int)ccEvent.Controller == 10)
+                            {
+                                ccRoutedSynth.SetParameter("pan", normalizedValue * 2f - 1f); // Convert 0-1 to -1 to +1
+                            }
+                            // CC#74 = Filter Cutoff (often used on synths)
+                            else if ((int)ccEvent.Controller == 74)
+                            {
+                                ccRoutedSynth.SetParameter("cutoff", normalizedValue);
+                            }
+                            // CC#71 = Resonance
+                            else if ((int)ccEvent.Controller == 71)
+                            {
+                                ccRoutedSynth.SetParameter("resonance", normalizedValue);
+                            }
+                            // CC#73 = Attack
+                            else if ((int)ccEvent.Controller == 73)
+                            {
+                                ccRoutedSynth.SetParameter("attack", normalizedValue * 2f); // 0-2 seconds
+                            }
+                            // CC#72 = Release
+                            else if ((int)ccEvent.Controller == 72)
+                            {
+                                ccRoutedSynth.SetParameter("release", normalizedValue * 2f); // 0-2 seconds
+                            }
+                        }
+
                         lock (_midiMappings) // Lock for thread safety
                         {
                             foreach (var mapping in _midiMappings) // Iterate mappings
                             {
                                 if (mapping.deviceIndex == deviceIndex && mapping.control == (int)ccEvent.Controller) // Match device and control
                                 {
-                                    mapping.synth.SetParameter(mapping.parameter, ccEvent.ControllerValue / 127f); // Normalize and set parameter
+                                    mapping.synth.SetParameter(mapping.parameter, normalizedValue); // Set parameter
                                 }
                             }
                         }
@@ -329,7 +381,7 @@ public class AudioEngine : IDisposable
                             {
                                 if (mapping.deviceIndex == deviceIndex && mapping.command == ((int)ccEvent.Controller).ToString()) // Match device and command
                                 {
-                                    mapping.action(ccEvent.ControllerValue / 127f); // Normalize and invoke action
+                                    mapping.action(normalizedValue); // Invoke action
                                 }
                             }
                         }
@@ -337,14 +389,29 @@ public class AudioEngine : IDisposable
 
                     if (e.MidiEvent is PitchWheelChangeEvent pitchEvent) // Handle Pitch Bend events
                     {
+                        // Normalize pitch bend: 0-16383 where 8192 is center
+                        // Convert to -1 to +1 range for synth PitchBend property
+                        float normalizedBipolar = (pitchEvent.Pitch - 8192) / 8192f;
+                        float normalizedUnipolar = pitchEvent.Pitch / 16383f;
+
+                        // Send to routed synth automatically
+                        ISynth? pitchRoutedSynth = null;
+                        lock (_midiInputRouting)
+                        {
+                            _midiInputRouting.TryGetValue(deviceIndex, out pitchRoutedSynth);
+                        }
+                        if (pitchRoutedSynth != null)
+                        {
+                            pitchRoutedSynth.SetParameter("pitchbend", normalizedBipolar);
+                        }
+
                         lock (_midiMappings) // Lock for thread safety
                         {
                             foreach (var mapping in _midiMappings) // Iterate mappings
                             {
                                 if (mapping.deviceIndex == deviceIndex && mapping.control == -1) // Use -1 to denote pitch bend
                                 {
-                                    float normalizedValue = pitchEvent.Pitch / 16383f; // Normalize pitch bend value
-                                    mapping.synth.SetParameter(mapping.parameter, normalizedValue); // Set parameter
+                                    mapping.synth.SetParameter(mapping.parameter, normalizedUnipolar); // Set parameter
                                 }
                             }
                         }
@@ -355,7 +422,7 @@ public class AudioEngine : IDisposable
                             {
                                 if (mapping.deviceIndex == deviceIndex && mapping.command == "pitch") // Match pitch command
                                 {
-                                    mapping.action(pitchEvent.Pitch / 16383f); // Normalize and invoke action
+                                    mapping.action(normalizedUnipolar); // Invoke action
                                 }
                             }
                         }
@@ -385,31 +452,38 @@ public class AudioEngine : IDisposable
 
                     if (noteHandledByRange) return; // If the note was handled by range mapping, skip further processing
 
-                    lock (_midiInputRouting) // Lock for thread safety
+                    // Get routing and transport mappings without holding locks during processing
+                    ISynth? routedSynth = null;
+                    List<(int deviceIndex, string command, Action<float> action)>? transportMappingsCopy = null;
+
+                    lock (_midiInputRouting)
                     {
-                        if (!_midiInputRouting.TryGetValue(deviceIndex, out var synth)) // Get routed synth
+                        _midiInputRouting.TryGetValue(deviceIndex, out routedSynth);
+                    }
+
+                    if (routedSynth == null)
+                    {
+                        // If no synth routed, check for transport note mappings
+                        if (e.MidiEvent is NAudio.Midi.NoteEvent note)
                         {
-                            // If no synth routed, check for transport note mappings
-                            if (e.MidiEvent is NAudio.Midi.NoteEvent note)
+                            lock (_transportMappings)
                             {
-                                lock (_transportMappings) // Lock for thread safety
+                                transportMappingsCopy = _transportMappings.ToList();
+                            }
+                            foreach (var mapping in transportMappingsCopy)
+                            {
+                                if (mapping.deviceIndex == deviceIndex && mapping.command == "note_" + note.NoteNumber)
                                 {
-                                    foreach (var mapping in _transportMappings) // Iterate transport mappings
-                                    {
-                                        if (mapping.deviceIndex == deviceIndex && mapping.command == "note_" + note.NoteNumber) // Match device and note command
-                                        {
-                                            mapping.action(note.CommandCode == MidiCommandCode.NoteOn ? 1.0f : 0.0f); // Invoke action based on note on/off
-                                        }
-                                    }
+                                    mapping.action(note.CommandCode == MidiCommandCode.NoteOn ? 1.0f : 0.0f);
                                 }
                             }
-                            return;
                         }
+                        return;
+                    }
 
-                        if (e.MidiEvent is NAudio.Midi.NoteEvent ne) // Handle Note events
-                        {
-                            ProcessNoteEvent(ne, synth); // Process the note event
-                        }
+                    if (e.MidiEvent is NAudio.Midi.NoteEvent ne) // Handle Note events
+                    {
+                        ProcessNoteEvent(ne, routedSynth); // Process the note event
                     }
                 };
                 midiIn.MessageReceived += midiHandler;
@@ -567,7 +641,7 @@ public class AudioEngine : IDisposable
     {
         ProcessEffectiveNoteEvent(noteEvent, synth, noteEvent.NoteNumber); // Process with the original note number
     }
-    
+
     // Process Note Events with effective note number
     private void ProcessEffectiveNoteEvent(NAudio.Midi.NoteEvent noteEvent, ISynth synth, int effectiveNote)
     {
@@ -587,14 +661,17 @@ public class AudioEngine : IDisposable
             synth.NoteOff(effectiveNote);
         }
     }
-    
+
     // Get MIDI Device Index by Name
     public int GetMidiDeviceIndex(string name)
     {
-        foreach (var kvp in _midiInputNames)
+        lock (_midiInputNames)
         {
-            if (kvp.Value.Contains(name, StringComparison.OrdinalIgnoreCase)) // Case-insensitive match
-                return kvp.Key;
+            foreach (var kvp in _midiInputNames)
+            {
+                if (kvp.Value.Contains(name, StringComparison.OrdinalIgnoreCase)) // Case-insensitive match
+                    return kvp.Key;
+            }
         }
         return -1;
     }
@@ -602,10 +679,13 @@ public class AudioEngine : IDisposable
     // Get MIDI Output Device Index by Name
     public int GetMidiOutputDeviceIndex(string name)
     {
-        foreach (var kvp in _midiOutputNames)
+        lock (_midiOutputNames)
         {
-            if (kvp.Value.Contains(name, StringComparison.OrdinalIgnoreCase))
-                return kvp.Key;
+            foreach (var kvp in _midiOutputNames)
+            {
+                if (kvp.Value.Contains(name, StringComparison.OrdinalIgnoreCase))
+                    return kvp.Key;
+            }
         }
         return -1;
     }
@@ -613,9 +693,12 @@ public class AudioEngine : IDisposable
     // Get MIDI Output by Index
     public MidiOut? GetMidiOutput(int index)
     {
-        if (index >= 0 && index < _midiOutputs.Count)
+        lock (_midiOutputs)
         {
-            return _midiOutputs[index];
+            if (index >= 0 && index < _midiOutputs.Count)
+            {
+                return _midiOutputs[index];
+            }
         }
         return null;
     }
@@ -670,7 +753,8 @@ public class AudioEngine : IDisposable
         if (plugin != null)
         {
             AddSampleProvider(plugin);
-            PluginLoaded?.Invoke(this, new PluginEventArgs(plugin));
+            var handler = PluginLoaded;
+            handler?.Invoke(this, new PluginEventArgs(plugin));
         }
         return plugin;
     }
@@ -682,7 +766,8 @@ public class AudioEngine : IDisposable
         if (plugin != null)
         {
             AddSampleProvider(plugin);
-            PluginLoaded?.Invoke(this, new PluginEventArgs(plugin));
+            var handler = PluginLoaded;
+            handler?.Invoke(this, new PluginEventArgs(plugin));
         }
         return plugin;
     }
@@ -709,7 +794,8 @@ public class AudioEngine : IDisposable
         _vstHost.UnloadPlugin(name);
         if (plugin != null)
         {
-            PluginUnloaded?.Invoke(this, new PluginEventArgs(plugin));
+            var handler = PluginUnloaded;
+            handler?.Invoke(this, new PluginEventArgs(plugin));
         }
     }
 
@@ -724,7 +810,7 @@ public class AudioEngine : IDisposable
     {
         _vstHost.PrintLoadedPlugins();
     }
-    
+
     // Mixer and Channel Management
     public void AddSampleProvider(ISampleProvider provider)
     {
@@ -734,16 +820,19 @@ public class AudioEngine : IDisposable
 
         var volumeProvider = new VolumeSampleProvider(resampled); // Create volume control for the channel
 
+        int channelIndex;
         lock (_channels) // Lock for thread safety
         {
             volumeProvider.Volume = 1.0f;  // Default volume
             _channels.Add(volumeProvider); // Add to the channel list
+            channelIndex = _channels.Count - 1; // Capture index under lock
         }
 
         _mixer.AddMixerInput(volumeProvider); // Add to mixer
-        ChannelAdded?.Invoke(this, new ChannelEventArgs(_channels.Count - 1));
+        var handler = ChannelAdded;
+        handler?.Invoke(this, new ChannelEventArgs(channelIndex));
     }
-    
+
     // Set gain for a specific channel
     public void SetChannelGain(int index, float gain)
     {
@@ -755,7 +844,7 @@ public class AudioEngine : IDisposable
             }
         }
     }
-    
+
     // Set master gain for all channels
     public void SetAllChannelsGain(float gain)
     {
@@ -1192,13 +1281,12 @@ public class AudioEngine : IDisposable
         return _trackGroupManager.Groups;
     }
 
-    private volatile bool _disposed;
+    private int _disposed; // 0 = not disposed, 1 = disposed
 
     // Dispose resources
     public void Dispose()
     {
-        if (_disposed) return;
-        _disposed = true;
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
 
         // Stop all outputs and inputs safely
         foreach (var output in _outputs)
@@ -1223,6 +1311,14 @@ public class AudioEngine : IDisposable
             }
         }
         _fftHandlers.Clear();
+
+        // Dispose input analyzers
+        foreach (var kvp in _inputAnalyzers)
+        {
+            try { (kvp.Value as IDisposable)?.Dispose(); }
+            catch (Exception ex) { _logger?.LogWarning(ex, "Error disposing input analyzer for device {Index}", kvp.Key); }
+        }
+        _inputAnalyzers.Clear();
 
         // Unsubscribe DataAvailable event handlers to prevent memory leaks
         foreach (var kvp in _dataHandlers)
@@ -1283,5 +1379,7 @@ public class AudioEngine : IDisposable
         _sidechainBusManager.Clear();
 
         _logger?.LogInformation("AudioEngine disposed");
+
+        GC.SuppressFinalize(this);
     }
 }

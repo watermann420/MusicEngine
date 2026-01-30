@@ -3,6 +3,7 @@
 // https://github.com/watermann420/MusicEngine
 // Description: MusicEngine component.
 
+using System;
 using MusicEngine.Core;
 
 
@@ -91,6 +92,12 @@ public class DeviceControl
 
     public ControlMapping cc(int ccNumber) => new ControlMapping(_globals, _deviceIndex, ccNumber); // Control change mapping
     public ControlMapping pitchbend() => new ControlMapping(_globals, _deviceIndex, -1); // Pitch bend mapping
+
+    // Note-based action bindings
+    public NoteBinding note(int noteNumber) => new NoteBinding(_globals, _deviceIndex, noteNumber);
+
+    /// <summary>Alias for note - Binds a MIDI note to an action</summary>
+    public NoteBinding n(int noteNumber) => note(noteNumber);
 }
 
 // Mapping for a specific MIDI control
@@ -113,6 +120,71 @@ public class ControlMapping
     {
         _globals.Engine.MapMidiControl(_deviceIndex, _controlId, synth, parameter);
     }
+
+    // Maps the CC to an action callback with value (0.0 - 1.0)
+    public void to(Action<float> action)
+    {
+        _globals.MapCC(_deviceIndex, _controlId, action);
+    }
+
+    // Maps the CC to a simple action (triggers when value > 64)
+    public void to(Action action)
+    {
+        _globals.MapCC(_deviceIndex, _controlId, val => {
+            if (val > 0.5f) action();
+        });
+    }
+
+    // Built-in action: refresh script
+    public void toRefresh() => _globals.MapRefreshCC(_deviceIndex, _controlId);
+
+    // Built-in action: trigger custom named action
+    public void toAction(string actionName) => _globals.MapActionCC(_deviceIndex, _controlId, actionName);
+}
+
+// Binding for a specific MIDI note to an action
+public class NoteBinding
+{
+    private readonly ScriptGlobals _globals;
+    private readonly int _deviceIndex;
+    private readonly int _noteNumber;
+
+    public NoteBinding(ScriptGlobals globals, int deviceIndex, int noteNumber)
+    {
+        _globals = globals;
+        _deviceIndex = deviceIndex;
+        _noteNumber = noteNumber;
+    }
+
+    // Maps the note to a simple action (triggers on note on)
+    public void to(Action action) => _globals.MapNote(_deviceIndex, _noteNumber, action);
+
+    // Maps the note to an action with velocity (0.0 - 1.0)
+    public void to(Action<float> action) => _globals.MapNoteWithVelocity(_deviceIndex, _noteNumber, action);
+
+    // Built-in action: refresh script
+    public void toRefresh() => _globals.MapRefresh(_deviceIndex, _noteNumber);
+
+    /// <summary>Alias for toRefresh</summary>
+    public void refresh() => toRefresh();
+
+    // Built-in action: start sequencer
+    public void toStart() => _globals.MapStart(_deviceIndex, _noteNumber);
+
+    /// <summary>Alias for toStart</summary>
+    public void start() => toStart();
+
+    // Built-in action: stop sequencer
+    public void toStop() => _globals.MapStop(_deviceIndex, _noteNumber);
+
+    /// <summary>Alias for toStop</summary>
+    public void stop() => toStop();
+
+    // Built-in action: trigger custom named action
+    public void toAction(string actionName) => _globals.MapAction(_deviceIndex, _noteNumber, actionName);
+
+    /// <summary>Alias for toAction</summary>
+    public void action(string name) => toAction(name);
 }
 
 

@@ -21,7 +21,7 @@ public class WarpedAudioClip : AudioClip
     /// <summary>
     /// Gets the warp processor managing this clip's warp markers.
     /// </summary>
-    public AudioWarpProcessor WarpProcessor => _warpProcessor;
+    public new AudioWarpProcessor WarpProcessor => _warpProcessor;
 
     /// <summary>
     /// Gets or sets whether warping is enabled for this clip.
@@ -77,7 +77,7 @@ public class WarpedAudioClip : AudioClip
     {
         get
         {
-            if (!_warpEnabled || _warpProcessor.SampleRate == 0)
+            if (!_warpEnabled || _warpProcessor.SampleRate == 0 || _warpProcessor.Bpm == 0)
                 return base.Length;
 
             // Convert warped samples to beats
@@ -171,7 +171,7 @@ public class WarpedAudioClip : AudioClip
     /// <param name="warpedPositionSamples">Position in warped output (samples).</param>
     /// <param name="markerType">Type of marker.</param>
     /// <returns>The created marker.</returns>
-    public WarpMarker AddWarpMarker(long originalPositionSamples, long warpedPositionSamples, WarpMarkerType markerType = WarpMarkerType.User)
+    public new WarpMarker AddWarpMarker(long originalPositionSamples, long warpedPositionSamples, WarpMarkerType markerType = WarpMarkerType.User)
     {
         var marker = _warpProcessor.AddMarker(originalPositionSamples, warpedPositionSamples, markerType);
         Touch();
@@ -197,7 +197,7 @@ public class WarpedAudioClip : AudioClip
     /// </summary>
     /// <param name="marker">The marker to remove.</param>
     /// <returns>True if the marker was removed.</returns>
-    public bool RemoveWarpMarker(WarpMarker marker)
+    public new bool RemoveWarpMarker(WarpMarker marker)
     {
         bool result = _warpProcessor.RemoveMarker(marker);
         if (result) Touch();
@@ -254,7 +254,7 @@ public class WarpedAudioClip : AudioClip
     /// <summary>
     /// Resets all warp markers to their original positions.
     /// </summary>
-    public void ResetWarp()
+    public new void ResetWarp()
     {
         _warpProcessor.ResetWarp();
         Touch();
@@ -263,7 +263,7 @@ public class WarpedAudioClip : AudioClip
     /// <summary>
     /// Clears all user-placed warp markers.
     /// </summary>
-    public void ClearUserWarpMarkers()
+    public new void ClearUserWarpMarkers()
     {
         _warpProcessor.ClearUserMarkers();
         Touch();
@@ -288,7 +288,7 @@ public class WarpedAudioClip : AudioClip
         if (!ContainsPosition(timelinePosition))
             return -1;
 
-        if (!_warpEnabled)
+        if (!_warpEnabled || _warpProcessor.SampleRate == 0 || _warpProcessor.Bpm == 0)
             return base.GetSourcePosition(timelinePosition);
 
         // Convert timeline position to samples

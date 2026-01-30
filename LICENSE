@@ -1,95 +1,110 @@
-# Music Engine License (MEL)
+# **Music Engine License (MEL)**
 ## Honor-Based Community & Commercial Use License
 
-Copyright (c) 2026
-**Yannis Watermann (Watermann420) & (nullonebinary)**
-Discord: Watermann
+Copyright (c) 2026  
+**Yannis Watermann (Watermann420) & (nullonebinary)**  
+Discord: Watermann  
+Email: musicenignebusiness@gmail.com  
 
 ---
 
-## 1. Grant of Rights
+## **1. Grant of Rights**
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software") to:
 
-- use
-- copy
-- modify
-- merge
-- publish
-- distribute
-- sublicense
-- and sell
+- use  
+- copy  
+- modify  
+- merge  
+- publish  
 
-copies of the Software, subject to the conditions below.
+**Restrictions:**
 
----
+You may **not**:
 
-## 2. Free Use
+- Rebrand, rename, or change the identity, name, logo, or trademark of this project.  
+- Claim this Software as your own work.  
+- Remove or modify copyright notices.  
+- Repackage, resell, sublicense, or place this project behind a paywall.  
+- Sell or monetize the core engine, editor, platform, or code.  
+- Integrate paid or restricted features directly into the core engine.  
 
-The Software may be used freely for:
+You **may**:
 
-- personal projects
-- education
-- research
-- indie games
-- commercial products
-- music tools
-- plugins
-- services
-
-There is **no cost**, no registration, and no permission required.
+- Build software **on top of this project**.  
+- Develop commercial tools, services, and applications using this engine.  
+- Create **paid plugins, extensions, or add-ons**, as long as the core engine remains free, open, and accessible.
 
 ---
 
-## 3. Honor-Based Commercial Support
+## **2. Permitted Use**
 
-If you or your company generate **more than USD 100,000 per year** in gross revenue using this Software or a derivative of it, you are **strongly expected** to:
+The Software may be freely used for:
 
-- Contact the author (Discord: Watermann) Or GMail: musicenignebusiness@gmail.com
-- Provide a **yearly sponsorship of your choice**
-
-There is **no fixed price**.
-This system is based entirely on **honor, fairness, and mutual respect**.
-
-The intention is to support:
-- development
-- maintenance
-- and the open community around the project
+- Personal and hobby projects  
+- Learning and education  
+- Research  
+- Indie and commercial games  
+- Music tools, plugins, and services  
 
 ---
 
-## 4. Community Integrity & Abuse
+## **3. Honor-Based Commercial Support**
 
-This project is built on trust and open collaboration.
+If you or your company generate **more than USD 100,000 per year** in gross revenue using this Software or derivatives of it, you are **legally required** to:
 
-Anyone who uses this project to:
-- scam
-- harass
-- exploit others
-- distribute malware
-- or act in an inhumane or destructive way
+- Contact the author  
+- Provide a **yearly sponsorship of your choice**  
 
-may be **banned from the community and project spaces** (Discord, Git repositories, contribution channels).
-
-This does **not** affect their legal right to use the software — it protects the community.
+> There is no fixed price. This system is based on **honor, fairness, and mutual respect**, and is intended to support the **development, maintenance, and open community** around the project.
 
 ---
 
-## 5. Open Development
+## **4. Open-Source & Free Commitment**
+
+- **This project will always remain free and open-source.**  
+- The **Music Engine, Editor, Code, Platform, and Brand** will **never be sold, closed, or restricted**.  
+- Our obligation is to ensure that **all users always have access** to the full engine.  
+- Any attempt to violate this commitment will be considered a license breach and **will be legally pursued**.
+
+---
+
+## **5. Branding, Plugin & Monetization Policy**
+
+- All commercial monetization related to this engine must be implemented as **plugins, extensions, or external services**.  
+- Monetizing the core engine, its editor, code, or platform directly is strictly prohibited.  
+- Any paid feature must clearly state that it is **not part of the official core distribution**.  
+
+---
+
+## **6. Enforcement**
+
+Any violation of this license, including unauthorized rebranding, monetization, or redistribution, will be actively investigated and legally pursued.
+
+---
+
+## **7. Community Integrity & Abuse**
+
+Abusive, harmful, or fraudulent behavior may result in permanent exclusion from all official project spaces.  
+
+> This does **not** affect legal usage rights.
+
+---
+
+## **8. Open Development**
 
 You are free to:
-- fork
-- remix
-- extend
-- rebrand
-- and build on this Software
 
-as long as this license is included.
+- fork  
+- extend  
+- build  
+
+as long as this license remains included and respected.  
+
+> Remixing or renaming the engine itself is **not allowed**; only plugins or external add-ons may be monetized or extended.
 
 ---
 
-## 6. No Warranty
+## **9. No Warranty**
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-
-IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.

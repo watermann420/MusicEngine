@@ -86,7 +86,6 @@ public class TimeStretchEffect : EffectBase
     // State
     private bool _initialized;
     private TimeStretchQuality _quality;
-    private int _outputSamplesAvailable;
 
     // Resampling buffer for stretch ratio changes
     private float[][] _resampleBuffer = null!;
@@ -237,7 +236,6 @@ public class TimeStretchEffect : EffectBase
 
         _samplesUntilNextAnalysis = 0;
         _transientHistoryIndex = 0;
-        _outputSamplesAvailable = 0;
         _initialized = true;
     }
 
@@ -256,8 +254,6 @@ public class TimeStretchEffect : EffectBase
         // For time stretch: synthesis_hop = analysis_hop * stretch_factor
         // Slower playback (stretch < 1) = more overlap in output = larger effective synthesis hop
         int synthesisHopSize = Math.Max(1, (int)(_analysisHopSize * stretchFactor));
-
-        int samplesWritten = 0;
 
         // Process interleaved samples
         for (int i = 0; i < count; i += channels)

@@ -7,6 +7,9 @@ using FluentAssertions;
 using MusicEngine.Core;
 using Xunit;
 
+// Type alias for backwards compatibility with tests
+using Session = MusicEngine.Core.EngineSession;
+
 namespace MusicEngine.Tests.Core;
 
 public class SessionTests : IDisposable
