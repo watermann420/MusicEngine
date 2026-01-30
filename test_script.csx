@@ -3,6 +3,7 @@ audio.all.gain(0.1); // Master volume //0 to 1.0 // Adjust as needed // Default 
 
 
 
+
 // Create the synthesizer
 var synth = CreateSynth();
 
