@@ -19,7 +19,20 @@ var kick = s();              // Ultra-short
 var pad = newSynth();        // Semantic
 ```
 
----
+### General MIDI Creation
+| Original | Aliases | Example |
+|----------|---------|---------|
+| `CreateGeneralMidi()` | `generalMidi()`, `gmi()` | `var piano = CreateGeneralMidi();` |
+| `CreateGeneralMidiInstrument(program, channel)` | `gm(program, channel)`, `newGm(program, channel)` | `var ep = gm(GeneralMidiProgram.ElectricPiano1, 1);` |
+
+**Usage:**
+```csharp
+var piano = CreateGeneralMidi();       // defaults: AcousticGrand, ch0, vol 0.8, fx off
+midi.device(0).to(piano);              // route input
+piano.Instrument("pad");               // set GM program by name
+```
+
+--- 
 
 ### Pattern Creation
 | Original | Aliases | Example |

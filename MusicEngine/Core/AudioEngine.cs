@@ -30,7 +30,7 @@ public class AudioEngine : IDisposable
     private readonly List<IWavePlayer> _outputs = new(); // Audio Outputs
     private readonly List<MidiIn> _midiInputs = new(); // MIDI Inputs
     private readonly Dictionary<int, string> _midiInputNames = new(); // MIDI Input Names
-    private readonly List<MidiOut> _midiOutputs = new();   // MIDI Outputs
+    private readonly Dictionary<int, MidiOut> _midiOutputs = new();   // MIDI Outputs (shared via pool)
     private readonly Dictionary<int, string> _midiOutputNames = new(); // MIDI Output Names
     private readonly Dictionary<int, ISynth> _midiInputRouting = new(); // MIDI Input to Synth Routing
     private readonly List<(int deviceIndex, int control, ISynth synth, string parameter)> _midiMappings = new(); // MIDI Control Mappings
@@ -525,8 +525,8 @@ public class AudioEngine : IDisposable
             _midiOutputNames[i] = name; // Store device name
             try
             {
-                var midiOut = new MidiOut(i); // Create MIDI output
-                _midiOutputs.Add(midiOut); // Store MIDI output
+                var midiOut = MidiOutPool.Rent(i); // Create or share MIDI output
+                _midiOutputs[i] = midiOut; // Store MIDI output keyed by index
             }
             catch (Exception ex) // Handle exceptions
             {
@@ -1040,9 +1040,22 @@ public class AudioEngine : IDisposable
     {
         lock (_midiOutputs)
         {
-            if (index >= 0 && index < _midiOutputs.Count)
+            if (_midiOutputs.TryGetValue(index, out var midiOut))
+                return midiOut;
+
+            // Lazy-open if we know the device name but haven't opened it yet
+            if (index >= 0 && _midiOutputNames.ContainsKey(index))
             {
-                return _midiOutputs[index];
+                try
+                {
+                    midiOut = MidiOutPool.Rent(index);
+                    _midiOutputs[index] = midiOut;
+                    return midiOut;
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogWarning(ex, "Failed to lazy-open MIDI Output {Index}", index);
+                }
             }
         }
         return null;
@@ -1702,11 +1715,12 @@ public class AudioEngine : IDisposable
             try { midiIn.Dispose(); }
             catch (Exception ex) { _logger?.LogWarning(ex, "Error disposing MIDI input"); }
         }
-        foreach (var midiOut in _midiOutputs)
+        foreach (var kvp in _midiOutputs)
         {
-            try { midiOut.Dispose(); }
-            catch (Exception ex) { _logger?.LogWarning(ex, "Error disposing MIDI output"); }
+            try { MidiOutPool.Return(kvp.Key); }
+            catch (Exception ex) { _logger?.LogWarning(ex, "Error releasing MIDI output"); }
         }
+        _midiOutputs.Clear();
 
         try { _vstHost.Dispose(); }
         catch (Exception ex) { _logger?.LogWarning(ex, "Error disposing VST host"); }

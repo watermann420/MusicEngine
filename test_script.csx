@@ -8,6 +8,21 @@ var synth = CreateSynth();
 
 var synth2 = CreateSynth();
 
+// --- Windows GM instrument as simple as CreateSynth() ---
+var piano = CreateGeneralMidi();
+
+// Optional GM settings (same style wie synth.*)
+piano.Volume = 0.8f;
+piano.Pan = 0f;
+piano.Reverb = 0f;   // effects off by default
+piano.Chorus = 0f;
+piano.ModWheel = 0f;
+piano.Channel = 0;
+piano.Name = "GM_Piano";
+
+midi.device(0).to(piano);
+midi.device(0).pitchbend().to(val => piano.PitchBend(val * 2f - 1f)); // map wheel to -1..1
+//midi.device(0).log.info(true); // Log MIDI input for debugging and mapping midi controls
 
 // OSCILLATOR 1 SETTINGS
 synth.Waveform = WaveType.Square;    // Sine, Square, Sawtooth, Triangle, Pulse, Noise
@@ -95,10 +110,8 @@ synth.VelocitySensitivity = 0.7f;    // Velocity response: 0 to 1
 
 
 
-// ROUTE MIDI TO SYNTH
-midi.device(0).route(synth);
 
-//midi.device(0).log.info(true); // Log MIDI input for debugging and mapping midi controls
+
 
 
 
@@ -133,7 +146,7 @@ if (playPattern)
 
 // OPTIONAL: PLAY TETRIS THEME (Korobeiniki)
 
-var playTetris = true;  // Set to true to play
+var playTetris = false;  // Set to true to play
 
 if (playTetris)
 {

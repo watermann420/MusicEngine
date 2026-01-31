@@ -98,21 +98,26 @@ Start();
 
 MusicEngine provides access to Windows built-in General MIDI synthesizer (Microsoft GS Wavetable Synth), which includes all 128 standard GM instruments. These instruments are ideal for quick prototyping, MIDI playback, or when you need realistic instrument sounds without loading samples or VST plugins.
 
-### CreateGeneralMidiInstrument
+### CreateGeneralMidi / CreateGeneralMidiInstrument
 
-**Aliases:** `CreateGeneralMidiInstrument(program, channel)`, `gm(program, channel)`, `newGm(program, channel)`
+**No-arg helper (recommended):** `CreateGeneralMidi()`, `generalMidi()`, `gmi()`
 
-Creates a new General MIDI instrument using Windows built-in synthesizer.
+**Program overloads:** `CreateGeneralMidiInstrument(program, channel)`, `gm(program, channel)`, `newGm(program, channel)`
+
+Creates a new General MIDI instrument using Windows built-in synthesizer. The no-arg helper sets sensible defaults (Acoustic Grand, channel 0, volume 0.8, pan 0, reverb 0, chorus 0, mod wheel 0, pitch bend 0).
 
 ```csharp
+GeneralMidiInstrument CreateGeneralMidi()
 GeneralMidiInstrument CreateGeneralMidiInstrument(GeneralMidiProgram program, int channel = 0)
 ```
 
-**Parameters:**
-- `program` - The General MIDI instrument to use (see instrument list below)
-- `channel` - MIDI channel (0-15, default 0). Channel 9 is typically reserved for drums.
-
-**Returns:** A new `GeneralMidiInstrument` instance
+**Example**
+```csharp
+var piano = CreateGeneralMidi();          // defaults applied
+midi.device(0).to(piano);                 // simple routing alias
+midi.device(0).pitchbend().to(v => piano.PitchBend(v * 2f - 1f)); // optional wheel map -1..1
+piano.Instrument("pad");                  // switch GM program by name (piano, epiano, organ, pad, strings, bass, guitar, lead, choir)
+```
 
 ### Properties
 
@@ -122,6 +127,12 @@ GeneralMidiInstrument CreateGeneralMidiInstrument(GeneralMidiProgram program, in
 | `Channel` | `int` | The MIDI channel (0-15) |
 | `Name` | `string` | Instrument name (e.g., "GM_AcousticGrandPiano") |
 | `Volume` | `float` | Volume control (0.0 - 1.0) |
+| `Pan` | `float` | -1.0 (L) .. +1.0 (R) |
+| `Reverb` | `float` | 0.0 .. 1.0 |
+| `Chorus` | `float` | 0.0 .. 1.0 |
+| `ModWheel` | `float` | 0.0 .. 1.0 |
+| `PitchBend` | `float` | -1.0 .. 1.0 |
+| `Instrument(name)` | `void` | Sets GM program by friendly name |
 
 ### Methods
 

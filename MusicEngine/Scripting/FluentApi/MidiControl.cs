@@ -90,6 +90,7 @@ public class DeviceControl
     }
 
     public void route(ISynth synth) => _globals.RouteMidi(_deviceIndex, synth); // Route MIDI to synth
+    public void to(ISynth synth) => route(synth); // Alias for routing
 
     public ControlMapping cc(int ccNumber) => new ControlMapping(_globals, _deviceIndex, ccNumber); // Control change mapping
     public ControlMapping pitchbend() => new ControlMapping(_globals, _deviceIndex, -1); // Pitch bend mapping

@@ -16,21 +16,28 @@ General MIDI (GM) is a standardized specification that ensures consistent sound 
 ## Quick Start
 
 ```csharp
-// Create a piano
-var piano = gm(GeneralMidiProgram.AcousticGrandPiano);
+// Create a piano (no-arg helper, defaults: AcousticGrand, ch0, vol 0.8, fx off)
+var piano = CreateGeneralMidi();
 
-// Play some notes
+// Route MIDI keyboard to GM piano
+midi.device(0).to(piano);
+midi.device(0).pitchbend().to(val => piano.PitchBend(val * 2f - 1f)); // optional wheel mapping
+
+// Tweak like a synth
+piano.Volume = 0.8f;
+piano.Pan = 0f;
+piano.Reverb = 0f;
+piano.Chorus = 0f;
+piano.ModWheel = 0f;
+
+// Play a quick pattern
 var pattern = CreatePattern(piano);
 pattern.AddNote(0.0, 60, 100, 0.5);  // C4
 pattern.AddNote(0.5, 64, 100, 0.5);  // E4
 pattern.AddNote(1.0, 67, 100, 0.5);  // G4
 pattern.AddNote(1.5, 72, 100, 1.0);  // C5
 pattern.Loop = true;
-
-// Start playback
-SetBpm(120);
 pattern.Play();
-Start();
 ```
 
 ## Creating GM Instruments
@@ -38,14 +45,14 @@ Start();
 ### Basic Creation
 
 ```csharp
-// Full form
-var piano = CreateGeneralMidiInstrument(GeneralMidiProgram.AcousticGrandPiano);
+// Recommended: no-arg helper (defaults set)
+var piano = CreateGeneralMidi();
 
-// Short form (recommended)
-var guitar = gm(GeneralMidiProgram.AcousticGuitarSteel);
+// Program + channel
+var guitar = gm(GeneralMidiProgram.AcousticGuitarSteel, 0);
 
-// Alternative
-var bass = newGm(GeneralMidiProgram.ElectricBassFinger);
+// Program + channel (alias)
+var bass = newGm(GeneralMidiProgram.ElectricBassFinger, 1);
 ```
 
 ### Multi-Channel Setup

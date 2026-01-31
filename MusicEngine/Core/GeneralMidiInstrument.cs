@@ -185,13 +185,26 @@ public enum GeneralMidiProgram
 public class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
 {
     private readonly MidiOut? _midiOut;
-    private readonly int _channel;
-    private readonly GeneralMidiProgram _program;
+    private readonly int _deviceId = -1;
+    private int _channel;
+    private float _pan;
+    private float _reverb;
+    private float _chorus;
+    private float _modWheel;
+    private float _pitchBend;
+    private GeneralMidiProgram _program;
     private readonly SignalGenerator _signalGenerator; // Dummy signal for ISampleProvider
     private float _volume = 1.0f;
     private bool _disposed;
     private bool _midiAvailable;
     private static bool _deviceListPrinted = false;
+    private static readonly object _midiLock = new();
+
+    /// <summary>Parameterloser Konstruktor: Acoustic Grand, Channel 0, Standard-Defaults.</summary>
+    public GeneralMidiInstrument() : this(GeneralMidiProgram.AcousticGrandPiano, 0)
+    {
+        ApplyDefaults();
+    }
 
     /// <summary>
     /// Creates a new General MIDI instrument using Windows built-in synthesizer
@@ -204,73 +217,99 @@ public class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
         _channel = Math.Clamp(channel, 0, 15);
         Name = $"GM_{program}";
 
-        // Try to find and open a MIDI device
+        // Try to find and open (or reuse) a MIDI device
         try
         {
-            int midiDeviceCount = MidiOut.NumberOfDevices;
+            lock (_midiLock)
+            {
+                int midiDeviceCount = MidiOut.NumberOfDevices;
 
-            if (midiDeviceCount == 0)
-            {
-                Console.WriteLine("╔════════════════════════════════════════════════════════════════╗");
-                Console.WriteLine("║  WARNING: No MIDI device found!                                ║");
-                Console.WriteLine("║  General MIDI instruments will be muted.                       ║");
-                Console.WriteLine("║                                                                ║");
-                Console.WriteLine("║  Possible solutions:                                           ║");
-                Console.WriteLine("║  1. Install Windows MIDI Synthesizer                           ║");
-                Console.WriteLine("║  2. Install virtual MIDI device (e.g. VirtualMIDISynth)        ║");
-                Console.WriteLine("║  3. Configure FL Studio MIDI output                            ║");
-                Console.WriteLine("╚════════════════════════════════════════════════════════════════╝");
-                _midiAvailable = false;
-                _midiOut = null;
-            }
-            else
-            {
-                // Print available devices once
-                if (!_deviceListPrinted)
+                if (midiDeviceCount == 0)
                 {
-                    Console.WriteLine($"\n═══ Available MIDI Devices ({midiDeviceCount}) ═══");
+                    Console.WriteLine("╔════════════════════════════════════════════════════════════════╗");
+                    Console.WriteLine("║  WARNING: No MIDI device found!                                ║");
+                    Console.WriteLine("║  General MIDI instruments will be muted.                       ║");
+                    Console.WriteLine("║                                                                ║");
+                    Console.WriteLine("║  Possible solutions:                                           ║");
+                    Console.WriteLine("║  1. Install Windows MIDI Synthesizer                           ║");
+                    Console.WriteLine("║  2. Install virtual MIDI device (e.g. VirtualMIDISynth)        ║");
+                    Console.WriteLine("║  3. Configure FL Studio MIDI output                            ║");
+                    Console.WriteLine("╚════════════════════════════════════════════════════════════════╝");
+                    _midiAvailable = false;
+                    _midiOut = null;
+                }
+                else
+                {
+                    // Print available devices once
+                    if (!_deviceListPrinted)
+                    {
+                        Console.WriteLine($"\n═══ Available MIDI Devices ({midiDeviceCount}) ═══");
+                        for (int i = 0; i < midiDeviceCount; i++)
+                        {
+                            var caps = MidiOut.DeviceInfo(i);
+                            Console.WriteLine($"  [{i}] {caps.ProductName}");
+                        }
+                        Console.WriteLine();
+                        _deviceListPrinted = true;
+                    }
+
+                    // Build ordered candidate list (GS wavetable first, then other synth/midi, then rest)
+                    var preferred = new List<int>();
+                    var secondary = new List<int>();
                     for (int i = 0; i < midiDeviceCount; i++)
                     {
                         var caps = MidiOut.DeviceInfo(i);
-                        Console.WriteLine($"  [{i}] {caps.ProductName}");
+                        string productName = caps.ProductName.ToLowerInvariant();
+
+                        if (productName.Contains("microsoft") && productName.Contains("wavetable"))
+                        {
+                            preferred.Add(i);
+                        }
+                        else if (productName.Contains("synth") || productName.Contains("midi"))
+                        {
+                            secondary.Add(i);
+                        }
                     }
-                    Console.WriteLine();
-                    _deviceListPrinted = true;
-                }
 
-                // Try to find Microsoft GS Wavetable Synth or use first device
-                int deviceId = -1;
-                for (int i = 0; i < midiDeviceCount; i++)
-                {
-                    var caps = MidiOut.DeviceInfo(i);
-                    string productName = caps.ProductName.ToLowerInvariant();
-
-                    // Prefer Microsoft GS Wavetable Synth
-                    if (productName.Contains("microsoft") && productName.Contains("wavetable"))
+                    var candidates = new List<int>();
+                    candidates.AddRange(preferred);
+                    candidates.AddRange(secondary);
+                    for (int i = 0; i < midiDeviceCount; i++)
                     {
-                        deviceId = i;
-                        break;
+                        if (!candidates.Contains(i)) candidates.Add(i);
                     }
-                    // Also check for common software synths
-                    if (productName.Contains("synth") || productName.Contains("midi"))
+
+                    // Try devices until one opens (skip devices that are already allocated)
+                    foreach (var deviceId in candidates)
                     {
-                        deviceId = i;
-                        // Don't break - keep looking for MS Wavetable
+                        try
+                        {
+                            _midiOut = MidiOutPool.Rent(deviceId);
+                            _deviceId = deviceId;
+                            _midiAvailable = true;
+                            break;
+                        }
+                        catch (Exception ex) when (ex.Message.Contains("AlreadyAllocated", StringComparison.OrdinalIgnoreCase))
+                        {
+                            continue; // try next device
+                        }
+                    }
+
+                    if (!_midiAvailable)
+                    {
+                        Console.WriteLine("╔════════════════════════════════════════════════════════════════╗");
+                        Console.WriteLine("║  ERROR: Could not open any MIDI device (all allocated).        ║");
+                        Console.WriteLine("║  Close other apps using MIDI Out and reload.                   ║");
+                        Console.WriteLine("╚════════════════════════════════════════════════════════════════╝");
                     }
                 }
 
-                // If no suitable device found, use device 0
-                if (deviceId == -1)
+                // Set the program (instrument) if MIDI is available
+                if (_midiAvailable && _midiOut != null)
                 {
-                    deviceId = 0;
+                    var programChange = new PatchChangeEvent(0, _channel + 1, (int)program);
+                    _midiOut.Send(programChange.GetAsShortMessage());
                 }
-
-                _midiOut = new MidiOut(deviceId);
-                _midiAvailable = true;
-
-                // Set the program (instrument)
-                var programChange = new PatchChangeEvent(0, _channel + 1, (int)program);
-                _midiOut.Send(programChange.GetAsShortMessage());
             }
         }
         catch (Exception ex)
@@ -299,12 +338,36 @@ public class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
     /// <summary>
     /// Gets the current MIDI program (instrument)
     /// </summary>
-    public GeneralMidiProgram Program => _program;
+    public GeneralMidiProgram Program
+    {
+        get => _program;
+        set
+        {
+            _program = value;
+            if (_midiAvailable && _midiOut != null)
+            {
+                var pc = new PatchChangeEvent(0, _channel + 1, (int)_program);
+                _midiOut.Send(pc.GetAsShortMessage());
+            }
+        }
+    }
 
     /// <summary>
-    /// Gets the MIDI channel
+    /// Gets or sets the MIDI channel (0-15). Sends Program Change on update.
     /// </summary>
-    public int Channel => _channel;
+    public int Channel
+    {
+        get => _channel;
+        set
+        {
+            _channel = Math.Clamp(value, 0, 15);
+            if (_midiAvailable && _midiOut != null)
+            {
+                var programChange = new PatchChangeEvent(0, _channel + 1, (int)_program);
+                _midiOut.Send(programChange.GetAsShortMessage());
+            }
+        }
+    }
 
     /// <inheritdoc />
     public string Name { get; set; }
@@ -379,8 +442,7 @@ public class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
 
             case "pan":
                 // MIDI pan: 0 = left, 64 = center, 127 = right
-                int panValue = (int)((value + 1f) * 63.5f); // -1..1 -> 0..127
-                _midiOut.Send(new ControlChangeEvent(0, _channel + 1, MidiController.Pan, panValue).GetAsShortMessage());
+                Pan = value;
                 break;
 
             case "expression":
@@ -389,18 +451,19 @@ public class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
                 break;
 
             case "reverb":
-                int reverb = (int)(Math.Clamp(value, 0f, 1f) * 127);
-                _midiOut.Send(new ControlChangeEvent(0, _channel + 1, (MidiController)91, reverb).GetAsShortMessage());
+                Reverb = value;
                 break;
 
             case "chorus":
-                int chorus = (int)(Math.Clamp(value, 0f, 1f) * 127);
-                _midiOut.Send(new ControlChangeEvent(0, _channel + 1, (MidiController)93, chorus).GetAsShortMessage());
+                Chorus = value;
                 break;
 
             case "modulation":
-                int modulation = (int)(Math.Clamp(value, 0f, 1f) * 127);
-                _midiOut.Send(new ControlChangeEvent(0, _channel + 1, MidiController.Modulation, modulation).GetAsShortMessage());
+                ModWheel = value;
+                break;
+
+            case "pitchbend":
+                PitchBend(value);
                 break;
 
             case "sustain":
@@ -468,9 +531,129 @@ public class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
         if (_disposed) return;
 
         AllNotesOff();
-        _midiOut?.Dispose();
+        if (_midiOut != null && _deviceId >= 0)
+        {
+            lock (_midiLock)
+            {
+                MidiOutPool.Return(_deviceId);
+            }
+        }
         _disposed = true;
 
         GC.SuppressFinalize(this);
+    }
+
+    // ==== Convenience factory to keep script logic minimal ====
+    public static GeneralMidiInstrument FromName(
+        string name = "piano",
+        int channel = 0,
+        float volume = 0.75f,
+        float pan = 0f,
+        float reverb = 0.15f,
+        float chorus = 0.05f,
+        float modWheel = 0f,
+        float pitchBend = 0f)
+    {
+        var program = MapNameToProgram(name);
+        var inst = new GeneralMidiInstrument(program, channel);
+        inst.Name = $"GM_{program}";
+        inst.Volume = Math.Clamp(volume, 0f, 1f);
+        inst.SetParameter("pan", Math.Clamp(pan, -1f, 1f));
+        inst.SetParameter("reverb", Math.Clamp(reverb, 0f, 1f));
+        inst.SetParameter("chorus", Math.Clamp(chorus, 0f, 1f));
+        inst.SetParameter("modulation", Math.Clamp(modWheel, 0f, 1f));
+        inst.PitchBend(Math.Clamp(pitchBend, -1f, 1f));
+        return inst;
+    }
+
+
+    /// <summary>Pan: -1 (left) .. +1 (right)</summary>
+    public float Pan
+    {
+        get => _pan;
+        set
+        {
+            _pan = Math.Clamp(value, -1f, 1f);
+            if (!_midiAvailable || _midiOut == null) return;
+            int panValue = (int)((_pan + 1f) * 63.5f);
+            _midiOut.Send(new ControlChangeEvent(0, _channel + 1, MidiController.Pan, panValue).GetAsShortMessage());
+        }
+    }
+
+    /// <summary>Reverb send 0..1</summary>
+    public float Reverb
+    {
+        get => _reverb;
+        set
+        {
+            _reverb = Math.Clamp(value, 0f, 1f);
+            if (!_midiAvailable || _midiOut == null) return;
+            int reverb = (int)(_reverb * 127);
+            _midiOut.Send(new ControlChangeEvent(0, _channel + 1, (MidiController)91, reverb).GetAsShortMessage());
+        }
+    }
+
+    /// <summary>Chorus send 0..1</summary>
+    public float Chorus
+    {
+        get => _chorus;
+        set
+        {
+            _chorus = Math.Clamp(value, 0f, 1f);
+            if (!_midiAvailable || _midiOut == null) return;
+            int chorus = (int)(_chorus * 127);
+            _midiOut.Send(new ControlChangeEvent(0, _channel + 1, (MidiController)93, chorus).GetAsShortMessage());
+        }
+    }
+
+    /// <summary>Mod wheel 0..1</summary>
+    public float ModWheel
+    {
+        get => _modWheel;
+        set
+        {
+            _modWheel = Math.Clamp(value, 0f, 1f);
+            if (!_midiAvailable || _midiOut == null) return;
+            int modulation = (int)(_modWheel * 127);
+            _midiOut.Send(new ControlChangeEvent(0, _channel + 1, MidiController.Modulation, modulation).GetAsShortMessage());
+        }
+    }
+
+
+    /// <summary>Sets the GM program by friendly name (e.g., "piano", "organ").</summary>
+    public void Instrument(string name)
+    {
+        Program = MapNameToProgram(name);
+        Name = $"GM_{Program}";
+    }
+
+    private void ApplyDefaults()
+    {
+        Volume = 0.8f;
+        Pan = 0f;
+        Reverb = 0f;  // effects off by default
+        Chorus = 0f;
+        ModWheel = 0f;
+        PitchBend(0f);
+        Channel = 0;
+        Instrument("piano");
+    }
+
+    private static GeneralMidiProgram MapNameToProgram(string name)
+    {
+        var n = (name ?? string.Empty).Trim().ToLowerInvariant();
+        return n switch
+        {
+            "piano" or "acoustic" or "grand" => GeneralMidiProgram.AcousticGrandPiano,
+            "epiano" or "electricpiano" or "rhodes" => GeneralMidiProgram.ElectricPiano1,
+            "organ" => GeneralMidiProgram.DrawbarOrgan,
+            "strings" => GeneralMidiProgram.StringEnsemble1,
+            "pad" => GeneralMidiProgram.Pad2Warm,
+            "bass" => GeneralMidiProgram.AcousticBass,
+            "guitar" => GeneralMidiProgram.ElectricGuitarClean,
+            "lead" => GeneralMidiProgram.Lead2Sawtooth,
+            "choir" => GeneralMidiProgram.ChoirAahs,
+            _ => GeneralMidiProgram.AcousticGrandPiano
+        };
     }
 }

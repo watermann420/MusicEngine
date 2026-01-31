@@ -249,10 +249,22 @@ public class ScriptGlobals
         return instrument;
     }
 
+    // No-arg GM creation (defaults inside instrument)
+    public GeneralMidiInstrument CreateGeneralMidi()
+    {
+        var instrument = new GeneralMidiInstrument();
+        Engine.AddSampleProvider(instrument);
+        return instrument;
+    }
+
     /// <summary>Alias for CreateGeneralMidiInstrument - Creates a GM instrument (short form)</summary>
     public GeneralMidiInstrument gm(GeneralMidiProgram program, int channel = 0) => CreateGeneralMidiInstrument(program, channel);
     /// <summary>Alias for CreateGeneralMidiInstrument - Creates a new GM instrument</summary>
     public GeneralMidiInstrument newGm(GeneralMidiProgram program, int channel = 0) => CreateGeneralMidiInstrument(program, channel);
+    /// <summary>No-arg GM creation alias.</summary>
+    public GeneralMidiInstrument generalMidi() => CreateGeneralMidi();
+    /// <summary>No-arg GM creation alias.</summary>
+    public GeneralMidiInstrument gmi() => CreateGeneralMidi();
 
     // Creates a Pattern with the default Synth
     private Pattern CreatePatternInternal(ISynth? synth = null, params ISynth[] more)

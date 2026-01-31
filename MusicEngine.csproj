@@ -38,6 +38,11 @@
       <PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
     </ItemGroup>
 
+    <!-- Ensure IDE tooling picks up the helper if defaults change; uses Update to avoid duplicate include -->
+    <ItemGroup>
+      <Compile Update="MusicEngine\Scripting\QuickNotePlayer.cs" />
+    </ItemGroup>
+
     <!-- DI & Configuration -->
     <ItemGroup>
       <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.0" />
