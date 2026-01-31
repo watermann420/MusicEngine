@@ -4,6 +4,7 @@
 // Description: MusicEngine component.
 
 using System;
+using System.Threading;
 using MusicEngine.Core;
 
 
@@ -98,6 +99,12 @@ public class DeviceControl
 
     /// <summary>Alias for note - Binds a MIDI note to an action</summary>
     public NoteBinding n(int noteNumber) => note(noteNumber);
+
+    // Live MIDI logging controls
+    public DeviceLogControl log => new DeviceLogControl(_globals, _deviceIndex);
+
+    /// <summary>Send LED updates to the matching MIDI output (same index).</summary>
+    public DeviceLedControl led => new DeviceLedControl(_globals, _deviceIndex);
 }
 
 // Mapping for a specific MIDI control
@@ -137,6 +144,12 @@ public class ControlMapping
 
     // Built-in action: refresh script
     public void toRefresh() => _globals.MapRefreshCC(_deviceIndex, _controlId);
+
+    /// <summary>Start sequencer when this CC crosses 0.5</summary>
+    public void toStart() => _globals.MapStartCc(_deviceIndex, _controlId);
+
+    /// <summary>Stop sequencer when this CC crosses 0.5</summary>
+    public void toStop() => _globals.MapStopCc(_deviceIndex, _controlId);
 
     // Built-in action: trigger custom named action
     public void toAction(string actionName) => _globals.MapActionCC(_deviceIndex, _controlId, actionName);
@@ -297,6 +310,94 @@ public class KeyRange
 
     // Allow syntax like range(21, 108)(synth)
     public void Invoke(ISynth synth) => map(synth);
+}
+
+// Logging control for a specific MIDI device
+public class DeviceLogControl
+{
+    private readonly ScriptGlobals _globals;
+    private readonly int _deviceIndex;
+
+    public DeviceLogControl(ScriptGlobals globals, int deviceIndex)
+    {
+        _globals = globals;
+        _deviceIndex = deviceIndex;
+    }
+
+    /// <summary>
+    /// Enable/disable verbose logging of all incoming MIDI events for this device.
+    /// Default is true when called without arguments.
+    /// Usage: midi.device(0).log.info(); // enable
+    ///        midi.device(0).log.info(false); // disable
+    /// </summary>
+    public void info(bool enabled = true) => _globals.Engine.SetMidiLogInfo(_deviceIndex, enabled);
+
+    /// <summary>
+    /// Enable/disable logging of MIDI Control Change messages for this device.
+    /// Default true when called without arguments.
+    /// </summary>
+    public void cc(bool enabled = true) => _globals.Engine.SetMidiLogCc(_deviceIndex, enabled);
+
+    /// <summary>
+    /// Enable/disable logging of MIDI TimingClock messages for this device.
+    /// Default true when called without arguments.
+    /// </summary>
+    public void TimingClock(bool enabled = true) => _globals.Engine.SetMidiLogClock(_deviceIndex, enabled);
+
+    /// <summary>Alias for TimingClock</summary>
+    public void clock(bool enabled = true) => TimingClock(enabled);
+
+    /// <summary>Log detected screen info for this device (once) at script start.</summary>
+    public void screenData() => _globals.Engine.LogMidiScreen(_deviceIndex);
+}
+
+// LED control helper that targets the paired MIDI output
+public class DeviceLedControl
+{
+    private readonly ScriptGlobals _globals;
+    private readonly int _deviceIndex;
+    private readonly Random _rand = new Random();
+
+    public DeviceLedControl(ScriptGlobals globals, int deviceIndex)
+    {
+        _globals = globals;
+        _deviceIndex = deviceIndex;
+    }
+
+    /// <summary>Set LED by note number (velocity = brightness/color depending on device).</summary>
+    public void set(int note, int value = 127, int channel = 0) =>
+        _globals.Engine.SendNoteOn(_deviceIndex, channel, note, value);
+
+    /// <summary>Turn LED off by note number.</summary>
+    public void off(int note, int channel = 0) =>
+        _globals.Engine.SendNoteOff(_deviceIndex, channel, note);
+
+    /// <summary>Set LED via CC (some controllers use CC for lights).</summary>
+    public void cc(int controller, int value, int channel = 0) =>
+        _globals.Engine.SendControlChange(_deviceIndex, channel, controller, value);
+
+    /// <summary>
+    /// Quick test: blasts random velocities on all notes (0-127) across channel 0/1 for a few cycles.
+    /// </summary>
+    public void test(int cycles = 5, int delayMs = 120)
+    {
+        for (int c = 0; c < cycles; c++)
+        {
+            for (int note = 0; note < 128; note++)
+            {
+                int val = _rand.Next(20, 127);
+                _globals.Engine.SendNoteOn(_deviceIndex, 0, note, val);
+                _globals.Engine.SendNoteOn(_deviceIndex, 1, note, val);
+            }
+            Thread.Sleep(delayMs);
+        }
+        // turn off after test
+        for (int note = 0; note < 128; note++)
+        {
+            _globals.Engine.SendNoteOff(_deviceIndex, 0, note);
+            _globals.Engine.SendNoteOff(_deviceIndex, 1, note);
+        }
+    }
 }
 
 

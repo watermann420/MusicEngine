@@ -39,6 +39,9 @@ public class AudioEngine : IDisposable
     private readonly Dictionary<int, Action<float[]>> _fftHandlers = new(); // FFT event handlers for cleanup
     private readonly Dictionary<int, EventHandler<WaveInEventArgs>> _dataHandlers = new(); // DataAvailable event handlers for cleanup
     private readonly Dictionary<int, EventHandler<MidiInMessageEventArgs>> _midiHandlers = new(); // MIDI MessageReceived event handlers for cleanup
+    private readonly Dictionary<int, bool> _midiLogEnabled = new(); // General MIDI logging flag per device (notes/cc/pitch, no clock)
+    private readonly Dictionary<int, bool> _midiLogClockEnabled = new(); // TimingClock logging per device
+    private readonly Dictionary<int, bool> _midiLogCcEnabled = new(); // CC-only toggle (in addition to general log)
     private readonly Dictionary<int, IWaveIn> _inputDevices = new(); // Input devices for handler cleanup
     private readonly MixingSampleProvider _mixer; // Main Mixer
     private readonly VolumeSampleProvider _masterVolume; // Master Volume Control
@@ -115,6 +118,43 @@ public class AudioEngine : IDisposable
         _logger?.LogDebug("MIDI input {DeviceIndex} routed to {SynthName}", deviceIndex, synth.Name);
     }
 
+    /// <summary>
+    /// Enable/disable verbose MIDI logging for a given input device.
+    /// </summary>
+    public void SetMidiLogging(int deviceIndex, bool enabled)
+    {
+        lock (_midiLogEnabled)
+        {
+            _midiLogEnabled[deviceIndex] = enabled;
+        }
+        _logger?.LogInformation("MIDI logging {State} for device {DeviceIndex}", enabled ? "enabled" : "disabled", deviceIndex);
+    }
+
+    /// <summary>
+    /// Convenience for script bindings: log.info(true/false) or log.stop().
+    /// </summary>
+    public void SetMidiLogInfo(int deviceIndex, bool enabled = true) => SetMidiLogging(deviceIndex, enabled);
+
+    /// <summary>Enable/disable logging of MIDI TimingClock for a device.</summary>
+    public void SetMidiLogClock(int deviceIndex, bool enabled = true)
+    {
+        lock (_midiLogClockEnabled)
+        {
+            _midiLogClockEnabled[deviceIndex] = enabled;
+        }
+        _logger?.LogInformation("MIDI clock logging {State} for device {DeviceIndex}", enabled ? "enabled" : "disabled", deviceIndex);
+    }
+
+    /// <summary>Enable/disable logging of MIDI CC messages for a device (in addition to info logging).</summary>
+    public void SetMidiLogCc(int deviceIndex, bool enabled = true)
+    {
+        lock (_midiLogCcEnabled)
+        {
+            _midiLogCcEnabled[deviceIndex] = enabled;
+        }
+        _logger?.LogInformation("MIDI CC logging {State} for device {DeviceIndex}", enabled ? "enabled" : "disabled", deviceIndex);
+    }
+
     // Map a MIDI control change to a synth parameter
     public void MapMidiControl(int deviceIndex, int controlNumber, ISynth synth, string parameter) // Map MIDI control
     {
@@ -131,6 +171,21 @@ public class AudioEngine : IDisposable
         {
             _transportMappings.Add((deviceIndex, controlNumber.ToString(), action)); // Add control mapping
         }
+    }
+
+    /// <summary>Log basic screen capability info for a MIDI device (best effort).</summary>
+    public void LogMidiScreen(int deviceIndex)
+    {
+        string name = GetMidiInputNameSafe(deviceIndex);
+        var lower = name.ToLowerInvariant();
+        string capability =
+            lower.Contains("push") || lower.Contains("maschine")
+                ? "screen detected (assumed Push/Maschine class)"
+                : lower.Contains("launchpad")
+                    ? "no screen (grid controller)"
+                    : "no known screen support";
+        var msg = $"[MIDI {deviceIndex}] {name}: {capability}";
+        if (_logger != null) _logger.LogInformation(msg); else Console.WriteLine(msg);
     }
 
     // Map a transport note (like start/stop) to an action
@@ -173,6 +228,18 @@ public class AudioEngine : IDisposable
         lock (_frequencyMappings)
         {
             _frequencyMappings.Clear(); // Clear frequency mappings
+        }
+        lock (_midiLogEnabled)
+        {
+            _midiLogEnabled.Clear(); // Clear MIDI logging flags
+        }
+        lock (_midiLogClockEnabled)
+        {
+            _midiLogClockEnabled.Clear(); // Clear clock logging flags
+        }
+        lock (_midiLogCcEnabled)
+        {
+            _midiLogCcEnabled.Clear(); // Clear CC logging flags
         }
     }
 
@@ -314,178 +381,7 @@ public class AudioEngine : IDisposable
                 int deviceIndex = i; // Capture index for closure
 
                 // Store the MIDI MessageReceived handler for later cleanup
-                EventHandler<MidiInMessageEventArgs> midiHandler = (s, e) => {
-                    if (e.MidiEvent is ControlChangeEvent ccEvent) // Handle Control Change events
-                    {
-                        float normalizedValue = ccEvent.ControllerValue / 127f;
-
-                        // Auto-route common CCs to routed synth
-                        ISynth? ccRoutedSynth = null;
-                        lock (_midiInputRouting)
-                        {
-                            _midiInputRouting.TryGetValue(deviceIndex, out ccRoutedSynth);
-                        }
-                        if (ccRoutedSynth != null)
-                        {
-                            // CC#1 = Mod Wheel
-                            if ((int)ccEvent.Controller == 1)
-                            {
-                                ccRoutedSynth.SetParameter("modwheel", normalizedValue);
-                            }
-                            // CC#7 = Volume
-                            else if ((int)ccEvent.Controller == 7)
-                            {
-                                ccRoutedSynth.SetParameter("volume", normalizedValue);
-                            }
-                            // CC#10 = Pan
-                            else if ((int)ccEvent.Controller == 10)
-                            {
-                                ccRoutedSynth.SetParameter("pan", normalizedValue * 2f - 1f); // Convert 0-1 to -1 to +1
-                            }
-                            // CC#74 = Filter Cutoff (often used on synths)
-                            else if ((int)ccEvent.Controller == 74)
-                            {
-                                ccRoutedSynth.SetParameter("cutoff", normalizedValue);
-                            }
-                            // CC#71 = Resonance
-                            else if ((int)ccEvent.Controller == 71)
-                            {
-                                ccRoutedSynth.SetParameter("resonance", normalizedValue);
-                            }
-                            // CC#73 = Attack
-                            else if ((int)ccEvent.Controller == 73)
-                            {
-                                ccRoutedSynth.SetParameter("attack", normalizedValue * 2f); // 0-2 seconds
-                            }
-                            // CC#72 = Release
-                            else if ((int)ccEvent.Controller == 72)
-                            {
-                                ccRoutedSynth.SetParameter("release", normalizedValue * 2f); // 0-2 seconds
-                            }
-                        }
-
-                        lock (_midiMappings) // Lock for thread safety
-                        {
-                            foreach (var mapping in _midiMappings) // Iterate mappings
-                            {
-                                if (mapping.deviceIndex == deviceIndex && mapping.control == (int)ccEvent.Controller) // Match device and control
-                                {
-                                    mapping.synth.SetParameter(mapping.parameter, normalizedValue); // Set parameter
-                                }
-                            }
-                        }
-
-                        lock (_transportMappings) // Lock for thread safety
-                        {
-                            foreach (var mapping in _transportMappings) // Iterate transport mappings
-                            {
-                                if (mapping.deviceIndex == deviceIndex && mapping.command == ((int)ccEvent.Controller).ToString()) // Match device and command
-                                {
-                                    mapping.action(normalizedValue); // Invoke action
-                                }
-                            }
-                        }
-                    }
-
-                    if (e.MidiEvent is PitchWheelChangeEvent pitchEvent) // Handle Pitch Bend events
-                    {
-                        // Normalize pitch bend: 0-16383 where 8192 is center
-                        // Convert to -1 to +1 range for synth PitchBend property
-                        float normalizedBipolar = (pitchEvent.Pitch - 8192) / 8192f;
-                        float normalizedUnipolar = pitchEvent.Pitch / 16383f;
-
-                        // Send to routed synth automatically
-                        ISynth? pitchRoutedSynth = null;
-                        lock (_midiInputRouting)
-                        {
-                            _midiInputRouting.TryGetValue(deviceIndex, out pitchRoutedSynth);
-                        }
-                        if (pitchRoutedSynth != null)
-                        {
-                            pitchRoutedSynth.SetParameter("pitchbend", normalizedBipolar);
-                        }
-
-                        lock (_midiMappings) // Lock for thread safety
-                        {
-                            foreach (var mapping in _midiMappings) // Iterate mappings
-                            {
-                                if (mapping.deviceIndex == deviceIndex && mapping.control == -1) // Use -1 to denote pitch bend
-                                {
-                                    mapping.synth.SetParameter(mapping.parameter, normalizedUnipolar); // Set parameter
-                                }
-                            }
-                        }
-
-                        lock (_transportMappings) // Lock for thread safety
-                        {
-                            foreach (var mapping in _transportMappings) // Iterate transport mappings
-                            {
-                                if (mapping.deviceIndex == deviceIndex && mapping.command == "pitch") // Match pitch command
-                                {
-                                    mapping.action(normalizedUnipolar); // Invoke action
-                                }
-                            }
-                        }
-                    }
-
-                    bool noteHandledByRange = false; // Flag to check if a note was handled by range mapping
-                    if (e.MidiEvent is NAudio.Midi.NoteEvent noteEvent) // Handle Note events
-                    {
-                        lock (_rangeMappings) // Lock for thread safety
-                        {
-                            foreach (var mapping in _rangeMappings) // Iterate range mappings
-                            {
-                                if (mapping.deviceIndex == deviceIndex && noteEvent.NoteNumber >= Math.Min(mapping.startNote, mapping.endNote) && noteEvent.NoteNumber <= Math.Max(mapping.startNote, mapping.endNote)) // Check if the note is within range
-                                {
-                                    int effectiveNote = noteEvent.NoteNumber; // Calculate effective note
-                                    if (mapping.reversed) // If reversed mapping
-                                    {
-                                        effectiveNote = mapping.startNote + mapping.endNote - noteEvent.NoteNumber; // Reverse the note
-                                    }
-
-                                    ProcessEffectiveNoteEvent(noteEvent, mapping.synth, effectiveNote); // Process the note event
-                                    noteHandledByRange = true; // Mark as handled
-                                }
-                            }
-                        }
-                    }
-
-                    if (noteHandledByRange) return; // If the note was handled by range mapping, skip further processing
-
-                    // Get routing and transport mappings without holding locks during processing
-                    ISynth? routedSynth = null;
-                    List<(int deviceIndex, string command, Action<float> action)>? transportMappingsCopy = null;
-
-                    lock (_midiInputRouting)
-                    {
-                        _midiInputRouting.TryGetValue(deviceIndex, out routedSynth);
-                    }
-
-                    if (routedSynth == null)
-                    {
-                        // If no synth routed, check for transport note mappings
-                        if (e.MidiEvent is NAudio.Midi.NoteEvent note)
-                        {
-                            lock (_transportMappings)
-                            {
-                                transportMappingsCopy = _transportMappings.ToList();
-                            }
-                            foreach (var mapping in transportMappingsCopy)
-                            {
-                                if (mapping.deviceIndex == deviceIndex && mapping.command == "note_" + note.NoteNumber)
-                                {
-                                    mapping.action(note.CommandCode == MidiCommandCode.NoteOn ? 1.0f : 0.0f);
-                                }
-                            }
-                        }
-                        return;
-                    }
-
-                    if (e.MidiEvent is NAudio.Midi.NoteEvent ne) // Handle Note events
-                    {
-                        ProcessNoteEvent(ne, routedSynth); // Process the note event
-                    }
-                };
+                EventHandler<MidiInMessageEventArgs> midiHandler = (s, e) => HandleMidiMessage(deviceIndex, e);
                 midiIn.MessageReceived += midiHandler;
                 _midiHandlers[deviceIndex] = midiHandler;
 
@@ -662,6 +558,230 @@ public class AudioEngine : IDisposable
         }
     }
 
+    #region MIDI Logging
+
+    private void LogMidiEvent(int deviceIndex, MidiInMessageEventArgs e)
+    {
+        var infoEnabled = _midiLogEnabled.TryGetValue(deviceIndex, out var info) && info;
+        var clockEnabled = _midiLogClockEnabled.TryGetValue(deviceIndex, out var clk) && clk;
+        var ccEnabled = _midiLogCcEnabled.TryGetValue(deviceIndex, out var ccFlag) && ccFlag;
+
+        string msg;
+        switch (e.MidiEvent)
+        {
+            case NAudio.Midi.NoteOnEvent on when on.Velocity > 0:
+                if (!infoEnabled) return;
+                msg = $"[MIDI {deviceIndex}] NoteOn ch {on.Channel + 1} note {on.NoteNumber} vel {on.Velocity}";
+                break;
+            case NAudio.Midi.NoteOnEvent onOff when onOff.Velocity == 0:
+                if (!infoEnabled) return;
+                msg = $"[MIDI {deviceIndex}] NoteOff ch {onOff.Channel + 1} note {onOff.NoteNumber} (NoteOn vel0)";
+                break;
+            case NAudio.Midi.NoteEvent off when off.CommandCode == MidiCommandCode.NoteOff:
+                if (!infoEnabled) return;
+                msg = $"[MIDI {deviceIndex}] NoteOff ch {off.Channel + 1} note {off.NoteNumber}";
+                break;
+            case NAudio.Midi.ControlChangeEvent cc:
+                if (!(infoEnabled || ccEnabled)) return;
+                msg = $"[MIDI {deviceIndex}] CC ch {cc.Channel + 1} #{(int)cc.Controller} val {cc.ControllerValue}";
+                break;
+            case NAudio.Midi.PitchWheelChangeEvent pb:
+                if (!infoEnabled) return;
+                msg = $"[MIDI {deviceIndex}] PitchBend ch {pb.Channel + 1} value {pb.Pitch}";
+                break;
+            case MidiEvent clock when clock.CommandCode == MidiCommandCode.TimingClock:
+                if (!clockEnabled) return;
+                msg = $"[MIDI {deviceIndex}] TimingClock";
+                break;
+            default:
+                if (!infoEnabled) return;
+                msg = $"[MIDI {deviceIndex}] {e.MidiEvent}";
+                break;
+        }
+        if (_logger != null)
+        {
+            _logger.LogInformation(msg);
+        }
+        else
+        {
+            Console.WriteLine(msg);
+        }
+    }
+
+    private void HandleMidiMessage(int deviceIndex, MidiInMessageEventArgs e)
+    {
+        TryLogMidiEvent(deviceIndex, e);
+
+        switch (e.MidiEvent)
+        {
+            case ControlChangeEvent ccEvent:
+                HandleControlChange(deviceIndex, ccEvent);
+                return;
+            case PitchWheelChangeEvent pitchEvent:
+                HandlePitchBend(deviceIndex, pitchEvent);
+                return;
+            case NAudio.Midi.NoteEvent noteEvent:
+                if (HandleNoteWithRanges(deviceIndex, noteEvent)) return;
+                var routedSynth = GetRoutedSynth(deviceIndex);
+                if (routedSynth != null)
+                {
+                    ProcessNoteEvent(noteEvent, routedSynth);
+                    return;
+                }
+                HandleTransportNote(deviceIndex, noteEvent);
+                return;
+            default:
+                return;
+        }
+    }
+
+    private void TryLogMidiEvent(int deviceIndex, MidiInMessageEventArgs e)
+    {
+        var infoEnabled = _midiLogEnabled.TryGetValue(deviceIndex, out var info) && info;
+        var clockEnabled = _midiLogClockEnabled.TryGetValue(deviceIndex, out var clk) && clk;
+        var ccEnabled = _midiLogCcEnabled.TryGetValue(deviceIndex, out var ccFlag) && ccFlag;
+
+        if (!infoEnabled && !clockEnabled && !ccEnabled) return;
+        try { LogMidiEvent(deviceIndex, e); } catch { /* ignore logging errors */ }
+    }
+
+    private void HandleControlChange(int deviceIndex, ControlChangeEvent ccEvent)
+    {
+        float normalizedValue = ccEvent.ControllerValue / 127f;
+
+        var ccRoutedSynth = GetRoutedSynth(deviceIndex);
+        if (ccRoutedSynth != null)
+        {
+            ApplyCommonCcToSynth(ccEvent, normalizedValue, ccRoutedSynth);
+        }
+
+        ApplyMappedCc(deviceIndex, ccEvent, normalizedValue);
+        ApplyTransportCc(deviceIndex, ccEvent, normalizedValue);
+    }
+
+    private void ApplyCommonCcToSynth(ControlChangeEvent ccEvent, float normalizedValue, ISynth synth)
+    {
+        switch ((int)ccEvent.Controller)
+        {
+            case 1: synth.SetParameter("modwheel", normalizedValue); break;            // Mod Wheel
+            case 7: synth.SetParameter("volume", normalizedValue); break;              // Volume
+            case 10: synth.SetParameter("pan", normalizedValue * 2f - 1f); break;      // Pan -1..+1
+            case 74: synth.SetParameter("cutoff", normalizedValue); break;             // Filter cutoff
+            case 71: synth.SetParameter("resonance", normalizedValue); break;          // Resonance
+            case 73: synth.SetParameter("attack", normalizedValue * 2f); break;        // Attack 0-2s
+            case 72: synth.SetParameter("release", normalizedValue * 2f); break;       // Release 0-2s
+        }
+    }
+
+    private void ApplyMappedCc(int deviceIndex, ControlChangeEvent ccEvent, float normalizedValue)
+    {
+        lock (_midiMappings)
+        {
+            foreach (var mapping in _midiMappings)
+            {
+                if (mapping.deviceIndex == deviceIndex && mapping.control == (int)ccEvent.Controller)
+                {
+                    mapping.synth.SetParameter(mapping.parameter, normalizedValue);
+                }
+            }
+        }
+    }
+
+    private void ApplyTransportCc(int deviceIndex, ControlChangeEvent ccEvent, float normalizedValue)
+    {
+        lock (_transportMappings)
+        {
+            foreach (var mapping in _transportMappings)
+            {
+                if (mapping.deviceIndex == deviceIndex && mapping.command == ((int)ccEvent.Controller).ToString())
+                {
+                    mapping.action(normalizedValue);
+                }
+            }
+        }
+    }
+
+    private void HandlePitchBend(int deviceIndex, PitchWheelChangeEvent pitchEvent)
+    {
+        float normalizedBipolar = (pitchEvent.Pitch - 8192) / 8192f;  // -1..+1
+        float normalizedUnipolar = pitchEvent.Pitch / 16383f;         // 0..1
+
+        var pitchRoutedSynth = GetRoutedSynth(deviceIndex);
+        pitchRoutedSynth?.SetParameter("pitchbend", normalizedBipolar);
+
+        lock (_midiMappings)
+        {
+            foreach (var mapping in _midiMappings)
+            {
+                if (mapping.deviceIndex == deviceIndex && mapping.control == -1) // -1 denotes pitch bend
+                {
+                    mapping.synth.SetParameter(mapping.parameter, normalizedUnipolar);
+                }
+            }
+        }
+
+        lock (_transportMappings)
+        {
+            foreach (var mapping in _transportMappings)
+            {
+                if (mapping.deviceIndex == deviceIndex && mapping.command == "pitch")
+                {
+                    mapping.action(normalizedUnipolar);
+                }
+            }
+        }
+    }
+
+    private bool HandleNoteWithRanges(int deviceIndex, NAudio.Midi.NoteEvent noteEvent)
+    {
+        lock (_rangeMappings)
+        {
+            foreach (var mapping in _rangeMappings)
+            {
+                if (mapping.deviceIndex != deviceIndex) continue;
+                if (noteEvent.NoteNumber < Math.Min(mapping.startNote, mapping.endNote)) continue;
+                if (noteEvent.NoteNumber > Math.Max(mapping.startNote, mapping.endNote)) continue;
+
+                int effectiveNote = mapping.reversed
+                    ? mapping.startNote + mapping.endNote - noteEvent.NoteNumber
+                    : noteEvent.NoteNumber;
+
+                ProcessEffectiveNoteEvent(noteEvent, mapping.synth, effectiveNote);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private ISynth? GetRoutedSynth(int deviceIndex)
+    {
+        lock (_midiInputRouting)
+        {
+            _midiInputRouting.TryGetValue(deviceIndex, out var routed);
+            return routed;
+        }
+    }
+
+    private void HandleTransportNote(int deviceIndex, NAudio.Midi.NoteEvent note)
+    {
+        List<(int deviceIndex, string command, Action<float> action)> mappingsCopy;
+        lock (_transportMappings)
+        {
+            mappingsCopy = _transportMappings.ToList();
+        }
+
+        foreach (var mapping in mappingsCopy)
+        {
+            if (mapping.deviceIndex != deviceIndex) continue;
+            if (mapping.command != "note_" + note.NoteNumber) continue;
+
+            var value = note.CommandCode == MidiCommandCode.NoteOn ? 1.0f : 0.0f;
+            mapping.action(value);
+        }
+    }
+
+    #endregion
+
     // Get MIDI Device Index by Name
     public int GetMidiDeviceIndex(string name)
     {
@@ -674,6 +794,16 @@ public class AudioEngine : IDisposable
             }
         }
         return -1;
+    }
+
+    private string GetMidiInputNameSafe(int deviceIndex)
+    {
+        lock (_midiInputNames)
+        {
+            if (_midiInputNames.TryGetValue(deviceIndex, out var name))
+                return name;
+        }
+        return $"Device {deviceIndex}";
     }
 
     // Get MIDI Output Device Index by Name

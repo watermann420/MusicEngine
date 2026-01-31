@@ -1,3 +1,5 @@
+using System.Linq;
+
 audio.all.gain(0.1); // Master volume //0 to 1.0 // Adjust as needed // Default is 0.1 is 10% volume
 
 
@@ -99,7 +101,7 @@ synth.VelocitySensitivity = 0.7f;    // Velocity response: 0 to 1
 // ROUTE MIDI TO SYNTH
 midi.device(0).route(synth);
 
-
+//midi.device(0).log.info(true); // Log MIDI input for debugging
 
 
 

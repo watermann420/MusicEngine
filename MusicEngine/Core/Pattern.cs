@@ -15,7 +15,11 @@ namespace MusicEngine.Core;
 // Represents a musical pattern with note events and playback properties
 public class Pattern
 {
+    /// <summary>Primary synth (for backward compatibility).</summary>
     public ISynth Synth { get; set; } // Synthesizer to play the pattern
+
+    /// <summary>All synth targets this pattern should drive.</summary>
+    public List<ISynth> SynthTargets { get; } = new(); // Multiple synth targets
     public List<NoteEvent> Events { get; set; } = new(); // Note events in the pattern
     public double LoopLength { get; set; } = 4.0; // in beats
     public bool IsLooping { get; set; } = true; // Looping flag
@@ -45,10 +49,15 @@ public class Pattern
         set => IsLooping = value;
     }
 
-    // Constructor to initialize the pattern with a synth
-    public Pattern(ISynth synth)
+    // Constructor to initialize the pattern with one or more synths
+    public Pattern(ISynth synth, params ISynth[] additionalSynths)
     {
         Synth = synth;
+        SynthTargets.Add(synth);
+        if (additionalSynths != null && additionalSynths.Length > 0)
+        {
+            SynthTargets.AddRange(additionalSynths);
+        }
     }
 
     /// <summary>
@@ -74,6 +83,44 @@ public class Pattern
             Velocity = velocity
         });
         return this;
+    }
+
+    /// <summary>
+    /// Shorthand step sequencer: "1010" adds notes at stepLength apart where '1' or 'x' occurs.
+    /// </summary>
+    public Pattern Seq(string steps, Action<SeqOptions>? configure = null)
+    {
+        var opt = new SeqOptions();
+        configure?.Invoke(opt);
+
+        double beat = opt.StartBeat;
+        for (int i = 0; i < steps.Length; i++)
+        {
+            var ch = steps[i];
+            bool hit = ch == '1' || ch == 'x' || ch == 'X';
+            if (hit)
+            {
+                Note(opt.Pitch, beat, opt.Duration, opt.Velocity);
+            }
+            beat += opt.StepLength;
+        }
+        return this;
+    }
+
+    /// <summary>Options for Seq().</summary>
+    public class SeqOptions
+    {
+        public int Pitch { get; set; } = 60;
+        public int Velocity { get; set; } = 100;
+        public double Duration { get; set; } = 0.25;   // beats
+        public double StepLength { get; set; } = 0.25; // beats
+        public double StartBeat { get; set; } = 0.0;
+
+        public SeqOptions pitch(int p) { Pitch = p; return this; }
+        public SeqOptions velocity(int v) { Velocity = v; return this; }
+        public SeqOptions duration(double d) { Duration = d; return this; }
+        public SeqOptions step(double s) { StepLength = s; return this; }
+        public SeqOptions start(double s) { StartBeat = s; return this; }
     }
 
     /// <summary>
@@ -107,7 +154,10 @@ public class Pattern
     {
         if (!Enabled)
         {
-            Synth.AllNotesOff(); // Stop all notes if disabled
+            foreach (var target in SynthTargets)
+            {
+                target.AllNotesOff(); // Stop all notes if disabled
+            }
             return;
         }
         if (StartBeat == null) StartBeat = startBeat; // Initialize start beat if not set
@@ -217,7 +267,10 @@ public class Pattern
         Sequencer?.OnNoteTriggered(musicalEvent); // Notify sequencer
 
         // Trigger the note on the synth
-        Synth.NoteOn(ev.Note, ev.Velocity); // Note on
+            foreach (var target in SynthTargets)
+            {
+                target.NoteOn(ev.Note, ev.Velocity); // Note on
+            }
 
         // Schedule note off with high-precision timing
         // Task.Delay has ~15ms resolution on Windows which causes audible gaps/overlaps.
@@ -251,7 +304,10 @@ public class Pattern
                 Thread.SpinWait(1);
             }
 
-            Synth.NoteOff(note);
+            foreach (var target in SynthTargets)
+            {
+                target.NoteOff(note);
+            }
 
             // Notify sequencer that note ended
             musicalEvent.IsNoteOn = false;

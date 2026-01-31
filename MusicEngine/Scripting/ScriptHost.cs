@@ -124,11 +124,11 @@ public class ScriptGlobals
     // Creates a Pattern with the default Synth
     public Pattern CreatePattern() => CreatePattern(Synth);
 
-    // Creates a Pattern with reference to the sequencer
+    // Creates a Pattern with one or more synths
     // The pattern is NOT automatically added - call pattern.Play() to start it
-    public Pattern CreatePattern(ISynth synth)
+    public Pattern CreatePattern(ISynth synth, params ISynth[] moreSynths)
     {
-        var pattern = new Pattern(synth); // Create a new Pattern with the given synth
+        var pattern = new Pattern(synth, moreSynths); // Create a new Pattern with the given synths
         pattern.Sequencer = Sequencer; // Set sequencer reference for Play()/Stop()
         pattern.InstrumentName = synth is SimpleSynth ss ? (ss.Name ?? synth.GetType().Name) : synth.GetType().Name;
         return pattern; // Return the created pattern
@@ -138,14 +138,22 @@ public class ScriptGlobals
     public Pattern pattern() => CreatePattern();
     /// <summary>Alias for CreatePattern - Creates a pattern</summary>
     public Pattern pattern(ISynth synth) => CreatePattern(synth);
+    /// <summary>Alias for CreatePattern - Creates a pattern</summary>
+    public Pattern pattern(ISynth synth, params ISynth[] more) => CreatePattern(synth, more);
     /// <summary>Alias for CreatePattern - Creates a pattern (short form)</summary>
     public Pattern p() => CreatePattern();
     /// <summary>Alias for CreatePattern - Creates a pattern (short form)</summary>
     public Pattern p(ISynth synth) => CreatePattern(synth);
+    /// <summary>Alias for CreatePattern - Creates a pattern (short form)</summary>
+    public Pattern p(ISynth synth, params ISynth[] more) => CreatePattern(synth, more);
     /// <summary>Alias for CreatePattern - Creates a new pattern</summary>
     public Pattern newPattern() => CreatePattern();
     /// <summary>Alias for CreatePattern - Creates a new pattern</summary>
     public Pattern newPattern(ISynth synth) => CreatePattern(synth);
+    /// <summary>Alias for CreatePattern - Creates a new pattern</summary>
+    public Pattern newPattern(ISynth synth, params ISynth[] more) => CreatePattern(synth, more);
+
+    public RandomControl random => new RandomControl();
 
     // Routes MIDI input from a device to a synthesizer
     public void RouteMidi(int deviceIndex, ISynth synth)
@@ -268,6 +276,24 @@ public class ScriptGlobals
         Engine.MapTransportControl(deviceIndex, cc, val => {
             if (val > 0.5f) Sequencer.Skip(beats);
         });
+    }
+
+    // Map a MIDI control change to start playback
+    public void MapStartCc(int deviceIndex, int cc)
+    {
+        Engine.MapTransportControl(deviceIndex, cc, val => { if (val > 0.5f) Sequencer.Start(); });
+    }
+
+    // Map a MIDI control change to stop playback
+    public void MapStopCc(int deviceIndex, int cc)
+    {
+        Engine.MapTransportControl(deviceIndex, cc, val => { if (val > 0.5f) Sequencer.Stop(); });
+    }
+
+    // Map a MIDI control change to refresh/reload the script
+    public void MapRefreshCc(int deviceIndex, int cc)
+    {
+        Engine.MapTransportControl(deviceIndex, cc, val => { if (val > 0.5f) Host?.TriggerRefresh(); });
     }
 
     // Maps a MIDI control to scratching behavior
