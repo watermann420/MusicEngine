@@ -132,7 +132,7 @@ if (playPattern)
 
 
 // OPTIONAL: PLAY TETRIS THEME (Korobeiniki)
-var playTetris = false;  // Set to true to play
+var playTetris = true;  // Set to true to play
 
 if (playTetris)
 {

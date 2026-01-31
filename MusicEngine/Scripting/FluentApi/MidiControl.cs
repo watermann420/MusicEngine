@@ -347,6 +347,12 @@ public class DeviceLogControl
     /// <summary>Alias for TimingClock</summary>
     public void clock(bool enabled = true) => TimingClock(enabled);
 
+    /// <summary>Set minimum milliseconds between log entries (UI friendly). Default 5 ms. Use .scratch() for 1 ms.</summary>
+    public void throttle(int milliseconds = 5) => _globals.Engine.SetMidiLogThrottle(_deviceIndex, milliseconds);
+
+    /// <summary>Shortcut for very fast logging (1 ms throttle).</summary>
+    public void scratch() => throttle(1);
+
     /// <summary>Log detected screen info for this device (once) at script start.</summary>
     public void screenData() => _globals.Engine.LogMidiScreen(_deviceIndex);
 }

@@ -8,6 +8,8 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using NAudio.Wave;
+using NAudio.Wave.Asio;
+using NAudio.CoreAudioApi;
 using NAudio.Midi;
 using NAudio.Wave.SampleProviders;
 using Microsoft.Extensions.Logging;
@@ -42,9 +44,13 @@ public class AudioEngine : IDisposable
     private readonly Dictionary<int, bool> _midiLogEnabled = new(); // General MIDI logging flag per device (notes/cc/pitch, no clock)
     private readonly Dictionary<int, bool> _midiLogClockEnabled = new(); // TimingClock logging per device
     private readonly Dictionary<int, bool> _midiLogCcEnabled = new(); // CC-only toggle (in addition to general log)
+    private readonly Dictionary<int, int> _midiLogThrottleMs = new(); // Min interval between log lines per device
+    private readonly Dictionary<int, DateTime> _midiLastLog = new(); // Last log timestamp per device
     private readonly Dictionary<int, IWaveIn> _inputDevices = new(); // Input devices for handler cleanup
     private readonly MixingSampleProvider _mixer; // Main Mixer
     private readonly VolumeSampleProvider _masterVolume; // Master Volume Control
+    private ISampleProvider _masterChain; // Master processing chain (dc-block, soft clip, etc.)
+    private readonly ClickGuardSampleProvider _clickGuard; // Note/pop suppression
     private readonly WaveFormat _waveFormat; // Audio Format
     private readonly List<VolumeSampleProvider> _channels = new(); // Individual Channel Volume Controls
     private volatile float _masterGain = 1.0f; // Master Gain
@@ -65,8 +71,18 @@ public class AudioEngine : IDisposable
     private readonly TrackGroupManager _trackGroupManager;
     private readonly Dictionary<string, ISampleProvider> _registeredSources = new();
 
+    // MIDI worker
+    private readonly System.Collections.Concurrent.ConcurrentQueue<(int device, MidiInMessageEventArgs e)> _midiQueue = new();
+    private readonly CancellationTokenSource _midiCts = new();
+    private readonly Thread _midiWorkerThread;
+
     // Logging
     private readonly ILogger? _logger;
+
+    // Latency / quality
+    private readonly int _preferredSharedLatencyMs = 60;   // WASAPI/WaveOut target
+    private readonly int _preferredAsioLatencyMs = 10;     // ASIO target
+    private readonly bool _preferAsio = true;
 
     // Live activity events (for editor highlighting)
     public event Action<int>? MidiActivity; // device index
@@ -94,6 +110,8 @@ public class AudioEngine : IDisposable
         _mixer = new MixingSampleProvider(_waveFormat); // Initialize mixer
         _mixer.ReadFully = true; // Ensure continuous output
         _masterVolume = new VolumeSampleProvider(_mixer); // Master volume control
+        _clickGuard = new ClickGuardSampleProvider(_masterVolume, _waveFormat.SampleRate, fadeMs: 2, smoothMs: 1);
+        _masterChain = BuildMasterChain(_clickGuard); // Add dc-block / soft-clip
 
         // Initialize PDC Manager
         _pdcManager = new PdcManager(rate, Settings.Channels, logger);
@@ -104,6 +122,15 @@ public class AudioEngine : IDisposable
         _trackGroupManager = new TrackGroupManager();
 
         _logger?.LogInformation("AudioEngine initialized with sample rate {SampleRate}Hz", rate);
+
+        // Start MIDI worker
+        _midiWorkerThread = new Thread(MidiWorkerLoop)
+        {
+            IsBackground = true,
+            Priority = ThreadPriority.AboveNormal,
+            Name = "MidiWorker"
+        };
+        _midiWorkerThread.Start();
     }
 
     // MIDI Routing and Mapping Methods
@@ -134,6 +161,8 @@ public class AudioEngine : IDisposable
         lock (_midiLogEnabled)
         {
             _midiLogEnabled[deviceIndex] = enabled;
+            if (!_midiLogThrottleMs.ContainsKey(deviceIndex))
+                _midiLogThrottleMs[deviceIndex] = 5; // default 5 ms
         }
         _logger?.LogInformation("MIDI logging {State} for device {DeviceIndex}", enabled ? "enabled" : "disabled", deviceIndex);
         MidiLog?.Invoke($"[MIDI {deviceIndex}] logging {(enabled ? "on" : "off")}");
@@ -152,6 +181,18 @@ public class AudioEngine : IDisposable
             _midiLogClockEnabled[deviceIndex] = enabled;
         }
         _logger?.LogInformation("MIDI clock logging {State} for device {DeviceIndex}", enabled ? "enabled" : "disabled", deviceIndex);
+    }
+
+    /// <summary>Set per-device minimum milliseconds between log entries (UI friendliness).</summary>
+    public void SetMidiLogThrottle(int deviceIndex, int ms)
+    {
+        if (ms < 0) ms = 0;
+        if (ms > 100) ms = 100;
+        lock (_midiLogThrottleMs)
+        {
+            _midiLogThrottleMs[deviceIndex] = ms;
+        }
+        MidiLog?.Invoke($"[MIDI {deviceIndex}] log throttle {ms}ms");
     }
 
     /// <summary>Enable/disable logging of MIDI CC messages for a device (in addition to info logging).</summary>
@@ -343,16 +384,24 @@ public class AudioEngine : IDisposable
         }
     }
 
+    private ISampleProvider BuildMasterChain(ISampleProvider source)
+    {
+        // DC-block -> soft clip for mild anti-pop/clipping
+        var dcBlock = new DcBlockingSampleProvider(source, 20f, _waveFormat.SampleRate);
+        var softClip = new SoftClipSampleProvider(dcBlock, 0.98f);
+        return softClip;
+    }
+
     // Initialize Audio Engine
     public void Initialize()
     {
-        Console.WriteLine("[AudioEngine] Step 1: Creating WaveOutEvent...");
+        Console.WriteLine("[AudioEngine] Step 1: Selecting audio output...");
 
-        // Setup default output
-        var output = new WaveOutEvent(); // Create output device
+        // Select best available output (ASIO > WASAPI shared > WaveOut)
+        var output = CreateBestOutput(out var backend);
 
-        Console.WriteLine("[AudioEngine] Step 2: Initializing output device...");
-        output.Init(_masterVolume); // Initialize with the master volume
+        Console.WriteLine($"[AudioEngine] Step 2: Initializing output device ({backend})...");
+        output.Init(_masterChain); // Initialize with the master processing chain
 
         Console.WriteLine("[AudioEngine] Step 3: Starting playback...");
         output.Play(); // Start playback
@@ -390,7 +439,7 @@ public class AudioEngine : IDisposable
                 int deviceIndex = i; // Capture index for closure
 
                 // Store the MIDI MessageReceived handler for later cleanup
-                EventHandler<MidiInMessageEventArgs> midiHandler = (s, e) => HandleMidiMessage(deviceIndex, e);
+                EventHandler<MidiInMessageEventArgs> midiHandler = (s, e) => EnqueueMidiMessage(deviceIndex, e);
                 midiIn.MessageReceived += midiHandler;
                 _midiHandlers[deviceIndex] = midiHandler;
 
@@ -477,9 +526,8 @@ public class AudioEngine : IDisposable
             progress?.Report(new Progress.InitializationProgress(
                 "Audio Output", 1, totalSteps, "Setting up default audio output device"));
 
-            // Setup default output
-            var output = new WaveOutEvent();
-            output.Init(_masterVolume);
+            var output = CreateBestOutput(out _);
+            output.Init(_masterChain);
             output.Play();
             _outputs.Add(output);
 
@@ -574,6 +622,23 @@ public class AudioEngine : IDisposable
         var infoEnabled = _midiLogEnabled.TryGetValue(deviceIndex, out var info) && info;
         var clockEnabled = _midiLogClockEnabled.TryGetValue(deviceIndex, out var clk) && clk;
         var ccEnabled = _midiLogCcEnabled.TryGetValue(deviceIndex, out var ccFlag) && ccFlag;
+        var throttle = 5;
+        lock (_midiLogThrottleMs)
+        {
+            if (_midiLogThrottleMs.TryGetValue(deviceIndex, out var t)) throttle = t;
+        }
+        if (throttle > 0)
+        {
+            var now = DateTime.UtcNow;
+            lock (_midiLastLog)
+            {
+                if (_midiLastLog.TryGetValue(deviceIndex, out var last))
+                {
+                    if ((now - last).TotalMilliseconds < throttle) return;
+                }
+                _midiLastLog[deviceIndex] = now;
+            }
+        }
 
         string msg;
         switch (e.MidiEvent)
@@ -618,7 +683,32 @@ public class AudioEngine : IDisposable
         MidiLog?.Invoke(msg);
     }
 
-    private void HandleMidiMessage(int deviceIndex, MidiInMessageEventArgs e)
+    private void EnqueueMidiMessage(int deviceIndex, MidiInMessageEventArgs e)
+    {
+        // Prevent unbounded growth; drop oldest if queue too large
+        if (_midiQueue.Count > 1024)
+        {
+            _midiQueue.TryDequeue(out _);
+        }
+        _midiQueue.Enqueue((deviceIndex, e));
+    }
+
+    private void MidiWorkerLoop()
+    {
+        var token = _midiCts.Token;
+        while (!token.IsCancellationRequested)
+        {
+            if (_midiQueue.TryDequeue(out var item))
+            {
+                try { HandleMidiMessageInternal(item.device, item.e); }
+                catch (Exception ex) { _logger?.LogWarning(ex, "MIDI handling error"); }
+                continue;
+            }
+            Thread.Sleep(0); // yield without adding latency
+        }
+    }
+
+    private void HandleMidiMessageInternal(int deviceIndex, MidiInMessageEventArgs e)
     {
         TryLogMidiEvent(deviceIndex, e);
         MidiActivity?.Invoke(deviceIndex);
@@ -797,6 +887,51 @@ public class AudioEngine : IDisposable
     }
 
     #endregion
+
+    private IWavePlayer CreateBestOutput(out string backend)
+    {
+        // Prefer ASIO if available
+        try
+        {
+            var drivers = AsioOut.GetDriverNames()?.ToList();
+            if (_preferAsio && drivers != null && drivers.Count > 0)
+            {
+                var name = drivers.FirstOrDefault();
+                if (!string.IsNullOrEmpty(name))
+                {
+                    var asio = new AsioOut(name);
+                    asio.InitRecordAndPlayback(null, _waveFormat.Channels, _preferredAsioLatencyMs);
+                    backend = $"ASIO ({name})";
+                    return asio;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Failed to open ASIO, falling back");
+        }
+
+        // WASAPI shared as next best (exclusive can be disruptive)
+        try
+        {
+            var wasapi = new WasapiOut(AudioClientShareMode.Shared, true, _preferredSharedLatencyMs);
+            backend = "WASAPI (shared)";
+            return wasapi;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Failed to open WASAPI, falling back to WaveOut");
+        }
+
+        // Legacy WaveOut
+        var waveOut = new WaveOutEvent
+        {
+            DesiredLatency = _preferredSharedLatencyMs,
+            NumberOfBuffers = 3
+        };
+        backend = "WaveOut";
+        return waveOut;
+    }
 
     // Get MIDI Device Index by Name
     public int GetMidiDeviceIndex(string name)
@@ -1521,11 +1656,192 @@ public class AudioEngine : IDisposable
         try { _routingMatrix.Dispose(); }
         catch (Exception ex) { _logger?.LogWarning(ex, "Error disposing routing matrix"); }
 
+        // Stop MIDI worker
+        _midiCts.Cancel();
+        try { _midiWorkerThread.Join(100); } catch { /* ignore */ }
+
         _trackGroupManager.Clear();
         _sidechainBusManager.Clear();
 
         _logger?.LogInformation("AudioEngine disposed");
 
         GC.SuppressFinalize(this);
+    }
+}
+
+/// <summary>Simple DC blocking high-pass filter for stereo.</summary>
+internal sealed class DcBlockingSampleProvider : ISampleProvider
+{
+    private readonly ISampleProvider _source;
+    private readonly float _alpha;
+    private float _prevX_L, _prevY_L;
+    private float _prevX_R, _prevY_R;
+
+    public DcBlockingSampleProvider(ISampleProvider source, float cutoffHz, int sampleRate)
+    {
+        _source = source;
+        WaveFormat = source.WaveFormat;
+        var rc = 1f / (2f * MathF.PI * cutoffHz);
+        var dt = 1f / sampleRate;
+        _alpha = rc / (rc + dt);
+    }
+
+    public WaveFormat WaveFormat { get; }
+
+    public int Read(float[] buffer, int offset, int count)
+    {
+        int read = _source.Read(buffer, offset, count);
+        for (int n = 0; n < read; n += WaveFormat.Channels)
+        {
+            int i = offset + n;
+            // Left
+            float xL = buffer[i];
+            float yL = xL - _prevX_L + _alpha * _prevY_L;
+            _prevX_L = xL;
+            _prevY_L = yL;
+            buffer[i] = yL;
+
+            if (WaveFormat.Channels > 1)
+            {
+                float xR = buffer[i + 1];
+                float yR = xR - _prevX_R + _alpha * _prevY_R;
+                _prevX_R = xR;
+                _prevY_R = yR;
+                buffer[i + 1] = yR;
+            }
+        }
+        return read;
+    }
+}
+
+/// <summary>Soft clipper to tame peaks (mild tanh curve).</summary>
+internal sealed class SoftClipSampleProvider : ISampleProvider
+{
+    private readonly ISampleProvider _source;
+    private readonly float _threshold;
+
+    public SoftClipSampleProvider(ISampleProvider source, float threshold = 0.98f)
+    {
+        _source = source;
+        _threshold = MathF.Max(0.5f, MathF.Min(0.999f, threshold));
+        WaveFormat = source.WaveFormat;
+    }
+
+    public WaveFormat WaveFormat { get; }
+
+    public int Read(float[] buffer, int offset, int count)
+    {
+        int read = _source.Read(buffer, offset, count);
+        for (int i = offset; i < offset + read; i++)
+        {
+            float x = buffer[i];
+            float abs = MathF.Abs(x);
+            if (abs <= _threshold) continue;
+            float sign = MathF.Sign(x);
+            float t = (abs - _threshold) / (1f - _threshold);
+            buffer[i] = sign * (_threshold + MathF.Tanh(t) * (1f - _threshold));
+        }
+        return read;
+    }
+}
+
+/// <summary>Applies very short fade-in/out on changes to reduce clicks/pops.</summary>
+internal sealed class ClickGuardSampleProvider : ISampleProvider
+{
+    private readonly ISampleProvider _source;
+    private readonly int _fadeSamples;
+    private readonly int _channels;
+    private readonly float[] _env;
+    private bool _wasSilence = true;
+    private readonly float _smoothing;
+    private readonly float[] _lastOut;
+
+    public ClickGuardSampleProvider(ISampleProvider source, int sampleRate, int fadeMs = 2, int smoothMs = 1)
+    {
+        _source = source;
+        WaveFormat = source.WaveFormat;
+        _channels = WaveFormat.Channels;
+        _fadeSamples = Math.Max(8, sampleRate * fadeMs / 1000);
+        _env = new float[_fadeSamples];
+        for (int i = 0; i < _fadeSamples; i++)
+        {
+            // smooth curve 0..1
+            float t = (float)i / (_fadeSamples - 1);
+            _env[i] = t * t * (3f - 2f * t); // smoothstep
+        }
+
+        // De-zipper smoothing (user-defined, default ~1 ms)
+        float tau = Math.Max(0.0002f, smoothMs / 1000f);
+        _smoothing = 1f - MathF.Exp(-1f / (sampleRate * tau));
+        _lastOut = new float[_channels];
+    }
+
+    public WaveFormat WaveFormat { get; }
+
+    public int Read(float[] buffer, int offset, int count)
+    {
+        int read = _source.Read(buffer, offset, count);
+        if (read == 0) { _wasSilence = true; return 0; }
+
+        // Apply fade-in if previous block was silent
+        if (_wasSilence)
+        {
+            int maxFade = Math.Min(read / _channels, _fadeSamples);
+            for (int s = 0; s < maxFade; s++)
+            {
+                float g = _env[s];
+                for (int c = 0; c < _channels; c++)
+                {
+                    int i = offset + s * _channels + c;
+                    buffer[i] *= g;
+                }
+            }
+        }
+
+        // Detect tail near end and fade-out if trailing near-silence
+        float tailEnergy = 0f;
+        int tailFrames = Math.Min(read / _channels, _fadeSamples);
+        for (int s = read / _channels - tailFrames; s < read / _channels; s++)
+        {
+            for (int c = 0; c < _channels; c++)
+            {
+                float v = buffer[offset + s * _channels + c];
+                tailEnergy += v * v;
+            }
+        }
+        bool tailSilent = tailEnergy < 1e-6f;
+        if (tailSilent)
+        {
+            for (int s = 0; s < tailFrames; s++)
+            {
+                float g = _env[tailFrames - 1 - s];
+                int frame = read / _channels - tailFrames + s;
+                for (int c = 0; c < _channels; c++)
+                {
+                    int i = offset + frame * _channels + c;
+                    buffer[i] *= g;
+                }
+            }
+            _wasSilence = true;
+        }
+        else
+        {
+            _wasSilence = false;
+        }
+
+        // De-zipper smoothing to reduce sudden steps (per channel)
+        for (int frame = 0; frame < read / _channels; frame++)
+        {
+            for (int c = 0; c < _channels; c++)
+            {
+                int i = offset + frame * _channels + c;
+                float x = buffer[i];
+                float y = _lastOut[c] + _smoothing * (x - _lastOut[c]);
+                _lastOut[c] = y;
+                buffer[i] = y;
+            }
+        }
+
+        return read;
     }
 }
