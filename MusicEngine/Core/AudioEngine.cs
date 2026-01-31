@@ -89,6 +89,7 @@ public class AudioEngine : IDisposable
     public event Action<int, bool>? MidiNoteActivity; // device index, isOn
     public event Action<string, float>? ParameterChanged; // parameter name, value
     public event Action<string>? MidiLog; // formatted log line
+    public event Action<int, MidiInMessageEventArgs>? MidiRaw; // raw MIDI for capture
 
     // Events for external subscribers
     public event EventHandler<ChannelEventArgs>? ChannelAdded;
@@ -381,6 +382,68 @@ public class AudioEngine : IDisposable
         {
             _mixer.RemoveAllMixerInputs(); // Clear mixer inputs
             _channels.Clear(); // Clear channel list
+        }
+    }
+
+    /// <summary>
+    /// Offline render (faster than real-time where possible) of the current master chain for a duration to file.
+    /// Patterns are advanced blockwise without using audio hardware.
+    /// </summary>
+    public void RenderOffline(TimeSpan duration, string path, RecordingFormat format = RecordingFormat.Wav24Bit, int blockSize = 1024, Sequencer? sequencer = null)
+    {
+        var seq = sequencer ?? throw new InvalidOperationException("Sequencer not provided for offline render.");
+        if (duration <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(duration));
+        int channels = _waveFormat.Channels;
+        int sampleRate = _waveFormat.SampleRate;
+        long totalSamples = (long)(duration.TotalSeconds * sampleRate);
+        float[] buffer = new float[blockSize * channels];
+
+        // Pause live sequencer thread if running
+        bool wasRunning = seq.IsRunning;
+        if (wasRunning) seq.Stop();
+
+        double bpm = seq.Bpm;
+        double beatPerSample = bpm / 60.0 / sampleRate;
+        double currentBeat = seq.CurrentBeat;
+
+        using var writer = new WaveFileRecorder(path, sampleRate, channels, format);
+
+        long written = 0;
+        while (written < totalSamples)
+        {
+            int want = (int)Math.Min(blockSize, totalSamples - written);
+            double blockStartBeat = currentBeat;
+            double blockEndBeat = currentBeat + want * beatPerSample;
+
+            ProcessPatternsBlock(seq, blockStartBeat, blockEndBeat, bpm);
+
+            int read = _masterChain.Read(buffer, 0, want * channels);
+            if (read > 0)
+            {
+                writer.WriteSamples(buffer, 0, read);
+                written += read / channels;
+            }
+            else
+            {
+                // silence fill to keep duration accurate
+                Array.Clear(buffer, 0, want * channels);
+                writer.WriteSamples(buffer, 0, want * channels);
+                written += want;
+            }
+            currentBeat = blockEndBeat;
+        }
+
+        if (wasRunning) seq.Start();
+    }
+
+    private void ProcessPatternsBlock(Sequencer seq, double startBeat, double endBeat, double bpm)
+    {
+        var patterns = seq.Patterns;
+        if (patterns == null) return;
+        foreach (var p in patterns)
+        {
+            try { p.Process(startBeat, endBeat, bpm); }
+            catch (Exception ex) { _logger?.LogWarning(ex, "Pattern processing failed in offline render"); }
         }
     }
 
@@ -712,6 +775,7 @@ public class AudioEngine : IDisposable
     {
         TryLogMidiEvent(deviceIndex, e);
         MidiActivity?.Invoke(deviceIndex);
+        MidiRaw?.Invoke(deviceIndex, e);
 
         switch (e.MidiEvent)
         {

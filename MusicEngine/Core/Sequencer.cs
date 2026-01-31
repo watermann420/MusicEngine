@@ -220,8 +220,6 @@ public class Sequencer : IDisposable
             lock (_patterns)
             {
                 _beatAccumulator = value;
-
-                // Update MIDI clock position if enabled
                 _midiClockSync?.SetPosition(value);
             }
         }

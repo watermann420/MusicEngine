@@ -5,10 +5,15 @@
 
 using System;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
+using System.Collections.Generic;
+using NAudio.Midi;
+using MidiNoteEvent = NAudio.Midi.NoteEvent;
 using Microsoft.CodeAnalysis.CSharp.Scripting;
 using Microsoft.CodeAnalysis.Scripting;
 using MusicEngine.Core;
+using MusicEngine.Core.Events;
 using MusicEngine.Scripting.FluentApi;
 
 
@@ -19,6 +24,35 @@ public class ScriptHost
 {
     private readonly AudioEngine _engine; // The audio engine instance
     private readonly Sequencer _sequencer; // The sequencer instance
+    private SimpleSynth? _engineDefaultSynth;
+    private Pattern CreatePatternInternal(ISynth? synth = null, params ISynth[] more)
+    {
+        if (synth != null)
+        {
+            var patternDirect = new Pattern(synth, more);
+            patternDirect.Sequencer = _sequencer;
+            patternDirect.InstrumentName = synth is SimpleSynth ss ? (ss.Name ?? synth.GetType().Name) : synth.GetType().Name;
+            return patternDirect;
+        }
+
+        if (_engineDefaultSynth == null)
+        {
+            _engineDefaultSynth = CreateEngineSynth();
+        }
+
+        var primary = _engineDefaultSynth;
+        var pattern = new Pattern(primary, more);
+        pattern.Sequencer = _sequencer;
+        pattern.InstrumentName = primary is SimpleSynth simp ? (simp.Name ?? primary.GetType().Name) : primary.GetType().Name;
+        return pattern;
+    }
+
+    private SimpleSynth CreateEngineSynth()
+    {
+        var s = new SimpleSynth();
+        _engine.AddSampleProvider(s);
+        return s;
+    }
 
     /// <summary>
     /// Event fired when a refresh is requested (e.g., via MIDI binding).
@@ -37,6 +71,105 @@ public class ScriptHost
     {
         _engine = engine; // Initialize the audio engine
         _sequencer = sequencer; // Initialize the sequencer
+    }
+
+    /// <summary>Record live MIDI from a device into a Pattern for a given duration (seconds). Optional target synth routed automatically.</summary>
+    public Pattern recordMidi(int deviceIndex, double durationSeconds = 5.0, ISynth? synth = null)
+    {
+        var pattern = synth == null ? CreatePatternInternal() : CreatePatternInternal(synth);
+        var noteOnTimes = new Dictionary<int, double>(); // note -> start beat
+        var bpm = _sequencer.Bpm;
+        var beatPerSec = bpm / 60.0;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+
+        void Handler(int dev, MidiInMessageEventArgs args)
+        {
+            if (dev != deviceIndex) return;
+            if (args.MidiEvent is NoteOnEvent on)
+            {
+                double beat = sw.Elapsed.TotalSeconds * beatPerSec;
+                if (on.Velocity > 0)
+                {
+                    noteOnTimes[on.NoteNumber] = beat;
+                    synth?.NoteOn(on.NoteNumber, on.Velocity);
+                }
+                else
+                {
+                    if (noteOnTimes.TryGetValue(on.NoteNumber, out var start))
+                    {
+                        var len = Math.Max(0.01, beat - start);
+                        pattern.Note(on.NoteNumber, start, len, on.Velocity);
+                        noteOnTimes.Remove(on.NoteNumber);
+                    }
+                    synth?.NoteOff(on.NoteNumber);
+                }
+            }
+            else if (args.MidiEvent is MidiNoteEvent off && off.CommandCode == MidiCommandCode.NoteOff)
+            {
+                double beat = sw.Elapsed.TotalSeconds * beatPerSec;
+                if (noteOnTimes.TryGetValue(off.NoteNumber, out var start))
+                {
+                    var len = Math.Max(0.01, beat - start);
+                    pattern.Note(off.NoteNumber, start, len, (off as NoteOnEvent)?.Velocity ?? 0);
+                    noteOnTimes.Remove(off.NoteNumber);
+                }
+                synth?.NoteOff(off.NoteNumber);
+            }
+        }
+
+        _engine.MidiRaw += Handler;
+        Task.Delay(TimeSpan.FromSeconds(durationSeconds)).Wait();
+        _engine.MidiRaw -= Handler;
+
+        double endBeat = sw.Elapsed.TotalSeconds * beatPerSec;
+        foreach (var kv in noteOnTimes.ToList())
+        {
+            pattern.Note(kv.Key, kv.Value, Math.Max(0.01, endBeat - kv.Value), 100);
+        }
+
+        return pattern;
+    }
+
+    /// <summary>Record the master output to a file while a pattern plays (real-time bounce).</summary>
+    public void renderPatternToFile(Pattern pattern, string path, double durationSeconds, RecordingFormat format = RecordingFormat.Wav24Bit)
+    {
+        using var recorder = _engine.CreateRecorder();
+        recorder.Format = format;
+        pattern.Play();
+        recorder.StartRecording(path);
+        Task.Delay(TimeSpan.FromSeconds(durationSeconds)).Wait();
+        recorder.StopRecording();
+        pattern.Stop();
+    }
+
+    /// <summary>Record the master output into a byte[] buffer (WAV header included).</summary>
+    public byte[] renderToBuffer(double durationSeconds, RecordingFormat format = RecordingFormat.Wav24Bit)
+    {
+        using var recorder = _engine.CreateRecorder();
+        using var ms = new MemoryStream();
+        recorder.Format = format;
+        recorder.StartRecording(ms);
+        Task.Delay(TimeSpan.FromSeconds(durationSeconds)).Wait();
+        recorder.StopRecording();
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// Real-time render the current master output for the given duration directly to a file (no pattern argument needed).
+    /// </summary>
+    public void renderRealtime(double durationSeconds, string path, RecordingFormat format = RecordingFormat.Wav24Bit)
+    {
+        using var recorder = _engine.CreateRecorder();
+        recorder.Format = format;
+        recorder.StartRecording(path);
+        Task.Delay(TimeSpan.FromSeconds(durationSeconds)).Wait();
+        recorder.StopRecording();
+    }
+
+    /// <summary>Offline render (faster-than-real-time) of the current session to file.</summary>
+    public void renderOffline(double durationSeconds, string path, RecordingFormat format = RecordingFormat.Wav24Bit)
+    {
+        _engine.RenderOffline(TimeSpan.FromSeconds(durationSeconds), path, format, sequencer: _sequencer);
     }
 
     /// <summary>
@@ -122,17 +255,20 @@ public class ScriptGlobals
     public GeneralMidiInstrument newGm(GeneralMidiProgram program, int channel = 0) => CreateGeneralMidiInstrument(program, channel);
 
     // Creates a Pattern with the default Synth
-    public Pattern CreatePattern() => CreatePattern(Synth);
+    private Pattern CreatePatternInternal(ISynth? synth = null, params ISynth[] more)
+    {
+        var primary = synth ?? Synth;
+        var pattern = new Pattern(primary, more);
+        pattern.Sequencer = Sequencer;
+        pattern.InstrumentName = primary is SimpleSynth simp ? (simp.Name ?? primary.GetType().Name) : primary.GetType().Name;
+        return pattern;
+    }
+
+    public Pattern CreatePattern() => CreatePatternInternal();
 
     // Creates a Pattern with one or more synths
     // The pattern is NOT automatically added - call pattern.Play() to start it
-    public Pattern CreatePattern(ISynth synth, params ISynth[] moreSynths)
-    {
-        var pattern = new Pattern(synth, moreSynths); // Create a new Pattern with the given synths
-        pattern.Sequencer = Sequencer; // Set sequencer reference for Play()/Stop()
-        pattern.InstrumentName = synth is SimpleSynth ss ? (ss.Name ?? synth.GetType().Name) : synth.GetType().Name;
-        return pattern; // Return the created pattern
-    }
+    public Pattern CreatePattern(ISynth synth, params ISynth[] moreSynths) => CreatePatternInternal(synth, moreSynths);
 
     /// <summary>Alias for CreatePattern - Creates a pattern</summary>
     public Pattern pattern() => CreatePattern();

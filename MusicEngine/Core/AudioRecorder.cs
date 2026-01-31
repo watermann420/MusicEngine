@@ -165,6 +165,12 @@ public class AudioRecorder : IDisposable
         _progressTimer = new Timer(OnProgressTimer, null, Timeout.Infinite, Timeout.Infinite);
     }
 
+    /// <summary>Sets the desired recording format for the next StartRecording call.</summary>
+    public void SetFormat(RecordingFormat format)
+    {
+        _format = format;
+    }
+
     /// <summary>
     /// Starts recording to the specified output file.
     /// </summary>
@@ -223,6 +229,52 @@ public class AudioRecorder : IDisposable
         }
 
         // Raise event outside lock to prevent deadlocks
+        RecordingStarted?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Starts recording to a provided stream (WAV only). Honors the format set via SetFormat.
+    /// </summary>
+    public void StartRecording(Stream stream)
+    {
+        if (stream == null) throw new ArgumentNullException(nameof(stream));
+        if (!stream.CanWrite) throw new ArgumentException("Stream must be writable.", nameof(stream));
+
+        lock (_recordingLock)
+        {
+            if (_isRecording)
+                throw new InvalidOperationException("Recording is already in progress.");
+            if (_disposed)
+                throw new ObjectDisposedException(nameof(AudioRecorder));
+
+            _outputPath = null;
+            _stopRequested = false;
+            _isPaused = false;
+            _totalSamplesRecorded = 0;
+            _currentPeakLevel = 0;
+            _pausedDuration = TimeSpan.Zero;
+
+            if (!_format.IsWavFormat())
+            {
+                throw new NotSupportedException("In-memory recording currently supports WAV formats only.");
+            }
+
+            _waveRecorder = new WaveFileRecorder(stream, _sampleRate, _channels, _format);
+
+            _recordingStartTime = DateTime.Now;
+            _isRecording = true;
+
+            _recordingThread = new Thread(RecordingLoop)
+            {
+                Name = "AudioRecorderThread",
+                IsBackground = true,
+                Priority = ThreadPriority.AboveNormal
+            };
+            _recordingThread.Start();
+
+            _progressTimer?.Change(ProgressIntervalMs, ProgressIntervalMs);
+        }
+
         RecordingStarted?.Invoke(this, EventArgs.Empty);
     }
 

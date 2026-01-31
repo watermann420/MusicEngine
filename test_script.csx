@@ -98,7 +98,7 @@ synth.VelocitySensitivity = 0.7f;    // Velocity response: 0 to 1
 // ROUTE MIDI TO SYNTH
 midi.device(0).route(synth);
 
-midi.device(0).log.info(true); // Log MIDI input for debugging
+//midi.device(0).log.info(true); // Log MIDI input for debugging and mapping midi controls
 
 
 
@@ -132,6 +132,7 @@ if (playPattern)
 
 
 // OPTIONAL: PLAY TETRIS THEME (Korobeiniki)
+
 var playTetris = true;  // Set to true to play
 
 if (playTetris)

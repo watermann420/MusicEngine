@@ -25,6 +25,7 @@ public class Pattern
     public bool IsLooping { get; set; } = true; // Looping flag
     public double? StartBeat { get; set; } = null; // When to start the pattern
     public bool Enabled { get; set; } = true;  // Is the pattern enabled?
+    public double PlaybackSpeed { get; set; } = 1.0; // 1=normal, <0 scratch/reverse
 
     // New properties for visualization
     internal int PatternIndex { get; set; } = 0; // Index in sequencer's pattern list

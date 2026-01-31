@@ -168,6 +168,36 @@ internal sealed class WaveFileRecorder : IDisposable
     }
 
     /// <summary>
+    /// Creates a WaveFileRecorder that writes into an existing stream (WAV only).
+    /// </summary>
+    public WaveFileRecorder(Stream stream, int sampleRate, int channels, RecordingFormat format)
+    {
+        if (stream == null) throw new ArgumentNullException(nameof(stream));
+        if (!stream.CanWrite) throw new ArgumentException("Stream must be writable.", nameof(stream));
+        if (sampleRate <= 0)
+            throw new ArgumentOutOfRangeException(nameof(sampleRate), "Sample rate must be positive.");
+        if (channels <= 0)
+            throw new ArgumentOutOfRangeException(nameof(channels), "Channels must be positive.");
+        if (!format.IsWavFormat())
+            throw new ArgumentException("WaveFileRecorder only supports WAV formats.", nameof(format));
+
+        FilePath = string.Empty;
+        _sampleRate = sampleRate;
+        _channels = channels;
+        _bitDepth = format.GetBitDepth();
+        _isFloat = format.IsFloatFormat();
+        _peakLevel = 0f;
+        _totalSamplesWritten = 0;
+
+        WaveFormat waveFormat = _isFloat
+            ? WaveFormat.CreateIeeeFloatWaveFormat(sampleRate, channels)
+            : new WaveFormat(sampleRate, _bitDepth, channels);
+
+        _writer = new WaveFileWriter(stream, waveFormat);
+        _conversionBuffer = new byte[4096 * 4];
+    }
+
+    /// <summary>
     /// Writes float samples to the WAV file.
     /// Thread-safe operation.
     /// </summary>
