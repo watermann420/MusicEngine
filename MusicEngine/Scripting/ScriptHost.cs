@@ -66,6 +66,12 @@ public class ScriptHost
     /// </summary>
     public event Action<string>? OnActionTriggered;
 
+    /// <summary>
+    /// Event fired when a synth is created via script.
+    /// Parameters: synth instance, synth name, synth type name.
+    /// </summary>
+    public event Action<ISynth, string, string>? OnSynthCreated;
+
     // Constructor to initialize the script host with engine and sequencer
     public ScriptHost(AudioEngine engine, Sequencer sequencer)
     {
@@ -182,6 +188,11 @@ public class ScriptHost
     /// </summary>
     public void TriggerAction(string actionName) => OnActionTriggered?.Invoke(actionName);
 
+    /// <summary>
+    /// Notifies that a synth was created.
+    /// </summary>
+    internal void NotifySynthCreated(ISynth synth, string name, string typeName) => OnSynthCreated?.Invoke(synth, name, typeName);
+
     // Executes a C# script asynchronously
     public async Task ExecuteScriptAsync(string code)
     {
@@ -231,6 +242,7 @@ public class ScriptGlobals
     {
         var synth = new SimpleSynth(); // Create a new SimpleSynth
         Engine.AddSampleProvider(synth); // Add it to the audio engine
+        Host?.NotifySynthCreated(synth, synth.Name ?? "SimpleSynth", "Simple");
         return synth; // Return the created synth
     }
 
