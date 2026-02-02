@@ -6,24 +6,30 @@ audio.all.gain(0.1); // Master volume //0 to 1.0 // Adjust as needed // Default 
 // Create the synthesizer
 var synth = CreateSynth();
 
-var synth2 = CreateSynth();
 
-// --- Windows GM instrument as simple as CreateSynth() ---
+
+// --- Windows GM instrument ---
 var piano = CreateGeneralMidi();
+
 
 // Optional GM settings (same style wie synth.*)
 piano.Volume = 0.8f;
 piano.Pan = 0f;
-piano.Reverb = 0f;   // effects off by default
+piano.Reverb = 0f;
 piano.Chorus = 0f;
 piano.ModWheel = 0f;
 piano.Channel = 0;
 piano.Name = "GM_Piano";
 
+
+//midi setup
 midi.device(0).to(piano);
 midi.device(0).pitchbend().to(val => piano.PitchBend(val * 2f - 1f)); // map wheel to -1..1
 //midi.device(0).log.info(true); // Log MIDI input for debugging and mapping midi controls
 
+
+
+// --- SYNTHESIZER SETTINGS ---
 // OSCILLATOR 1 SETTINGS
 synth.Waveform = WaveType.Square;    // Sine, Square, Sawtooth, Triangle, Pulse, Noise
 synth.Osc1Octave = 0;                // Octave offset: -3 to +3
@@ -111,14 +117,6 @@ synth.VelocitySensitivity = 0.7f;    // Velocity response: 0 to 1
 
 
 
-
-
-
-
-
-
-
-
 // OPTIONAL: PLAY A PATTERN
 var playPattern = false;  // Set to true to play
 
@@ -138,7 +136,6 @@ if (playPattern)
 
     pattern.Play();
 }
-
 
 
 
