@@ -101,17 +101,24 @@ Git: https://github.com/watermann420/MusicEngineEditor
 | Category | Synthesizers |
 |----------|--------------|
 | **Basic** | SimpleSynth (Mono), PolySynth (16-voice), AdvancedSynth (Multi-oscillator) |
-| **FM/Additive** | FMSynth (6-operator, 20 algorithms), AdditiveSynth (64 partials, Hammond drawbars) |
-| **Wavetable/Vector** | WavetableSynth (morphing), VectorSynth (XY crossfade) |
-| **Granular** | GranularSynth (5 envelope shapes), SamplerSlicer (REX-style) |
+| **Additive** | AdditiveSynth (64 partials, Hammond-style drawbars) |
+| **FM** | FMSynth (6-operator, 20 algorithms) |
+| **Granular** | GranularSynth (5 envelope shapes) |
+| **Wavetable** | WavetableSynth (wavetable position morphing) |
+| **Vector** | VectorSynth (XY crossfade between 4 sources) |
+| **ChipTune** | ChipTuneSynth (NES, GameBoy, C64 chip emulation) |
+| **Organ** | OrganSynth (Hammond-style drawbars with Leslie simulation) |
+| **SID** | SIDSynth (Commodore 64 SID chip with ring mod and sync) |
+| **OPN** | OPNSynth (YM2612/Genesis FM with 4 operators and 8 algorithms) |
+| **EPiano** | EPianoSynth (Rhodes and Wurlitzer models) |
+| **Sampler/Slicer** | SamplerSlicer (REX-style slicing with pad triggering) |
 | **Physical** | PhysicalModeling (Karplus-Strong), KarplusStrongEnhanced (body resonance) |
 | **Sample-based** | SampleSynth (velocity layers, round-robin), SamplePlayer |
 | **Specialty** | SpeechSynth (formant/TTS), SupersawSynth (JP-8000), NoiseGenerator (5 colors) |
 | **Modular** | ModularSynth (VCO/VCF/VCA/LFO/ADSR modules with patch cables) |
 | **Pad/Ambient** | PadSynth (Paul Nasca's algorithm) |
 | **Drums** | DrumSynth (808/909 kick, snare, hi-hat, clap) |
-| **Retro** | ChipTuneSynth (NES/GameBoy/C64) |
-| **Other** | WavefolderSynth, SubtractiveSynth, BellSynth, OrganSynth, StringSynth, LeadSynth, BassSynth, PluckSynth |
+| **Other** | WavefolderSynth, SubtractiveSynth, BellSynth, StringSynth, LeadSynth, BassSynth, PluckSynth |
 
 ### Effects (1000+)
 
@@ -171,20 +178,36 @@ Git: https://github.com/watermann420/MusicEngineEditor
 - VCA Faders (linked gain without audio routing)
 - Sidechain Matrix (flexible routing)
 - Mixer Snapshots (A/B comparison, interpolation)
-- Surround Panning (5.1, 7.1, Atmos VBAP)
 - Channel Strip Presets
 
-### Analysis
+### Spatial Audio
+- **3D Positioning**: Place sounds anywhere in 3D space with distance attenuation
+- **Surround Panner**: 5.1/7.1/Atmos VBAP panning with visual speaker layout
+- **Binaural Renderer**: HRTF-based 3D audio with multiple profiles (KEMAR, CIPIC, custom)
+- **Ambisonics**: 1st-3rd order encoding/decoding with rotation controls (yaw, pitch, roll)
+- Room simulation with size, damping, and near-field compensation
+
+### Session View / Clip Launcher
+- 8x8 grid for Ableton-style clip launching
+- Scene triggers for row-based playback
+- Visual clip states (empty, loaded, playing, queued)
+- Drag-and-drop clip arrangement
+
+### Analysis Tools
 - Spectrum Analyzer (31-band FFT)
 - Correlation Meter, Goniometer
 - True Peak (ITU-R BS.1770)
 - Loudness Meter (LUFS integrated/short-term/momentary)
-- Tempo/Transient/Chord/Key Detection
 - Spectrogram 3D (waterfall display)
 - Mix Radar Analyzer, Phase Analyzer
 - Audio-to-MIDI, Drum-to-MIDI
 - Spectral Editor (FFT-based frequency editing)
 - Polyphonic Pitch Edit (Melodyne DNA-style)
+- **Guitar Tuner**: Pitch detection with strobe mode and tuning presets
+- **Chord Detector**: Real-time chord recognition with Roman numeral analysis
+- **Key Detector**: Circle of fifths display with chromagram and mode detection
+- **Tempo Detector**: BPM detection with tap tempo and beat grid
+- **Loop Finder**: Automatic loop point detection with similarity scoring
 
 ### AI/ML Features
 - **AIDenoiser** - Neural network noise reduction
@@ -197,11 +220,13 @@ Git: https://github.com/watermann420/MusicEngineEditor
 - **AutoTune** - Real-time pitch correction
 - **RoomCorrection** - Acoustic measurement/correction
 
-### Network & Collaboration
-- **LinkSync** - Ableton Link-style tempo sync (UDP multicast)
-- **NetworkMIDI** - RTP-MIDI style with peer discovery
-- **CloudStorage** - Provider abstraction, auto-sync, offline queue
-- **Collaboration** - Real-time multi-user editing with OT algorithm
+### Network/Sync
+- **Ableton Link**: Tempo sync with peer discovery and visual metronome
+- **OSC Control**: Configurable OSC server with message mapping and learn mode
+- **Network MIDI**: RTP-MIDI with Bonjour/mDNS discovery and session management
+- **Machine Control (MMC/MTC)**: MIDI Machine Control and MIDI Time Code support
+- **CloudStorage**: Provider abstraction, auto-sync, offline queue
+- **Collaboration**: Real-time multi-user editing with OT algorithm
 
 ### Project Management
 - TempoTrack, TimeSignatureTrack
