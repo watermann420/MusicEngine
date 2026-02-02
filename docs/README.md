@@ -8,7 +8,6 @@
 ![C#](https://img.shields.io/badge/language-C%23-blue)
 ![.NET](https://img.shields.io/badge/.NET-10.0-purple)
 ![Status](https://img.shields.io/badge/status-Work_in_Progress-orange)
-[![Join Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord&logoColor=white)](https://discord.gg/tWkqHMsB6a)
 ![Effects](https://img.shields.io/badge/effects-1000+-blue)
 ![Synths](https://img.shields.io/badge/synthesizers-45+-blue)
 
@@ -17,7 +16,7 @@
 
 ##Music Engine & Editor – Technical Preview
 https://youtu.be/t9kZqpMVdsQ
-
+[![Join Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord&logoColor=white)](https://discord.gg/tWkqHMsB6a)
 
 ## Project Status (January 2026)
 
