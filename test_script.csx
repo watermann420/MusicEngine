@@ -12,7 +12,7 @@ var synth = CreateSynth();
 var piano = CreateGeneralMidi();
 
 
-// Optional GM settings (same style wie synth.*)
+// Optional GM settings
 piano.Volume = 0.8f;
 piano.Pan = 0f;
 piano.Reverb = 0f;
