@@ -46,7 +46,7 @@
           "dependencies": {
             "Microsoft.CodeAnalysis.CSharp.Scripting": {
               "target": "Package",
-              "version": "[5.0.0, )"
+              "version": "[4.12.0, )"
             },
             "Microsoft.CodeAnalysis.NetAnalyzers": {
               "target": "Package",
