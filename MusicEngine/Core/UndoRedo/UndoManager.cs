@@ -277,6 +277,20 @@ public class UndoManager
     }
 
     /// <summary>
+    /// Clears only the redo stack, keeping undo history intact.
+    /// Useful for compacting history or branching from current state.
+    /// </summary>
+    public void ClearRedoStack()
+    {
+        lock (_lock)
+        {
+            _redoStack.Clear();
+        }
+
+        StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
     /// Gets a list of undo command descriptions (most recent first).
     /// </summary>
     public IReadOnlyList<string> GetUndoHistory()
