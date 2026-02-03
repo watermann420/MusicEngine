@@ -188,32 +188,7 @@ Git: https://github.com/watermann420/MusicEngineEditor
 - Visual clip states (empty, loaded, playing, queued)
 - Drag-and-drop clip arrangement
 
-### Analysis Tools
-- Spectrum Analyzer (31-band FFT)
-- Correlation Meter, Goniometer
-- True Peak (ITU-R BS.1770)
-- Loudness Meter (LUFS integrated/short-term/momentary)
-- Spectrogram 3D (waterfall display)
-- Mix Radar Analyzer, Phase Analyzer
-- Audio-to-MIDI, Drum-to-MIDI
-- Spectral Editor (FFT-based frequency editing)
-- Polyphonic Pitch Edit (Melodyne DNA-style)
-- **Guitar Tuner**: Pitch detection with strobe mode and tuning presets
-- **Chord Detector**: Real-time chord recognition with Roman numeral analysis
-- **Key Detector**: Circle of fifths display with chromagram and mode detection
-- **Tempo Detector**: BPM detection with tap tempo and beat grid
-- **Loop Finder**: Automatic loop point detection with similarity scoring
 
-### AI/ML Features
-- **AIDenoiser** - Neural network noise reduction
-- **AIDeclip** - ML-based clipping restoration
-- **ChordSuggestion** - AI chord suggestions
-- **MelodyGenerator** - AI melody completion
-- **MixAssistant** - Auto EQ, compression suggestions
-- **MasteringAssistant** - One-click AI mastering
-- **StemSeparation** - AI-based source separation
-- **AutoTune** - Real-time pitch correction
-- **RoomCorrection** - Acoustic measurement/correction
 
 ### Network/Sync
 - **Ableton Link**: Tempo sync with peer discovery and visual metronome
