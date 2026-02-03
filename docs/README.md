@@ -75,7 +75,6 @@ MusicEngine provides a complete audio production framework with:
 - Pattern-based sequencing with Arrangement, AudioClip, MidiClip support
 - Advanced MIDI features: MPE, MIDI 2.0, Expression Maps, Modulation Matrix
 - **Audio routing system** with Send/Return buses, VCA faders, Surround (5.1/7.1/Atmos)
-- **AI/ML Features**: Neural denoising, declipping, mix assistant, mastering assistant, stem separation
 - Multi-format export (WAV, MP3, FLAC, OGG, AIFF, BWF, OMF, AAF)
 - Network features: Ableton Link sync, Network MIDI, Cloud Storage, Real-time Collaboration
 - C# scripting via Roslyn for live coding
@@ -83,13 +82,7 @@ MusicEngine provides a complete audio production framework with:
 
 ## The Music Engine Editor
 
-A complete WPF desktop application with 215+ features including:
-- Arrangement View with Audio/MIDI clips, markers, regions
-- Piano Roll with MIDI CC lanes, velocity colors, triplet/dotted grid
-- Mixer with VST effects, LUFS loudness metering
-- Analysis visualizers (Spectrum, Goniometer, 3D Spectrogram, Phase Scope)
-- Score Editor, Drum Editor, Event List Editor
-- Command Palette (Ctrl+P), Workspaces, Macro Recorder
+A complete WPF desktop application:
 
 Git: https://github.com/watermann420/MusicEngineEditor
 
