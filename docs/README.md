@@ -705,6 +705,28 @@ If you need an invoice, confirmation, or want to discuss funding or sponsorships
 please contact: musicenginebusiness@gmail.com
 
 Thank you for supporting independent open-source development ❤️
----
 
+---
+## Free & Open Source Commitment
+
+**MusicEngine**, **MusicEditor**, and the **GameEngine** will always remain  
+**free and open source**.
+
+The goal of this project is to build a powerful, accessible ecosystem for music,
+audio, and interactive applications — without locking users behind paywalls.
+
+Donations and sponsorships are used to:
+- support ongoing development and maintenance
+- invest time into improving stability, performance, and documentation
+- purchase instruments, hardware, and sound sources
+- build a high-quality **free sample library**, including:
+- ready-to-use instruments
+- pre-configured settings
+- samples fully integrated into MusicEngine
+
+All core tools and assets created through this effort will remain freely available
+to the community.
+
+This project is driven by openness, long-term sustainability, and shared creativity.
+---
 **Music Engine** - Created by Watermann420 and Contributors
