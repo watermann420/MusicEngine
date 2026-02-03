@@ -1,0 +1,2 @@
+# This directory holds the native MusicEngine.VstBridge.Native.dll for x64
+# The DLL is built by CMake and copied here during build

@@ -16,6 +16,7 @@
           "Microsoft.Extensions.Logging": "9.0.0",
           "Microsoft.Extensions.Options": "9.0.0",
           "Microsoft.Extensions.Options.ConfigurationExtensions": "9.0.0",
+          "MusicEngine.VstBridge": "1.0.0",
           "NAudio": "2.2.1",
           "NAudio.Asio": "2.2.1",
           "NAudio.Midi": "2.2.1",
@@ -555,6 +556,14 @@
             "fileVersion": "6.0.0.0"
           }
         }
+      },
+      "MusicEngine.VstBridge/1.0.0": {
+        "runtime": {
+          "MusicEngine.VstBridge.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
       }
     }
   },
@@ -787,6 +796,11 @@
       "sha512": "sha512-lxjg89Y8gJMmFxVkbZ+qDgjl+T4yC5F7WSLTvA+5q0R04tfKVLRL/EHpYoJ/MEQd2EeCKDuylBIVnAYMotmh2A==",
       "path": "serilog.sinks.file/6.0.0",
       "hashPath": "serilog.sinks.file.6.0.0.nupkg.sha512"
+    },
+    "MusicEngine.VstBridge/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
     }
   }
 }

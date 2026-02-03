@@ -16,6 +16,7 @@ using MusicEngine.Core.Events;
 using MusicEngine.Core.Progress;
 using MusicEngine.Core.Vst.Vst3.Interfaces;
 using MusicEngine.Core.Vst.Vst3.Structures;
+using MusicEngine.VstBridge;
 using NAudio.Wave;
 
 
@@ -38,12 +39,57 @@ public class VstHost : IDisposable
     // Logging
     private readonly ILogger? _logger;
 
+    // Native VST bridge (optional)
+    private NativeVstHost? _nativeHost;
+    private bool _preferNative = true;
+
+    /// <summary>
+    /// Gets whether the native VST bridge is available.
+    /// </summary>
+    public static bool IsNativeBridgeAvailable => NativeVstHost.IsNativeLibraryAvailable;
+
+    /// <summary>
+    /// Gets or sets whether to prefer native plugin loading over managed.
+    /// Default: true (use native when available).
+    /// </summary>
+    public bool PreferNativeLoading
+    {
+        get => _preferNative;
+        set => _preferNative = value;
+    }
+
+    /// <summary>
+    /// Gets information about the native VST bridge capabilities.
+    /// </summary>
+    public VstBridgeInfo? NativeBridgeInfo => IsNativeBridgeAvailable ? VstHostFactory.GetInfo() : null;
+
     /// <summary>
     /// Creates a new VstHost with logging support.
     /// </summary>
     public VstHost(ILogger? logger = null)
     {
         _logger = logger;
+
+        // Try to initialize native host
+        if (IsNativeBridgeAvailable && _preferNative)
+        {
+            try
+            {
+                _nativeHost = VstHostFactory.CreateHost(Settings.SampleRate, Settings.VstBufferSize);
+                if (_nativeHost != null)
+                {
+                    _logger?.LogInformation("Native VST bridge initialized: {Version}, VST2={Vst2}, VST3={Vst3}",
+                        NativeVstHost.NativeVersion,
+                        NativeVstHost.HasVst2Support,
+                        NativeVstHost.HasVst3Support);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Failed to initialize native VST bridge, falling back to managed");
+                _nativeHost = null;
+            }
+        }
     }
 
     // P/Invoke for VST3 plugin loading
@@ -872,6 +918,7 @@ public class VstHost : IDisposable
 
     /// <summary>
     /// Load a VST2 plugin from its info.
+    /// Tries native bridge first if available, falls back to managed implementation.
     /// </summary>
     private IVstPlugin? LoadVst2Plugin(VstPluginInfo info)
     {
@@ -883,10 +930,37 @@ public class VstHost : IDisposable
                 return existing;
             }
 
-            var plugin = new VstPlugin(info);
+            IVstPlugin? plugin = null;
+
+            // Try native loading first if available
+            if (_preferNative && _nativeHost != null && NativeVstHost.HasVst2Support)
+            {
+                try
+                {
+                    var nativePlugin = _nativeHost.LoadPlugin(info.Path);
+                    if (nativePlugin != null)
+                    {
+                        plugin = new NativeVstPluginAdapter(nativePlugin, info.Path, Settings.SampleRate);
+                        _logger?.LogInformation("Loaded VST2 plugin via native bridge: {Name} ({Type})",
+                            info.Name, info.IsInstrument ? "Instrument" : "Effect");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogWarning(ex, "Native loading failed for '{Name}', falling back to managed", info.Name);
+                }
+            }
+
+            // Fallback to managed implementation
+            if (plugin == null)
+            {
+                plugin = new VstPlugin(info);
+                _logger?.LogInformation("Loaded VST2 plugin via managed: {Name} ({Type})",
+                    info.Name, info.IsInstrument ? "Instrument" : "Effect");
+            }
+
             info.IsLoaded = true;
             _loadedPlugins[info.Name] = plugin;
-            _logger?.LogInformation("Loaded VST2 plugin: {Name} ({Type})", info.Name, info.IsInstrument ? "Instrument" : "Effect");
             return plugin;
         }
         catch (Exception ex)
@@ -898,6 +972,7 @@ public class VstHost : IDisposable
 
     /// <summary>
     /// Load a VST3 plugin from its info.
+    /// Tries native bridge first if available, falls back to managed implementation.
     /// Creates a Vst3Plugin instance with full VST3 support including
     /// audio processing, parameter management, and GUI support.
     /// </summary>
@@ -916,11 +991,37 @@ public class VstHost : IDisposable
                 ? info.ResolvedPath
                 : info.Path;
 
-            // Create a proper Vst3Plugin instance for full VST3 support
-            var plugin = new Vst3Plugin(pluginPath);
+            IVstPlugin? plugin = null;
+
+            // Try native loading first if available
+            if (_preferNative && _nativeHost != null && NativeVstHost.HasVst3Support)
+            {
+                try
+                {
+                    var nativePlugin = _nativeHost.LoadPlugin(pluginPath);
+                    if (nativePlugin != null)
+                    {
+                        plugin = new NativeVstPluginAdapter(nativePlugin, pluginPath, Settings.SampleRate);
+                        _logger?.LogInformation("Loaded VST3 plugin via native bridge: {Name} ({Type})",
+                            info.Name, info.IsInstrument ? "Instrument" : "Effect");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogWarning(ex, "Native loading failed for '{Name}', falling back to managed", info.Name);
+                }
+            }
+
+            // Fallback to managed implementation
+            if (plugin == null)
+            {
+                plugin = new Vst3Plugin(pluginPath);
+                _logger?.LogInformation("Loaded VST3 plugin via managed: {Name} ({Type})",
+                    info.Name, info.IsInstrument ? "Instrument" : "Effect");
+            }
+
             info.IsLoaded = true;
             _loadedPlugins[info.Name] = plugin;
-            _logger?.LogInformation("Loaded VST3 plugin: {Name} ({Type})", info.Name, info.IsInstrument ? "Instrument" : "Effect");
             return plugin;
         }
         catch (Exception ex)
@@ -1537,6 +1638,10 @@ public class VstHost : IDisposable
             _loadedPlugins.Clear();
             _discoveredPlugins.Clear();
             _discoveredVst3Plugins.Clear();
+
+            // Dispose native host
+            _nativeHost?.Dispose();
+            _nativeHost = null;
         }
 
         GC.SuppressFinalize(this);

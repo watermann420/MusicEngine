@@ -1,0 +1,14 @@
+C:\Users\null\RiderProjects\MusicEngine\MusicEngine.VstBridge\managed\bin\Debug\net10.0-windows\MusicEngine.VstBridge.deps.json
+C:\Users\null\RiderProjects\MusicEngine\MusicEngine.VstBridge\managed\bin\Debug\net10.0-windows\MusicEngine.VstBridge.dll
+C:\Users\null\RiderProjects\MusicEngine\MusicEngine.VstBridge\managed\bin\Debug\net10.0-windows\MusicEngine.VstBridge.pdb
+C:\Users\null\RiderProjects\MusicEngine\MusicEngine.VstBridge\managed\bin\Debug\net10.0-windows\MusicEngine.VstBridge.xml
+C:\Users\null\RiderProjects\MusicEngine\MusicEngine.VstBridge\managed\obj\Debug\net10.0-windows\MusicEngine.VstBridge.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\null\RiderProjects\MusicEngine\MusicEngine.VstBridge\managed\obj\Debug\net10.0-windows\MusicEngine.VstBridge.AssemblyInfoInputs.cache
+C:\Users\null\RiderProjects\MusicEngine\MusicEngine.VstBridge\managed\obj\Debug\net10.0-windows\MusicEngine.VstBridge.AssemblyInfo.cs
+C:\Users\null\RiderProjects\MusicEngine\MusicEngine.VstBridge\managed\obj\Debug\net10.0-windows\MusicEngine.VstBridge.csproj.CoreCompileInputs.cache
+C:\Users\null\RiderProjects\MusicEngine\MusicEngine.VstBridge\managed\obj\Debug\net10.0-windows\MusicEngine.VstBridge.sourcelink.json
+C:\Users\null\RiderProjects\MusicEngine\MusicEngine.VstBridge\managed\obj\Debug\net10.0-windows\MusicEngine.VstBridge.dll
+C:\Users\null\RiderProjects\MusicEngine\MusicEngine.VstBridge\managed\obj\Debug\net10.0-windows\refint\MusicEngine.VstBridge.dll
+C:\Users\null\RiderProjects\MusicEngine\MusicEngine.VstBridge\managed\obj\Debug\net10.0-windows\MusicEngine.VstBridge.xml
+C:\Users\null\RiderProjects\MusicEngine\MusicEngine.VstBridge\managed\obj\Debug\net10.0-windows\MusicEngine.VstBridge.pdb
+C:\Users\null\RiderProjects\MusicEngine\MusicEngine.VstBridge\managed\obj\Debug\net10.0-windows\ref\MusicEngine.VstBridge.dll

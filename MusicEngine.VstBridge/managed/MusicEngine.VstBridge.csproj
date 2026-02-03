@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>13</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <!-- Package metadata -->
+    <PackageId>MusicEngine.VstBridge</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>MusicEngine</Authors>
+    <Description>Native VST2/VST3 host bridge for MusicEngine with P/Invoke wrapper</Description>
+    <PackageTags>vst;vst2;vst3;audio;music;daw;plugin</PackageTags>
+
+    <!-- Build settings -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <!-- Native library inclusion -->
+  <ItemGroup>
+    <None Include="runtimes\win-x64\native\*.dll" Pack="true" PackagePath="runtimes\win-x64\native" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="runtimes\win-x86\native\*.dll" Pack="true" PackagePath="runtimes\win-x86\native" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

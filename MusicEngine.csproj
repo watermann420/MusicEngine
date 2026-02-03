@@ -13,10 +13,13 @@
         <InternalsVisibleTo Include="MusicEngine.Tests" />
     </ItemGroup>
 
-    <!-- Exclude test project from main compilation -->
+    <!-- Exclude test project and VstBridge source from main compilation -->
     <ItemGroup>
         <Compile Remove="MusicEngine.Tests\**" />
         <None Remove="MusicEngine.Tests\**" />
+        <Compile Remove="MusicEngine.VstBridge\**" />
+        <None Remove="MusicEngine.VstBridge\**" />
+        <EmbeddedResource Remove="MusicEngine.VstBridge\**" />
     </ItemGroup>
 
     <ItemGroup>
@@ -74,5 +77,9 @@
       </None>
     </ItemGroup>
 
+    <!-- Native VST Bridge (optional - fallback to managed if not available) -->
+    <ItemGroup>
+      <ProjectReference Include="MusicEngine.VstBridge\managed\MusicEngine.VstBridge.csproj" />
+    </ItemGroup>
 
 </Project>
