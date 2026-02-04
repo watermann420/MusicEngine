@@ -1,7 +1,6 @@
 # MusicEngine Funding Configuration
-# Work in progress – currently only contact email available
-<iframe src="https://github.com/sponsors/watermann420/button" title="Sponsor watermann420" height="32" width="114" style="border: 0; border-radius: 6px;"></iframe>
+
 github: watermann420
+
 custom:
-  - name: "Contact for Funding"
-    url: "mailto:musicenginebusiness@gmail.com"
+  - https://github.com/watermann420/MusicEngine#donations
