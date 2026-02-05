@@ -3,9 +3,9 @@
 
 cmake_minimum_required(VERSION 3.20)
 
-project(MusicEngine.VstBridge.Native
+project(NativeAudioLayer
     VERSION 1.0.0
-    DESCRIPTION "Native VST2/VST3 host bridge for MusicEngine"
+    DESCRIPTION "Native C++ audio layer for MusicEngine (VST2/VST3 host bridge)"
     LANGUAGES CXX
 )
 
@@ -147,7 +147,7 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
 
 # Rename output to match C# expectations
 set_target_properties(${PROJECT_NAME} PROPERTIES
-    OUTPUT_NAME "MusicEngine.VstBridge.Native"
+    OUTPUT_NAME "NativeAudioLayer"
 )
 
 # Debug postfix
@@ -195,7 +195,7 @@ add_custom_command(TARGET ${PROJECT_NAME} PRE_BUILD
 # =============================================================================
 
 message(STATUS "")
-message(STATUS "MusicEngine.VstBridge.Native Configuration:")
+message(STATUS "NativeAudioLayer Configuration:")
 message(STATUS "  Version:      ${PROJECT_VERSION}")
 message(STATUS "  VST2 Support: ${VSTBRIDGE_BUILD_VST2}")
 message(STATUS "  VST3 Support: ${VSTBRIDGE_BUILD_VST3}")

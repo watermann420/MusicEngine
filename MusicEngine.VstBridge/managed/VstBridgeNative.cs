@@ -7,7 +7,7 @@ namespace MusicEngine.VstBridge;
 /// </summary>
 internal static class VstBridgeNative
 {
-    private const string DllName = "MusicEngine.VstBridge.Native";
+    private const string DllName = "NativeAudioLayer";
 
     #region Error Codes
 

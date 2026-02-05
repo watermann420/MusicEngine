@@ -73,8 +73,8 @@ public sealed class NativeVstHost : IDisposable
         if (!IsNativeLibraryAvailable)
         {
             throw new InvalidOperationException(
-                "Native VST Bridge library is not available. " +
-                "Ensure MusicEngine.VstBridge.Native.dll is in the application directory.");
+                "Native Audio Layer library is not available. " +
+                "Ensure NativeAudioLayer.dll is in the application directory.");
         }
 
         _handle = VstBridgeNative.Create(sampleRate, blockSize);
