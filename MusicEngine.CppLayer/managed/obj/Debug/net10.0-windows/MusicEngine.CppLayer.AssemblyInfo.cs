@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("MusicEngine.CppLayer")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+4e9c293d83b975a4c6250341024608321524823b")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+869a4fa2df73dd8eb75b5df3a49038877c13fc3f")]
 [assembly: System.Reflection.AssemblyProductAttribute("MusicEngine.CppLayer")]
 [assembly: System.Reflection.AssemblyTitleAttribute("MusicEngine.CppLayer")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
