@@ -553,7 +553,9 @@ public class LV2Host : IDisposable
     public event Action<float, string>? ScanProgress;
 
     /// <summary>Event raised when a plugin is discovered.</summary>
+#pragma warning disable CS0067 // Event reserved for future LV2 plugin discovery
     public event Action<LV2PluginInfo>? PluginDiscovered;
+#pragma warning restore CS0067
 
     /// <summary>
     /// Creates a new LV2 host.

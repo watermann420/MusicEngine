@@ -315,6 +315,133 @@ public class ScriptGlobals
 
     public RandomControl random => new RandomControl();
 
+    // === Step Sequencer Pattern Creation ===
+
+    /// <summary>
+    /// Creates a pattern with step sequencer notation using the default synth.
+    /// Example: steps("x...x...").Play();
+    /// </summary>
+    public Pattern steps(string notation) => CreatePattern().Steps(notation);
+
+    /// <summary>
+    /// Creates a pattern with step notation for a specific pitch.
+    /// Example: steps("x...x...", 36).Play(); // Kick drum
+    /// </summary>
+    public Pattern steps(string stepsStr, int pitch) => CreatePattern().Steps(stepsStr, pitch);
+
+    /// <summary>
+    /// Creates a pattern with step notation for a specific note name.
+    /// Example: steps("x...x...", "C4").Play();
+    /// </summary>
+    public Pattern steps(string stepsStr, string noteName) => CreatePattern().Steps(stepsStr, noteName);
+
+    /// <summary>
+    /// Creates a pattern with step notation using a specific synth.
+    /// Example: steps(mySynth, "x...x...").Play();
+    /// </summary>
+    public Pattern steps(ISynth synth, string notation) => CreatePattern(synth).Steps(notation);
+
+    /// <summary>
+    /// Creates a pattern with step notation for a specific pitch and synth.
+    /// Example: steps(drums, "x...x...", 36).Play();
+    /// </summary>
+    public Pattern steps(ISynth synth, string stepsStr, int pitch) => CreatePattern(synth).Steps(stepsStr, pitch);
+
+    /// <summary>
+    /// Creates a pattern with step notation for a specific note name and synth.
+    /// Example: steps(lead, "x...x...", "C4").Play();
+    /// </summary>
+    public Pattern steps(ISynth synth, string stepsStr, string noteName) => CreatePattern(synth).Steps(stepsStr, noteName);
+
+    /// <summary>
+    /// Creates a drum machine style pattern with multiple tracks.
+    /// Each entry maps a pitch to a step pattern.
+    /// Example:
+    /// <code>
+    /// drums(36, "x...x...x...x...",   // Kick
+    ///       38, "....x.......x...",   // Snare
+    ///       42, "x.x.x.x.x.x.x.x.")   // Hi-Hat
+    ///     .Play();
+    /// </code>
+    /// </summary>
+    public Pattern drums(params object[] args)
+    {
+        var p = CreatePattern();
+        for (int i = 0; i < args.Length - 1; i += 2)
+        {
+            if (args[i] is int pitch && args[i + 1] is string stepsStr)
+            {
+                p.Steps(stepsStr, pitch);
+            }
+            else if (args[i] is string noteName && args[i + 1] is string stepsStr2)
+            {
+                p.Steps(stepsStr2, noteName);
+            }
+        }
+        return p;
+    }
+
+    /// <summary>
+    /// Creates a drum machine style pattern with a specific synth.
+    /// </summary>
+    public Pattern drums(ISynth synth, params object[] args)
+    {
+        var p = CreatePattern(synth);
+        for (int i = 0; i < args.Length - 1; i += 2)
+        {
+            if (args[i] is int pitch && args[i + 1] is string stepsStr)
+            {
+                p.Steps(stepsStr, pitch);
+            }
+            else if (args[i] is string noteName && args[i + 1] is string stepsStr2)
+            {
+                p.Steps(stepsStr2, noteName);
+            }
+        }
+        return p;
+    }
+
+    /// <summary>Alias for drums - creates a beat pattern</summary>
+    public Pattern beat(params object[] args) => drums(args);
+    /// <summary>Alias for drums - creates a beat pattern</summary>
+    public Pattern beat(ISynth synth, params object[] args) => drums(synth, args);
+
+    /// <summary>
+    /// Creates a melodic sequence with step notation.
+    /// Each line represents a different pitch.
+    /// Example:
+    /// <code>
+    /// sequence(@"
+    ///     C4 | x x x x |
+    ///     E4 | x x x x |
+    ///     G4 | x x x x |
+    /// ").Play();
+    /// </code>
+    /// </summary>
+    public Pattern sequence(string notation) => CreatePattern().Steps(notation);
+
+    /// <summary>Creates a melodic sequence with a specific synth</summary>
+    public Pattern sequence(ISynth synth, string notation) => CreatePattern(synth).Steps(notation);
+
+    /// <summary>Short alias for sequence</summary>
+    public Pattern seq(string notation) => sequence(notation);
+    /// <summary>Short alias for sequence</summary>
+    public Pattern seq(ISynth synth, string notation) => sequence(synth, notation);
+
+    // === Punchcard Visualization ===
+
+    /// <summary>
+    /// Shows a pattern in the punchcard visualization (Strudel-style timeline).
+    /// Example: showPunchcard(myPattern);
+    /// </summary>
+    public void showPunchcard(Pattern p) => p.Punchcard();
+
+    /// <summary>
+    /// Shows a pattern in the punchcard visualization with a track name.
+    /// Example: showPunchcard(myPattern, "Lead");
+    /// </summary>
+    public void showPunchcard(Pattern p, string trackName) => p.Punchcard(trackName);
+
     // Routes MIDI input from a device to a synthesizer
     public void RouteMidi(int deviceIndex, ISynth synth)
     {

@@ -211,7 +211,9 @@ public class OrganSynth : ISynth
     private double _hornSpeed;
     private double _targetHornSpeed;
     private readonly double[] _delayBuffer;
+#pragma warning disable CS0169 // Reserved for future delay buffer implementation
     private int _delayIndex;
+#pragma warning restore CS0169
 
     /// <summary>Gets or sets the synth name.</summary>
     public string Name { get; set; } = "OrganSynth";

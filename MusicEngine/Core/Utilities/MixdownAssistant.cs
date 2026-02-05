@@ -471,7 +471,9 @@ public class MixdownAssistant
     /// <summary>
     /// Event raised when mix analysis is updated.
     /// </summary>
+#pragma warning disable CS0067 // Event reserved for future mix analysis notification
     public event EventHandler<MixAnalysisReport>? AnalysisUpdated;
+#pragma warning restore CS0067
 
     /// <summary>
     /// Creates a new mixdown assistant.

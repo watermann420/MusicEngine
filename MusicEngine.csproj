@@ -59,10 +59,7 @@
       <PackageReference Include="Serilog.Enrichers.Thread" Version="4.0.0" />
     </ItemGroup>
 
-    <!-- Code Quality -->
-    <ItemGroup>
-      <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="8.0.0" />
-    </ItemGroup>
+    <!-- Code Quality (.NET 10 SDK includes built-in analyzers) -->
     <PropertyGroup>
       <EnableNETAnalyzers>true</EnableNETAnalyzers>
       <AnalysisLevel>latest</AnalysisLevel>
@@ -80,7 +77,7 @@
       <ProjectReference Include="MusicEngine.CppLayer\managed\MusicEngine.CppLayer.csproj" />
     </ItemGroup>
 
-    <Target Name="CopyNativeVstBridge" AfterTargets="Build">
+    <Target Name="CopyNativeCppLayer" AfterTargets="Build">
       <PropertyGroup>
         <NativeBridgeDll>$(MSBuildProjectDirectory)\MusicEngine.CppLayer\native\x64\$(Configuration)\MusicEngine.CppLayer.Native.dll</NativeBridgeDll>
       </PropertyGroup>

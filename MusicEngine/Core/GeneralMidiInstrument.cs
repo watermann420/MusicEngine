@@ -191,7 +191,9 @@ public class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
     private float _reverb;
     private float _chorus;
     private float _modWheel;
+#pragma warning disable CS0169 // Reserved for future pitch bend tracking
     private float _pitchBend;
+#pragma warning restore CS0169
     private GeneralMidiProgram _program;
     private readonly SignalGenerator _signalGenerator; // Dummy signal for ISampleProvider
     private float _volume = 1.0f;
@@ -227,13 +229,13 @@ public class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
                 if (midiDeviceCount == 0)
                 {
                     Console.WriteLine("+----------------------------------------------------------------+");
-                    Console.WriteLine("¦  WARNING: No MIDI device found!                                ¦");
-                    Console.WriteLine("¦  General MIDI instruments will be muted.                       ¦");
-                    Console.WriteLine("¦                                                                ¦");
-                    Console.WriteLine("¦  Possible solutions:                                           ¦");
-                    Console.WriteLine("¦  1. Install Windows MIDI Synthesizer                           ¦");
-                    Console.WriteLine("¦  2. Install virtual MIDI device (e.g. VirtualMIDISynth)        ¦");
-                    Console.WriteLine("¦  3. Configure FL Studio MIDI output                            ¦");
+                    Console.WriteLine("ï¿½  WARNING: No MIDI device found!                                ï¿½");
+                    Console.WriteLine("ï¿½  General MIDI instruments will be muted.                       ï¿½");
+                    Console.WriteLine("ï¿½                                                                ï¿½");
+                    Console.WriteLine("ï¿½  Possible solutions:                                           ï¿½");
+                    Console.WriteLine("ï¿½  1. Install Windows MIDI Synthesizer                           ï¿½");
+                    Console.WriteLine("ï¿½  2. Install virtual MIDI device (e.g. VirtualMIDISynth)        ï¿½");
+                    Console.WriteLine("ï¿½  3. Configure FL Studio MIDI output                            ï¿½");
                     Console.WriteLine("+----------------------------------------------------------------+");
                     _midiAvailable = false;
                     _midiOut = null;
@@ -298,8 +300,8 @@ public class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
                     if (!_midiAvailable)
                     {
                         Console.WriteLine("+----------------------------------------------------------------+");
-                        Console.WriteLine("¦  ERROR: Could not open any MIDI device (all allocated).        ¦");
-                        Console.WriteLine("¦  Close other apps using MIDI Out and reload.                   ¦");
+                        Console.WriteLine("ï¿½  ERROR: Could not open any MIDI device (all allocated).        ï¿½");
+                        Console.WriteLine("ï¿½  Close other apps using MIDI Out and reload.                   ï¿½");
                         Console.WriteLine("+----------------------------------------------------------------+");
                     }
                 }
@@ -315,10 +317,10 @@ public class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
         catch (Exception ex)
         {
             Console.WriteLine("+----------------------------------------------------------------+");
-            Console.WriteLine("¦  ERROR: Could not open MIDI device!                            ¦");
-            Console.WriteLine($"¦  {ex.Message.PadRight(62)} ¦");
-            Console.WriteLine("¦                                                                ¦");
-            Console.WriteLine("¦  General MIDI instruments will be muted.                       ¦");
+            Console.WriteLine("ï¿½  ERROR: Could not open MIDI device!                            ï¿½");
+            Console.WriteLine($"ï¿½  {ex.Message.PadRight(62)} ï¿½");
+            Console.WriteLine("ï¿½                                                                ï¿½");
+            Console.WriteLine("ï¿½  General MIDI instruments will be muted.                       ï¿½");
             Console.WriteLine("+----------------------------------------------------------------+");
             _midiAvailable = false;
             _midiOut = null;

@@ -47,7 +47,9 @@ public class BreathRemoval : EffectBase
     // Analysis buffers
     private readonly int _analysisWindowSize;
     private readonly float[] _analysisBuffer;
+#pragma warning disable CS0414 // Assigned but not yet read - reserved for future breath analysis
     private int _analysisBufferPos;
+#pragma warning restore CS0414
 
     // Envelope followers
     private float[] _lowEnvelope;
@@ -60,8 +62,10 @@ public class BreathRemoval : EffectBase
     private bool[] _breathActive;
 
     // FFT for spectral analysis (simplified band-pass approach)
+#pragma warning disable CS0414 // Assigned but not yet read - reserved for future spectral analysis
     private readonly float _lowCutoff;
     private readonly float _highCutoff;
+#pragma warning restore CS0414
 
     // Filter states for band-pass
     private float[][] _lowPassState;

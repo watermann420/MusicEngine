@@ -111,7 +111,9 @@ public class Reamper : ISampleProvider, ILatencyReporter, IDisposable
 
     // Effect chain
     private readonly List<IEffect> _effectChain = new();
+#pragma warning disable CS0414 // Assigned but not yet read - reserved for future effect chain output
     private ISampleProvider? _chainOutput;
+#pragma warning restore CS0414
 
     // Gain parameters
     private float _inputGainDb = 0f;
@@ -336,7 +338,9 @@ public class Reamper : ISampleProvider, ILatencyReporter, IDisposable
     /// <summary>
     /// Event raised when the latency of this component changes.
     /// </summary>
+#pragma warning disable CS0067 // Event reserved for future latency change notification
     public event EventHandler<LatencyChangedEventArgs>? LatencyChanged;
+#pragma warning restore CS0067
 
     /// <summary>
     /// Gets or sets whether the reamper is bypassed (passes DI unchanged).

@@ -488,7 +488,9 @@ public class AUv3Host : IDisposable
     public event Action<float, string>? ScanProgress;
 
     /// <summary>Event raised when a plugin is discovered.</summary>
+#pragma warning disable CS0067 // Event reserved for future AUv3 plugin discovery
     public event Action<AUPluginInfo>? PluginDiscovered;
+#pragma warning restore CS0067
 
     /// <summary>
     /// Creates a new AUv3 host.

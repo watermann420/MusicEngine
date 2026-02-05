@@ -196,7 +196,9 @@ public class ResampleProcessor : IDisposable
     // Transient detection state
     private float[] _transientBuffer;
     private float[] _envelopeBuffer;
+#pragma warning disable CS0414 // Assigned but not yet read - reserved for future transient detection
     private int _transientBufferPos;
+#pragma warning restore CS0414
 
     // Dithering state
     private readonly Random _ditherRandom = new();

@@ -95,7 +95,9 @@ internal class SIDVoiceState
     // Envelope state
     private double _envelope;
     private int _envStage; // 0=idle, 1=attack, 2=decay, 3=sustain, 4=release
+#pragma warning disable CS0414 // Assigned but not yet read - reserved for future envelope implementation
     private double _envCounter;
+#pragma warning restore CS0414
 
     // Filter state
     private double _filterLow;

@@ -222,7 +222,9 @@ public class PhaseAnalyzer : ISampleProvider
     private readonly int[] _bandSampleCounts;
 
     // Overall accumulators
+#pragma warning disable CS0414 // Assigned but not yet read - reserved for future correlation analysis
     private double _overallCorrelationSum;
+#pragma warning restore CS0414
     private int _overallSampleCount;
     private double _sumLeftRight;
     private double _sumLeftSq;

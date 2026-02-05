@@ -80,13 +80,17 @@ public class AutoTune : EffectBase
     private readonly float[] _synthesisBuffer;
     private readonly int _hopSize;
     private readonly int _windowSize;
+#pragma warning disable CS0169 // Reserved for future PSOLA phase tracking
     private float _psolaPhase;
+#pragma warning restore CS0169
 
     // Formant preservation (simple cepstrum-based)
     private readonly Complex[] _fftBuffer;
     private readonly Complex[] _cepstrumBuffer;
     private readonly int _fftSize;
+#pragma warning disable CS0414 // Assigned but not yet read - reserved for future cepstrum implementation
     private readonly int _lifterCutoff;
+#pragma warning restore CS0414
 
     // Current pitch state
     private float _currentInputPitch;

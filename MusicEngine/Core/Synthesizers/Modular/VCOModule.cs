@@ -12,7 +12,9 @@ namespace MusicEngine.Core.Synthesizers.Modular;
 public class VCOModule : ModuleBase
 {
     private double _phase;
+#pragma warning disable CS0414 // Assigned but not yet read - reserved for future sync implementation
     private double _syncPhase;
+#pragma warning restore CS0414
     private bool _lastSyncState;
 
     // Inputs

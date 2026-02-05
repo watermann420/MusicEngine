@@ -115,7 +115,9 @@ public class PitchCorrector : EffectBase
     // Formant preservation
     private readonly float[] _formantEnvelope;
     private readonly float[] _shiftedEnvelope;
+#pragma warning disable CS0414 // Assigned but not yet read - reserved for future LPC formant estimation
     private readonly int _formantOrder;
+#pragma warning restore CS0414
 
     // Current pitch state
     private float _currentInputPitch;
@@ -130,7 +132,9 @@ public class PitchCorrector : EffectBase
     private float _correctionSpeed = 0.5f; // 0-1 (0 = instant, 1 = slow/natural)
     private float _humanizeAmount = 0f; // 0-1 (preserves natural variation)
     private bool _formantPreserve = true;
+#pragma warning disable CS0414 // Assigned but not yet read - reserved for future dry/wet mix
     private float _mix = 1f;
+#pragma warning restore CS0414
 
     // Valid scale notes cache
     private readonly bool[] _validNotes = new bool[12];

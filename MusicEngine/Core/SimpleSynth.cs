@@ -613,7 +613,9 @@ public class SimpleSynth : ISynth
         private float _targetNote;
 
         // Oscillator phases
+#pragma warning disable CS0169 // Reserved for future per-oscillator phase tracking
         private float _osc1Phase;
+#pragma warning restore CS0169
         private float _osc2Phase;
         private float _subPhase;
 
@@ -705,7 +707,6 @@ public class SimpleSynth : ISynth
             float freq2 = baseFreq * (float)Math.Pow(2, synth.Osc2Octave + synth.Osc2Semi / 12f + synth.Osc2Fine / 1200f);
             float subFreq = baseFreq * 0.5f;
 
-            float signal = 0f;
             float signalL = 0f;
             float signalR = 0f;
 
@@ -862,7 +863,9 @@ public class SimpleSynth : ISynth
             return 0f;
         }
 
+#pragma warning disable CS0169 // Reserved for future PolyBLEP implementation
         private float _lastPhase; // Track for PolyBLEP
+#pragma warning restore CS0169
 
         private float GenerateOsc(WaveType type, float phase, float pulseWidth, Random random, float phaseInc)
         {

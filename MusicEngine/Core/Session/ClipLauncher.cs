@@ -53,7 +53,9 @@ public class ClipLauncher : IDisposable
     private readonly Random _random = new();
     private bool _disposed;
     private double _currentBeat;
+#pragma warning disable CS0414 // Assigned but not yet read - reserved for future quantize logic
     private double _lastQuantizeBeat;
+#pragma warning restore CS0414
 
     /// <summary>Number of tracks (columns) in the grid.</summary>
     public int TrackCount { get; }

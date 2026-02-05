@@ -510,7 +510,9 @@ public class SamplerSlicer : ISynth, ISampleProvider
         private enum EnvelopeState { Attack, Sustain, Release, Idle }
         private EnvelopeState _envState = EnvelopeState.Idle;
         private float _envLevel;
+#pragma warning disable CS0169 // Reserved for future envelope delta calculation
         private float _envDelta;
+#pragma warning restore CS0169
 
         public void Trigger(Slice slice, int velocity)
         {

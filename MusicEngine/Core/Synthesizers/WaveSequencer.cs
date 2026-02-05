@@ -193,7 +193,9 @@ internal class WaveSeqVoice
     // Sequence state
     private int _currentStep;
     private double _stepTime;
+#pragma warning disable CS0169 // Reserved for future step duration tracking
     private double _stepDuration;
+#pragma warning restore CS0169
     private float _currentPosition;
     private float _targetPosition;
     private int _currentSlot;

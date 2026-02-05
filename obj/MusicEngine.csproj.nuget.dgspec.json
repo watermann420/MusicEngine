@@ -1,27 +1,25 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Users\\water\\RiderProjects\\MusicEngine\\MusicEngine.csproj": {}
+    "C:\\Users\\null\\RiderProjects\\MusicEngine\\MusicEngine.csproj": {}
   },
   "projects": {
-    "C:\\Users\\water\\RiderProjects\\MusicEngine\\MusicEngine.CppLayer\\managed\\MusicEngine.CppLayer.csproj": {
+    "C:\\Users\\null\\RiderProjects\\MusicEngine\\MusicEngine.CppLayer\\managed\\MusicEngine.CppLayer.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\water\\RiderProjects\\MusicEngine\\MusicEngine.CppLayer\\managed\\MusicEngine.CppLayer.csproj",
+        "projectUniqueName": "C:\\Users\\null\\RiderProjects\\MusicEngine\\MusicEngine.CppLayer\\managed\\MusicEngine.CppLayer.csproj",
         "projectName": "MusicEngine.CppLayer",
-        "projectPath": "C:\\Users\\water\\RiderProjects\\MusicEngine\\MusicEngine.CppLayer\\managed\\MusicEngine.CppLayer.csproj",
-        "packagesPath": "C:\\Users\\water\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\water\\RiderProjects\\MusicEngine\\MusicEngine.CppLayer\\managed\\obj\\",
+        "projectPath": "C:\\Users\\null\\RiderProjects\\MusicEngine\\MusicEngine.CppLayer\\managed\\MusicEngine.CppLayer.csproj",
+        "packagesPath": "C:\\Users\\null\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\null\\RiderProjects\\MusicEngine\\MusicEngine.CppLayer\\managed\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
-          "C:\\Users\\water\\AppData\\Roaming\\NuGet\\NuGet.Config",
-          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+          "C:\\Users\\null\\AppData\\Roaming\\NuGet\\NuGet.Config"
         ],
         "originalTargetFrameworks": [
           "net10.0-windows"
         ],
         "sources": {
-          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
           "https://api.nuget.org/v3/index.json": {}
         },
         "frameworks": {
@@ -61,7 +59,7 @@
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.102/PortableRuntimeIdentifierGraph.json",
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.101/PortableRuntimeIdentifierGraph.json",
           "packagesToPrune": {
             "Microsoft.CSharp": "(,4.7.32767]",
             "Microsoft.VisualBasic": "(,10.4.32767]",
@@ -339,32 +337,30 @@
         }
       }
     },
-    "C:\\Users\\water\\RiderProjects\\MusicEngine\\MusicEngine.csproj": {
+    "C:\\Users\\null\\RiderProjects\\MusicEngine\\MusicEngine.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\water\\RiderProjects\\MusicEngine\\MusicEngine.csproj",
+        "projectUniqueName": "C:\\Users\\null\\RiderProjects\\MusicEngine\\MusicEngine.csproj",
         "projectName": "MusicEngine",
-        "projectPath": "C:\\Users\\water\\RiderProjects\\MusicEngine\\MusicEngine.csproj",
-        "packagesPath": "C:\\Users\\water\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\water\\RiderProjects\\MusicEngine\\obj\\",
+        "projectPath": "C:\\Users\\null\\RiderProjects\\MusicEngine\\MusicEngine.csproj",
+        "packagesPath": "C:\\Users\\null\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\null\\RiderProjects\\MusicEngine\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
-          "C:\\Users\\water\\AppData\\Roaming\\NuGet\\NuGet.Config",
-          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+          "C:\\Users\\null\\AppData\\Roaming\\NuGet\\NuGet.Config"
         ],
         "originalTargetFrameworks": [
           "net10.0-windows"
         ],
         "sources": {
-          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
           "https://api.nuget.org/v3/index.json": {}
         },
         "frameworks": {
           "net10.0-windows7.0": {
             "targetAlias": "net10.0-windows",
             "projectReferences": {
-              "C:\\Users\\water\\RiderProjects\\MusicEngine\\MusicEngine.CppLayer\\managed\\MusicEngine.CppLayer.csproj": {
-                "projectPath": "C:\\Users\\water\\RiderProjects\\MusicEngine\\MusicEngine.CppLayer\\managed\\MusicEngine.CppLayer.csproj"
+              "C:\\Users\\null\\RiderProjects\\MusicEngine\\MusicEngine.CppLayer\\managed\\MusicEngine.CppLayer.csproj": {
+                "projectPath": "C:\\Users\\null\\RiderProjects\\MusicEngine\\MusicEngine.CppLayer\\managed\\MusicEngine.CppLayer.csproj"
               }
             }
           }
@@ -388,10 +384,6 @@
             "Microsoft.CodeAnalysis.CSharp.Scripting": {
               "target": "Package",
               "version": "[4.12.0, )"
-            },
-            "Microsoft.CodeAnalysis.NetAnalyzers": {
-              "target": "Package",
-              "version": "[8.0.0, )"
             },
             "Microsoft.Extensions.Configuration.Binder": {
               "target": "Package",
@@ -474,7 +466,7 @@
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.102/PortableRuntimeIdentifierGraph.json",
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.101/PortableRuntimeIdentifierGraph.json",
           "packagesToPrune": {
             "Microsoft.CSharp": "(,4.7.32767]",
             "Microsoft.VisualBasic": "(,10.4.32767]",

@@ -34,7 +34,9 @@ public class SequencerModule : ModuleBase
     private readonly ModulePort _triggerOutput;
     private readonly ModulePort _stepOutput;  // Current step as CV (0-1)
 
+#pragma warning disable CS0414 // Assigned but not yet read - reserved for future direction control
     private int _direction = 1;  // 1 = forward, -1 = backward
+#pragma warning restore CS0414
     private bool _pingPongForward = true;
 
     public SequencerModule(int sampleRate = 44100, int bufferSize = 1024)

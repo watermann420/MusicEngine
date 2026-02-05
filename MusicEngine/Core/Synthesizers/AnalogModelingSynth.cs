@@ -63,7 +63,9 @@ internal class AnalogVoice
 
     // Filter state (ladder filter)
     private readonly double[] _filterStages = new double[4];
+#pragma warning disable CS0169 // Reserved for future ladder filter delay implementation
     private double _filterDelay;
+#pragma warning restore CS0169
 
     // Envelope
     private readonly Envelope _ampEnvelope;

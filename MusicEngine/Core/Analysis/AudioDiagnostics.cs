@@ -288,7 +288,9 @@ public class AudioDiagnostics : ISampleProvider
     private readonly TruePeakDetector? _truePeakDetector;
 
     // Phase correlation
+#pragma warning disable CS0414 // Assigned but not yet read - reserved for future phase correlation
     private double _correlationSum;
+#pragma warning restore CS0414
     private double _leftSquaredSum;
     private double _rightSquaredSum;
     private double _leftRightProductSum;

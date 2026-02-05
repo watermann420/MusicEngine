@@ -382,7 +382,9 @@ internal class WaveSeqSynthVoice
     private readonly Envelope _filterEnvelope;
 
     private float _filterState1;
+#pragma warning disable CS0414 // Assigned but not yet read - reserved for future filter implementation
     private float _filterState2;
+#pragma warning restore CS0414
 
     public int Note { get; private set; }
     public int Velocity { get; private set; }

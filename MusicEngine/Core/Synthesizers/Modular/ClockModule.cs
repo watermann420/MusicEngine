@@ -13,7 +13,9 @@ namespace MusicEngine.Core.Synthesizers.Modular;
 public class ClockModule : ModuleBase
 {
     private double _phase;
+#pragma warning disable CS0414 // Assigned but not yet read - reserved for future swing implementation
     private double _swingPhase;
+#pragma warning restore CS0414
     private bool _swingHalf;
     private int[] _divisionCounters;
     private bool[] _divisionStates;
@@ -32,8 +34,10 @@ public class ClockModule : ModuleBase
     private readonly ModulePort _resetOutput;
 
     private bool _lastExtClock;
+#pragma warning disable CS0414 // Assigned but not yet read - reserved for future external clock sync
     private int _extClockCounter;
     private float _measuredTempo;
+#pragma warning restore CS0414
 
     public ClockModule(int sampleRate = 44100, int bufferSize = 1024)
         : base("Clock", sampleRate, bufferSize)

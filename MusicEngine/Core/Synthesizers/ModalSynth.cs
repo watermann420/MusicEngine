@@ -92,7 +92,9 @@ internal class ModalVoice
     // Exciter state
     private double _exciterTime;
     private double _exciterEnvelope;
+#pragma warning disable CS0414 // Assigned but not yet read - reserved for future bowed excitation
     private double _bowPosition;
+#pragma warning restore CS0414
     private double _bowVelocity;
     private double _lastBowOutput;
 
