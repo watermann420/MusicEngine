@@ -18,10 +18,13 @@ public class VstHostTests : IDisposable
 {
     private readonly string _tempDirectory;
     private readonly VstHost _vstHost;
+    private readonly string? _previousSafeModeEnv;
 
     public VstHostTests()
     {
         _tempDirectory = VstTestHelper.CreateTempVstDirectory();
+        _previousSafeModeEnv = Environment.GetEnvironmentVariable("ME_VST_SAFE_MODE");
+        Environment.SetEnvironmentVariable("ME_VST_SAFE_MODE", null);
         _vstHost = new VstHost();
         VstTestHelper.ConfigureTestVstPaths(_tempDirectory);
     }
@@ -29,6 +32,7 @@ public class VstHostTests : IDisposable
     public void Dispose()
     {
         _vstHost.Dispose();
+        Environment.SetEnvironmentVariable("ME_VST_SAFE_MODE", _previousSafeModeEnv);
         VstTestHelper.CleanupTempDirectory(_tempDirectory);
         VstTestHelper.RestoreDefaultVstPaths();
     }
@@ -46,11 +50,20 @@ public class VstHostTests : IDisposable
     }
 
     [Fact]
-    public void VstHost_Constructor_SafeScanModeEnabledByDefault()
+    public void VstHost_Constructor_SafeScanModeDisabledByDefault()
     {
-        using var host = new VstHost();
+        var previous = Environment.GetEnvironmentVariable("ME_VST_SAFE_MODE");
+        try
+        {
+            Environment.SetEnvironmentVariable("ME_VST_SAFE_MODE", null);
+            using var host = new VstHost();
 
-        host.SafeScanMode.Should().BeTrue();
+            host.SafeScanMode.Should().BeFalse();
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("ME_VST_SAFE_MODE", previous);
+        }
     }
 
     #endregion

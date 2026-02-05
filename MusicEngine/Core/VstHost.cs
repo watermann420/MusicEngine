@@ -64,6 +64,13 @@ public class VstHost : IDisposable
     public VstHost(ILogger? logger = null)
     {
         _logger = logger;
+        SafeScanMode = GetSafeScanModeFromEnvironment();
+
+        var safeModeValue = Environment.GetEnvironmentVariable("ME_VST_SAFE_MODE");
+        var safeModeState = SafeScanMode ? "ON" : "OFF";
+        Console.WriteLine($"[VstHost] Safe scan mode: {safeModeState} (ME_VST_SAFE_MODE={safeModeValue ?? "unset"})");
+        _logger?.LogInformation("VST safe scan mode: {State} (ME_VST_SAFE_MODE={EnvValue})",
+            safeModeState, safeModeValue ?? "unset");
 
         // Try to initialize native host
         if (IsNativeBridgeAvailable && _preferNative)
@@ -94,9 +101,9 @@ public class VstHost : IDisposable
     /// <summary>
     /// When true, VST scanning skips native DLL loading to prevent crashes from corrupt plugins.
     /// Plugin info is derived from filename only. Full probing occurs when loading a plugin.
-    /// Default: true (safe mode enabled)
+    /// Default: false (safe mode disabled). Can be enabled via ME_VST_SAFE_MODE=1.
     /// </summary>
-    public bool SafeScanMode { get; set; } = true;
+    public bool SafeScanMode { get; set; }
 
     /// <summary>
     /// Scan for VST plugins in configured paths and return discovered plugins.
@@ -711,6 +718,20 @@ public class VstHost : IDisposable
         return _nativeHost != null;
     }
 
+    private static bool GetSafeScanModeFromEnvironment()
+    {
+        var value = Environment.GetEnvironmentVariable("ME_VST_SAFE_MODE");
+        if (string.IsNullOrWhiteSpace(value)) return false;
+
+        value = value.Trim();
+        if (value == "1") return true;
+        if (value == "0") return false;
+        if (value.Equals("yes", StringComparison.OrdinalIgnoreCase)) return true;
+        if (value.Equals("no", StringComparison.OrdinalIgnoreCase)) return false;
+
+        return bool.TryParse(value, out var parsed) && parsed;
+    }
+
     private static void UpdateVst2InfoFromNative(VstPluginInfo info, INativeVstPlugin nativePlugin, string path)
     {
         info.Name = nativePlugin.Name;
@@ -763,6 +784,12 @@ public class VstHost : IDisposable
     {
         lock (_lock)
         {
+            if (SafeScanMode)
+            {
+                Console.WriteLine("[VstHost] ERROR: Safe scan mode is active; native probing is skipped and LoadPlugin may fail. Set ME_VST_SAFE_MODE=0 to enable native loading.");
+                _logger?.LogError("Safe scan mode is active; native probing is skipped and LoadPlugin may fail. Set ME_VST_SAFE_MODE=0 to enable native loading.");
+            }
+
             // Check if already loaded
             if (_loadedPlugins.TryGetValue(nameOrPath, out var existing))
             {
