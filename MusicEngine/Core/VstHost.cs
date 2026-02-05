@@ -1,4 +1,4 @@
-﻿// MusicEngine License (MEL) - Honor-Based Commercial Support
+// MusicEngine License (MEL) - Honor-Based Commercial Support
 // Copyright (c) 2025-2026 Yannis Watermann (watermann420, nullonebinary)
 // https://github.com/watermann420/MusicEngine
 // Description: VST plugin hosting.
@@ -7,17 +7,12 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Runtime.InteropServices;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using MusicEngine.Core.Events;
 using MusicEngine.Core.Progress;
-using MusicEngine.Core.Vst.Vst3.Interfaces;
-using MusicEngine.Core.Vst.Vst3.Structures;
-using MusicEngine.VstBridge;
-using NAudio.Wave;
+using MusicEngine.CppLayer;
 
 
 namespace MusicEngine.Core;
@@ -26,7 +21,7 @@ namespace MusicEngine.Core;
 /// <summary>
 /// Central VST Host that manages plugin discovery, loading, and lifecycle.
 /// Provides utilities for preset management and parameter discovery across plugins.
-/// Supports both VST2 and VST3 plugin formats.
+/// All VST hosting is delegated to the native C++ layer.
 /// </summary>
 public class VstHost : IDisposable
 {
@@ -49,8 +44,8 @@ public class VstHost : IDisposable
     public static bool IsNativeBridgeAvailable => NativeVstHost.IsNativeLibraryAvailable;
 
     /// <summary>
-    /// Gets or sets whether to prefer native plugin loading over managed.
-    /// Default: true (use native when available).
+    /// Gets or sets whether to prefer native plugin loading.
+    /// Managed VST hosting is disabled, so native support is required to load plugins.
     /// </summary>
     public bool PreferNativeLoading
     {
@@ -86,25 +81,11 @@ public class VstHost : IDisposable
             }
             catch (Exception ex)
             {
-                _logger?.LogWarning(ex, "Failed to initialize native VST bridge, falling back to managed");
+                _logger?.LogWarning(ex, "Failed to initialize native VST bridge, VST hosting unavailable");
                 _nativeHost = null;
             }
         }
     }
-
-    // P/Invoke for VST3 plugin loading
-    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-    private static extern IntPtr LoadLibraryW(string lpFileName);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern bool FreeLibrary(IntPtr hModule);
-
-    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Ansi)]
-    private static extern IntPtr GetProcAddress(IntPtr hModule, string lpProcName);
-
-    // VST3 entry point delegate
-    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-    private delegate IntPtr GetPluginFactoryDelegate();
 
     public IReadOnlyList<VstPluginInfo> DiscoveredPlugins => _discoveredPlugins.AsReadOnly();
     public IReadOnlyList<Vst3PluginInfo> DiscoveredVst3Plugins => _discoveredVst3Plugins.AsReadOnly();
@@ -156,7 +137,7 @@ public class VstHost : IDisposable
                     foreach (var file in dllFiles)
                     {
                         Console.WriteLine($"[VstHost]       Probing VST2: {Path.GetFileName(file)}");
-                        var pluginInfo = ProbePlugin(file, false);
+                        var pluginInfo = ProbePlugin(file);
                         if (pluginInfo != null)
                         {
                             Console.WriteLine($"[VstHost]         -> Valid VST2: {pluginInfo.Name}");
@@ -256,7 +237,7 @@ public class VstHost : IDisposable
                                 totalPaths,
                                 Path.GetFileName(file)));
 
-                            var pluginInfo = ProbePlugin(file, false);
+                            var pluginInfo = ProbePlugin(file);
                             if (pluginInfo != null)
                             {
                                 _discoveredPlugins.Add(pluginInfo);
@@ -437,7 +418,7 @@ public class VstHost : IDisposable
                         }
                         else
                         {
-                            var pluginInfo = ProbePlugin(path, false);
+                            var pluginInfo = ProbePlugin(path);
                             if (pluginInfo != null)
                             {
                                 _discoveredPlugins.Add(pluginInfo);
@@ -491,7 +472,7 @@ public class VstHost : IDisposable
     /// <summary>
     /// Probe a potential VST plugin file to get its info
     /// </summary>
-    private VstPluginInfo? ProbePlugin(string path, bool isVst3)
+    private VstPluginInfo? ProbePlugin(string path)
     {
         try
         {
@@ -501,29 +482,50 @@ public class VstHost : IDisposable
             var info = new FileInfo(path);
             if (info.Length < 1024) return null; // Too small to be a VST
 
-            // For now, create basic info from filename
-            // Real implementation would load and query the plugin
             var name = Path.GetFileNameWithoutExtension(path);
-
-            return new VstPluginInfo
+            if (SafeScanMode || !EnsureNativeHost())
             {
-                Name = name,
-                Path = path,
-                Vendor = "Unknown",
-                Version = "1.0",
-                UniqueId = path.GetHashCode(),
-                IsInstrument = GuessIsInstrument(name),
-                IsLoaded = false,
-                NumInputs = 2,
-                NumOutputs = 2,
-                NumParameters = 0,
-                NumPrograms = 1
-            };
+                return CreateBasicVst2Info(name, path);
+            }
+
+            var nativePlugin = _nativeHost!.LoadPlugin(path);
+            if (nativePlugin == null)
+            {
+                return CreateBasicVst2Info(name, path);
+            }
+            try
+            {
+                var pluginInfo = new VstPluginInfo();
+                UpdateVst2InfoFromNative(pluginInfo, nativePlugin, path);
+                return pluginInfo;
+            }
+            finally
+            {
+                _nativeHost.UnloadPlugin(nativePlugin);
+            }
         }
         catch
         {
             return null;
         }
+    }
+
+    private VstPluginInfo CreateBasicVst2Info(string name, string path)
+    {
+        return new VstPluginInfo
+        {
+            Name = name,
+            Path = path,
+            Vendor = "Unknown",
+            Version = "1.0",
+            UniqueId = path.GetHashCode(),
+            IsInstrument = GuessIsInstrument(name),
+            IsLoaded = false,
+            NumInputs = 2,
+            NumOutputs = 2,
+            NumParameters = 0,
+            NumPrograms = 1
+        };
     }
 
     /// <summary>
@@ -634,9 +636,6 @@ public class VstHost : IDisposable
     /// <returns>VST3 plugin info or null if probing failed</returns>
     public Vst3PluginInfo? ProbeVst3Plugin(string path)
     {
-        IntPtr moduleHandle = IntPtr.Zero;
-        PluginFactoryWrapper? factory = null;
-
         try
         {
             // Basic validation
@@ -645,140 +644,31 @@ public class VstHost : IDisposable
             var fileInfo = new FileInfo(path);
             if (fileInfo.Length < 1024) return null; // Too small to be a VST3
 
-            // Safe scan mode: Skip native DLL loading to prevent crashes from corrupt plugins
-            if (SafeScanMode)
+            if (SafeScanMode || !EnsureNativeHost())
             {
-                Console.WriteLine($"[VstHost]         (Safe mode: skipping native probe)");
+                Console.WriteLine("[VstHost]         (Safe mode: skipping native probe)");
                 return CreateBasicVst3Info(path);
             }
 
-            // Load the DLL
-            moduleHandle = LoadLibraryW(path);
-            if (moduleHandle == IntPtr.Zero)
+            var nativePlugin = _nativeHost!.LoadPlugin(path);
+            if (nativePlugin == null)
             {
                 return CreateBasicVst3Info(path);
             }
-
-            // Get the factory entry point
-            IntPtr getFactoryProc = GetProcAddress(moduleHandle, "GetPluginFactory");
-            if (getFactoryProc == IntPtr.Zero)
+            try
             {
-                FreeLibrary(moduleHandle);
-                return CreateBasicVst3Info(path);
+                var info = new Vst3PluginInfo();
+                UpdateVst3InfoFromNative(info, nativePlugin, path);
+                return info;
             }
-
-            // Call GetPluginFactory
-            var getFactory = Marshal.GetDelegateForFunctionPointer<GetPluginFactoryDelegate>(getFactoryProc);
-            IntPtr factoryPtr = getFactory();
-            if (factoryPtr == IntPtr.Zero)
+            finally
             {
-                FreeLibrary(moduleHandle);
-                return CreateBasicVst3Info(path);
+                _nativeHost.UnloadPlugin(nativePlugin);
             }
-
-            // Wrap the factory
-            factory = new PluginFactoryWrapper(factoryPtr);
-
-            // Get factory info (vendor, url, email)
-            string vendor = "Unknown";
-            if (factory.GetFactoryInfo(out Vst3FactoryInfo factoryInfo) == (int)Vst3Result.Ok)
-            {
-                vendor = factoryInfo.Vendor ?? "Unknown";
-            }
-
-            // Get class count
-            int classCount = factory.CountClasses();
-            if (classCount <= 0)
-            {
-                factory.Dispose();
-                FreeLibrary(moduleHandle);
-                return CreateBasicVst3Info(path);
-            }
-
-            // Find the first audio processor class
-            Vst3PluginInfo? result = null;
-
-            for (int i = 0; i < classCount; i++)
-            {
-                // Try to get ClassInfo2 first (has more info)
-                if (factory.IsFactory2 && factory.GetClassInfo2(i, out Vst3ClassInfo2 classInfo2) == (int)Vst3Result.Ok)
-                {
-                    // Check if this is an audio processor (kVstAudioEffectClass)
-                    if (classInfo2.Category == "Audio Module Class" ||
-                        classInfo2.Category?.Contains("Audio", StringComparison.OrdinalIgnoreCase) == true ||
-                        string.IsNullOrEmpty(classInfo2.Category))
-                    {
-                        result = new Vst3PluginInfo
-                        {
-                            Name = classInfo2.Name ?? Path.GetFileNameWithoutExtension(path),
-                            Path = path,
-                            ResolvedPath = path,
-                            Vendor = !string.IsNullOrEmpty(classInfo2.Vendor) ? classInfo2.Vendor : vendor,
-                            Version = classInfo2.Version ?? "1.0",
-                            SdkVersion = classInfo2.SdkVersion ?? "",
-                            ClassId = classInfo2.Cid.ToGuid(),
-                            Category = classInfo2.Category ?? "",
-                            SubCategories = classInfo2.SubCategories ?? "",
-                            ClassFlags = classInfo2.ClassFlags,
-                            IsInstrument = Vst3PluginInfo.DetermineIsInstrument(classInfo2.Category ?? "", classInfo2.SubCategories ?? ""),
-                            IsBundle = false,
-                            NumInputs = 2,
-                            NumOutputs = 2
-                        };
-                        break;
-                    }
-                }
-                else if (factory.GetClassInfo(i, out Vst3ClassInfo classInfo) == (int)Vst3Result.Ok)
-                {
-                    // Basic ClassInfo (version 1)
-                    if (classInfo.Category == "Audio Module Class" ||
-                        classInfo.Category?.Contains("Audio", StringComparison.OrdinalIgnoreCase) == true ||
-                        string.IsNullOrEmpty(classInfo.Category))
-                    {
-                        result = new Vst3PluginInfo
-                        {
-                            Name = classInfo.Name ?? Path.GetFileNameWithoutExtension(path),
-                            Path = path,
-                            ResolvedPath = path,
-                            Vendor = vendor,
-                            Version = "1.0",
-                            ClassId = classInfo.Cid.ToGuid(),
-                            Category = classInfo.Category ?? "",
-                            IsInstrument = GuessIsInstrument(classInfo.Name ?? ""),
-                            IsBundle = false,
-                            NumInputs = 2,
-                            NumOutputs = 2
-                        };
-                        break;
-                    }
-                }
-            }
-
-            // Cleanup
-            factory.Dispose();
-            FreeLibrary(moduleHandle);
-
-            return result ?? CreateBasicVst3Info(path);
         }
         catch (Exception ex)
         {
             _logger?.LogWarning(ex, "Error probing VST3 plugin '{Path}'", path);
-
-            // Cleanup on error
-            try
-            {
-                factory?.Dispose();
-                if (moduleHandle != IntPtr.Zero)
-                {
-                    FreeLibrary(moduleHandle);
-                }
-            }
-            catch (Exception cleanupEx)
-            {
-                System.Diagnostics.Debug.WriteLine($"Failed to cleanup VST3 plugin resources for '{path}': {cleanupEx.Message}");
-                // Continue execution - cleanup failure is non-critical, we'll return basic info anyway
-            }
-
             return CreateBasicVst3Info(path);
         }
     }
@@ -801,6 +691,54 @@ public class VstHost : IDisposable
             NumInputs = 2,
             NumOutputs = 2
         };
+    }
+
+    private bool EnsureNativeHost()
+    {
+        if (_nativeHost != null) return true;
+        if (!_preferNative) return false;
+        if (!IsNativeBridgeAvailable) return false;
+
+        try
+        {
+            _nativeHost = VstHostFactory.CreateHost(Settings.SampleRate, Settings.VstBufferSize);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Failed to initialize native VST bridge");
+        }
+
+        return _nativeHost != null;
+    }
+
+    private static void UpdateVst2InfoFromNative(VstPluginInfo info, INativeVstPlugin nativePlugin, string path)
+    {
+        info.Name = nativePlugin.Name;
+        info.Path = path;
+        info.Vendor = nativePlugin.Vendor;
+        info.Version = nativePlugin.Version.ToString();
+        info.UniqueId = unchecked((int)nativePlugin.UniqueId);
+        info.IsInstrument = nativePlugin.IsSynth;
+        info.IsLoaded = false;
+        info.NumInputs = nativePlugin.NumInputs;
+        info.NumOutputs = nativePlugin.NumOutputs;
+        info.NumParameters = nativePlugin.ParameterCount;
+        info.NumPrograms = nativePlugin.ProgramCount;
+    }
+
+    private static void UpdateVst3InfoFromNative(Vst3PluginInfo info, INativeVstPlugin nativePlugin, string path)
+    {
+        info.Name = nativePlugin.Name;
+        info.Path = path;
+        info.ResolvedPath = path;
+        info.Vendor = nativePlugin.Vendor;
+        info.Version = nativePlugin.Version.ToString();
+        info.IsInstrument = nativePlugin.IsSynth;
+        info.IsLoaded = false;
+        info.NumInputs = nativePlugin.NumInputs;
+        info.NumOutputs = nativePlugin.NumOutputs;
+        info.NumParameters = nativePlugin.ParameterCount;
+        info.IsBundle = false;
     }
 
     /// <summary>
@@ -882,7 +820,7 @@ public class VstHost : IDisposable
         if (info == null)
         {
             // Not in discovered list, probe it
-            info = ProbePlugin(path, false);
+            info = ProbePlugin(path);
             if (info != null) _discoveredPlugins.Add(info);
         }
 
@@ -917,8 +855,7 @@ public class VstHost : IDisposable
     }
 
     /// <summary>
-    /// Load a VST2 plugin from its info.
-    /// Tries native bridge first if available, falls back to managed implementation.
+    /// Load a VST2 plugin from its info (native C++ layer only).
     /// </summary>
     private IVstPlugin? LoadVst2Plugin(VstPluginInfo info)
     {
@@ -930,37 +867,33 @@ public class VstHost : IDisposable
                 return existing;
             }
 
-            IVstPlugin? plugin = null;
-
-            // Try native loading first if available
-            if (_preferNative && _nativeHost != null && NativeVstHost.HasVst2Support)
+            if (!_preferNative)
             {
-                try
-                {
-                    var nativePlugin = _nativeHost.LoadPlugin(info.Path);
-                    if (nativePlugin != null)
-                    {
-                        plugin = new NativeVstPluginAdapter(nativePlugin, info.Path, Settings.SampleRate);
-                        _logger?.LogInformation("Loaded VST2 plugin via native bridge: {Name} ({Type})",
-                            info.Name, info.IsInstrument ? "Instrument" : "Effect");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger?.LogWarning(ex, "Native loading failed for '{Name}', falling back to managed", info.Name);
-                }
+                _logger?.LogWarning("Managed VST hosting is disabled. Enable native VST bridge to load plugins.");
             }
 
-            // Fallback to managed implementation
-            if (plugin == null)
+            if (!EnsureNativeHost() || !NativeVstHost.HasVst2Support)
             {
-                plugin = new VstPlugin(info);
-                _logger?.LogInformation("Loaded VST2 plugin via managed: {Name} ({Type})",
-                    info.Name, info.IsInstrument ? "Instrument" : "Effect");
+                _logger?.LogWarning("Native VST2 support is not available. Cannot load '{Name}'.", info.Name);
+                return null;
             }
+
+            var nativePlugin = _nativeHost!.LoadPlugin(info.Path);
+            if (nativePlugin == null)
+            {
+                _logger?.LogWarning("Native VST2 load returned null for '{Name}'.", info.Name);
+                return null;
+            }
+
+            var plugin = new VstPlugin(nativePlugin, info.Path, Settings.SampleRate);
+            UpdateVst2InfoFromNative(info, nativePlugin, info.Path);
 
             info.IsLoaded = true;
             _loadedPlugins[info.Name] = plugin;
+
+            _logger?.LogInformation("Loaded VST2 plugin via native bridge: {Name} ({Type})",
+                info.Name, info.IsInstrument ? "Instrument" : "Effect");
+
             return plugin;
         }
         catch (Exception ex)
@@ -971,10 +904,7 @@ public class VstHost : IDisposable
     }
 
     /// <summary>
-    /// Load a VST3 plugin from its info.
-    /// Tries native bridge first if available, falls back to managed implementation.
-    /// Creates a Vst3Plugin instance with full VST3 support including
-    /// audio processing, parameter management, and GUI support.
+    /// Load a VST3 plugin from its info (native C++ layer only).
     /// </summary>
     private IVstPlugin? LoadVst3Plugin(Vst3PluginInfo info)
     {
@@ -991,37 +921,35 @@ public class VstHost : IDisposable
                 ? info.ResolvedPath
                 : info.Path;
 
-            IVstPlugin? plugin = null;
-
-            // Try native loading first if available
-            if (_preferNative && _nativeHost != null && NativeVstHost.HasVst3Support)
+            if (!_preferNative)
             {
-                try
-                {
-                    var nativePlugin = _nativeHost.LoadPlugin(pluginPath);
-                    if (nativePlugin != null)
-                    {
-                        plugin = new NativeVstPluginAdapter(nativePlugin, pluginPath, Settings.SampleRate);
-                        _logger?.LogInformation("Loaded VST3 plugin via native bridge: {Name} ({Type})",
-                            info.Name, info.IsInstrument ? "Instrument" : "Effect");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger?.LogWarning(ex, "Native loading failed for '{Name}', falling back to managed", info.Name);
-                }
+                _logger?.LogWarning("Managed VST hosting is disabled. Enable native VST bridge to load plugins.");
             }
 
-            // Fallback to managed implementation
-            if (plugin == null)
+            if (!EnsureNativeHost() || !NativeVstHost.HasVst3Support)
             {
-                plugin = new Vst3Plugin(pluginPath);
-                _logger?.LogInformation("Loaded VST3 plugin via managed: {Name} ({Type})",
-                    info.Name, info.IsInstrument ? "Instrument" : "Effect");
+                _logger?.LogWarning("Native VST3 support is not available. Cannot load '{Name}'.", info.Name);
+                return null;
             }
+
+            var nativePlugin = _nativeHost!.LoadPlugin(pluginPath);
+            if (nativePlugin == null)
+            {
+                _logger?.LogWarning("Native VST3 load returned null for '{Name}'.", info.Name);
+                return null;
+            }
+
+            var plugin = new Vst3Plugin(nativePlugin, pluginPath, Settings.SampleRate);
+            UpdateVst3InfoFromNative(info, nativePlugin, pluginPath);
+            info.Path = info.IsBundle ? info.Path : pluginPath;
+            info.ResolvedPath = pluginPath;
 
             info.IsLoaded = true;
             _loadedPlugins[info.Name] = plugin;
+
+            _logger?.LogInformation("Loaded VST3 plugin via native bridge: {Name} ({Type})",
+                info.Name, info.IsInstrument ? "Instrument" : "Effect");
+
             return plugin;
         }
         catch (Exception ex)

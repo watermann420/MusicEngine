@@ -214,11 +214,10 @@ MusicEngineEditor/
 |---------|---------|--------|
 | Microsoft.CodeAnalysis.CSharp.Scripting | 5.0.0 | CURRENT |
 | NAudio | 2.2.1 | CURRENT |
-| NAudio.Asio | 2.2.1 | CURRENT |
 | NAudio.Midi | 2.2.1 | CURRENT |
-| NAudio.Wasapi | 2.2.1 | CURRENT |
 | NAudio.WinForms | 2.2.1 | CURRENT |
 | NAudio.WinMM | 2.2.1 | CURRENT |
+| MusicEngine.CppLayer | - | CURRENT |
 
 ### 4.2 MusicEngineEditor Dependencies
 
@@ -243,7 +242,7 @@ MusicEngineEditor/
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Audio Playback | COMPLETE | NAudio WaveOut/WASAPI |
+| Audio Playback | COMPLETE | NAudio WaveOut (core), ASIO/WASAPI via CppLayer |
 | Sample Playback | COMPLETE | Multi-voice, pitch-shifting |
 | Synthesizer | COMPLETE | 5 waveforms, filter |
 | Pattern System | COMPLETE | Looping, events |

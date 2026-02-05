@@ -1,4 +1,4 @@
-﻿// MusicEngine License (MEL) - Honor-Based Commercial Support
+// MusicEngine License (MEL) - Honor-Based Commercial Support
 // Copyright (c) 2025-2026 Yannis Watermann (watermann420, nullonebinary)
 // https://github.com/watermann420/MusicEngine
 // Description: Core engine component.
@@ -8,8 +8,6 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using NAudio.Wave;
-using NAudio.Wave.Asio;
-using NAudio.CoreAudioApi;
 using NAudio.Midi;
 using NAudio.Wave.SampleProviders;
 using Microsoft.Extensions.Logging;
@@ -57,7 +55,6 @@ public class AudioEngine : IDisposable
 
     // VST Host
     private readonly VstHost _vstHost = new(); // VST Plugin Host
-    private readonly Dictionary<string, VstPlugin> _vstRouting = new(); // VST Plugin Routing
 
     // Virtual Audio Channels
     private readonly VirtualChannelManager _virtualChannels = new();
@@ -80,9 +77,6 @@ public class AudioEngine : IDisposable
     private readonly ILogger? _logger;
 
     // Latency / quality
-    private readonly int _preferredSharedLatencyMs = 60;   // WASAPI/WaveOut target
-    private readonly int _preferredAsioLatencyMs = 10;     // ASIO target
-    private readonly bool _preferAsio = true;
 
     // Live activity events (for editor highlighting)
     public event Action<int>? MidiActivity; // device index
@@ -460,7 +454,7 @@ public class AudioEngine : IDisposable
     {
         Console.WriteLine("[AudioEngine] Step 1: Selecting audio output...");
 
-        // Select best available output (ASIO > WASAPI shared > WaveOut)
+        // Select output device (WaveOut fallback on Windows)
         var output = CreateBestOutput(out var backend);
 
         Console.WriteLine($"[AudioEngine] Step 2: Initializing output device ({backend})...");
@@ -954,43 +948,10 @@ public class AudioEngine : IDisposable
 
     private IWavePlayer CreateBestOutput(out string backend)
     {
-        // Prefer ASIO if available
-        try
-        {
-            var drivers = AsioOut.GetDriverNames()?.ToList();
-            if (_preferAsio && drivers != null && drivers.Count > 0)
-            {
-                var name = drivers.FirstOrDefault();
-                if (!string.IsNullOrEmpty(name))
-                {
-                    var asio = new AsioOut(name);
-                    asio.InitRecordAndPlayback(null, _waveFormat.Channels, _preferredAsioLatencyMs);
-                    backend = $"ASIO ({name})";
-                    return asio;
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogWarning(ex, "Failed to open ASIO, falling back");
-        }
-
-        // WASAPI shared as next best (exclusive can be disruptive)
-        try
-        {
-            var wasapi = new WasapiOut(AudioClientShareMode.Shared, true, _preferredSharedLatencyMs);
-            backend = "WASAPI (shared)";
-            return wasapi;
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogWarning(ex, "Failed to open WASAPI, falling back to WaveOut");
-        }
-
-        // Legacy WaveOut
+        const int defaultLatencyMs = 60;
         var waveOut = new WaveOutEvent
         {
-            DesiredLatency = _preferredSharedLatencyMs,
+            DesiredLatency = defaultLatencyMs,
             NumberOfBuffers = 3
         };
         backend = "WaveOut";
@@ -1137,7 +1098,7 @@ public class AudioEngine : IDisposable
     }
 
     // Route MIDI input to a VST plugin
-    public void RouteMidiToVst(int deviceIndex, VstPlugin plugin)
+    public void RouteMidiToVst(int deviceIndex, IVstPlugin plugin)
     {
         lock (_midiInputRouting)
         {

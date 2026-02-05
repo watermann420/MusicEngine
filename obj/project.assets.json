@@ -757,14 +757,14 @@
           }
         }
       },
-      "MusicEngine.VstBridge/1.0.0": {
+      "MusicEngine.CppLayer/1.0.0": {
         "type": "project",
         "framework": ".NETCoreApp,Version=v10.0",
         "compile": {
-          "bin/placeholder/MusicEngine.VstBridge.dll": {}
+          "bin/placeholder/MusicEngine.CppLayer.dll": {}
         },
         "runtime": {
-          "bin/placeholder/MusicEngine.VstBridge.dll": {}
+          "bin/placeholder/MusicEngine.CppLayer.dll": {}
         }
       }
     }
@@ -3026,10 +3026,10 @@
         "serilog.sinks.file.nuspec"
       ]
     },
-    "MusicEngine.VstBridge/1.0.0": {
+    "MusicEngine.CppLayer/1.0.0": {
       "type": "project",
-      "path": "MusicEngine.VstBridge/managed/MusicEngine.VstBridge.csproj",
-      "msbuildProject": "MusicEngine.VstBridge/managed/MusicEngine.VstBridge.csproj"
+      "path": "MusicEngine.CppLayer/managed/MusicEngine.CppLayer.csproj",
+      "msbuildProject": "MusicEngine.CppLayer/managed/MusicEngine.CppLayer.csproj"
     }
   },
   "projectFileDependencyGroups": {
@@ -3043,11 +3043,9 @@
       "Microsoft.Extensions.Logging >= 9.0.0",
       "Microsoft.Extensions.Options >= 9.0.0",
       "Microsoft.Extensions.Options.ConfigurationExtensions >= 9.0.0",
-      "MusicEngine.VstBridge >= 1.0.0",
+      "MusicEngine.CppLayer >= 1.0.0",
       "NAudio >= 2.2.1",
-      "NAudio.Asio >= 2.2.1",
       "NAudio.Midi >= 2.2.1",
-      "NAudio.Wasapi >= 2.2.1",
       "NAudio.WinForms >= 2.2.1",
       "NAudio.WinMM >= 2.2.1",
       "Serilog >= 4.1.0",
@@ -3084,8 +3082,8 @@
         "net10.0-windows7.0": {
           "targetAlias": "net10.0-windows",
           "projectReferences": {
-            "C:\\Users\\water\\RiderProjects\\MusicEngine\\MusicEngine.VstBridge\\managed\\MusicEngine.VstBridge.csproj": {
-              "projectPath": "C:\\Users\\water\\RiderProjects\\MusicEngine\\MusicEngine.VstBridge\\managed\\MusicEngine.VstBridge.csproj"
+            "C:\\Users\\water\\RiderProjects\\MusicEngine\\MusicEngine.CppLayer\\managed\\MusicEngine.CppLayer.csproj": {
+              "projectPath": "C:\\Users\\water\\RiderProjects\\MusicEngine\\MusicEngine.CppLayer\\managed\\MusicEngine.CppLayer.csproj"
             }
           }
         }
@@ -3146,15 +3144,7 @@
             "target": "Package",
             "version": "[2.2.1, )"
           },
-          "NAudio.Asio": {
-            "target": "Package",
-            "version": "[2.2.1, )"
-          },
           "NAudio.Midi": {
-            "target": "Package",
-            "version": "[2.2.1, )"
-          },
-          "NAudio.Wasapi": {
             "target": "Package",
             "version": "[2.2.1, )"
           },

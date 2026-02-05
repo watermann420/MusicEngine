@@ -553,7 +553,7 @@ public class ScriptGlobals
     }
 
     // Route MIDI to a VST plugin
-    public void RouteToVst(int deviceIndex, VstPlugin plugin)
+    public void RouteToVst(int deviceIndex, IVstPlugin plugin)
     {
         Engine.RouteMidiToVst(deviceIndex, plugin);
     }

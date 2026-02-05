@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
         <OutputType>Exe</OutputType>
@@ -13,21 +13,19 @@
         <InternalsVisibleTo Include="MusicEngine.Tests" />
     </ItemGroup>
 
-    <!-- Exclude test project and VstBridge source from main compilation -->
+    <!-- Exclude test project and CppLayer source from main compilation -->
     <ItemGroup>
         <Compile Remove="MusicEngine.Tests\**" />
         <None Remove="MusicEngine.Tests\**" />
-        <Compile Remove="MusicEngine.VstBridge\**" />
-        <None Remove="MusicEngine.VstBridge\**" />
-        <EmbeddedResource Remove="MusicEngine.VstBridge\**" />
+        <Compile Remove="MusicEngine.CppLayer\**" />
+        <None Remove="MusicEngine.CppLayer\**" />
+        <EmbeddedResource Remove="MusicEngine.CppLayer\**" />
     </ItemGroup>
 
     <ItemGroup>
       <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="4.12.0" />
       <PackageReference Include="NAudio" Version="2.2.1" />
-      <PackageReference Include="NAudio.Asio" Version="2.2.1" />
       <PackageReference Include="NAudio.Midi" Version="2.2.1" />
-      <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
       <PackageReference Include="NAudio.WinForms" Version="2.2.1" />
       <PackageReference Include="NAudio.WinMM" Version="2.2.1" />
     </ItemGroup>
@@ -77,9 +75,20 @@
       </None>
     </ItemGroup>
 
-    <!-- Native VST Bridge (optional - fallback to managed if not available) -->
+    <!-- Native C++ layer bridge (required for VST hosting) -->
     <ItemGroup>
-      <ProjectReference Include="MusicEngine.VstBridge\managed\MusicEngine.VstBridge.csproj" />
+      <ProjectReference Include="MusicEngine.CppLayer\managed\MusicEngine.CppLayer.csproj" />
     </ItemGroup>
 
+    <Target Name="CopyNativeVstBridge" AfterTargets="Build">
+      <PropertyGroup>
+        <NativeBridgeDll>$(MSBuildProjectDirectory)\MusicEngine.CppLayer\native\x64\$(Configuration)\MusicEngine.CppLayer.Native.dll</NativeBridgeDll>
+      </PropertyGroup>
+      <ItemGroup>
+        <NativeBridgeFiles Include="$(NativeBridgeDll)" Condition="Exists('$(NativeBridgeDll)')" />
+      </ItemGroup>
+      <Copy SourceFiles="@(NativeBridgeFiles)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
+    </Target>
+
 </Project>
+

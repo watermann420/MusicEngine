@@ -4,7 +4,7 @@
 // Description: Adapter that wraps native VST plugin for use with IVstPlugin interface.
 
 using MusicEngine.Core.Automation;
-using MusicEngine.VstBridge;
+using MusicEngine.CppLayer;
 using NAudio.Wave;
 
 namespace MusicEngine.Core;
@@ -421,16 +421,12 @@ public sealed class NativeVstPluginAdapter : IVstPlugin
 
     public bool LoadPreset(string path)
     {
-        // Native plugin state management is done through GetState/SetState
-        // For file-based presets, we'd need to implement FXP/FXB parsing
-        // For now, return false to indicate not supported
-        return false;
+        return _nativePlugin.LoadPreset(path);
     }
 
     public bool SavePreset(string path)
     {
-        // For file-based presets, we'd need to implement FXP/FXB writing
-        return false;
+        return _nativePlugin.SavePreset(path);
     }
 
     #endregion
@@ -461,8 +457,8 @@ public sealed class NativeVstPluginAdapter : IVstPlugin
         }
 
         var size = _nativePlugin.GetEditorSize();
-        width = size.Width;
-        height = size.Height;
+        width = size.width;
+        height = size.height;
         return width > 0 && height > 0;
     }
 

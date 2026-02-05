@@ -1,4 +1,4 @@
-﻿// MusicEngine License (MEL) - Honor-Based Commercial Support
+// MusicEngine License (MEL) - Honor-Based Commercial Support
 // Copyright (c) 2025-2026 Yannis Watermann (watermann420, nullonebinary)
 // https://github.com/watermann420/MusicEngine
 // Description: Core engine component.
@@ -124,12 +124,12 @@ public static class Note
         if (index < noteName.Length)
         {
             char modifier = noteName[index];
-            if (modifier == '#' || modifier == '♯')
+            if (modifier == '#' || modifier == '?')
             {
                 noteValue++;
                 index++;
             }
-            else if (modifier == 'b' || modifier == '♭')
+            else if (modifier == 'b' || modifier == '?')
             {
                 noteValue--;
                 index++;

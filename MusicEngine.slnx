@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/MusicEngine.CppLayer/" />
+  <Folder Name="/MusicEngine.CppLayer/managed/">
+    <Project Path="MusicEngine.CppLayer/managed/MusicEngine.CppLayer.csproj" />
+  </Folder>
+  <Folder Name="/MusicEngine.CppLayer/native/">
+    <Project Path="MusicEngine.CppLayer/native/MusicEngine.CppLayer.Native.vcxproj" />
+  </Folder>
+  <Project Path="MusicEngine.csproj" />
+  <Project Path="MusicEngine.Tests/MusicEngine.Tests.csproj" />
+</Solution>

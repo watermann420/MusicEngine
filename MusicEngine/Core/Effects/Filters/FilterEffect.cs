@@ -1,4 +1,4 @@
-﻿// MusicEngine License (MEL) - Honor-Based Commercial Support
+// MusicEngine License (MEL) - Honor-Based Commercial Support
 // Copyright (c) 2025-2026 Yannis Watermann (watermann420, nullonebinary)
 // https://github.com/watermann420/MusicEngine
 // Description: Filter effect processor.
@@ -101,7 +101,7 @@ public class FilterEffect : EffectBase
         FilterType filterType = Type;
 
         // Calculate filter coefficients (Chamberlin state-variable filter)
-        // f = 2 * sin(π * cutoff / sampleRate)
+        // f = 2 * sin(p * cutoff / sampleRate)
         float f = 2f * MathF.Sin(MathF.PI * cutoff / sampleRate);
         // q = 1 / resonance
         float q = 1f / resonance;

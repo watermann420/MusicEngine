@@ -22,10 +22,6 @@ public class VstControl
     // Load a VST plugin by name or path (auto-detects VST3 by .vst3 extension)
     public VstPluginControl? load(string nameOrPath)
     {
-        // Auto-detect VST3 by extension
-        bool isVst3 = nameOrPath.EndsWith(".vst3", StringComparison.OrdinalIgnoreCase) ||
-                      Directory.Exists(nameOrPath) && nameOrPath.EndsWith(".vst3", StringComparison.OrdinalIgnoreCase);
-
         var plugin = _globals.LoadVst(nameOrPath);
         return plugin != null ? new VstPluginControl(_globals, plugin) : null;
     }
@@ -405,16 +401,7 @@ public class VstPluginControl
     // Route MIDI input to this plugin
     public VstPluginControl from(int deviceIndex)
     {
-        // RouteToVst currently takes VstPlugin - cast if possible
-        if (_plugin is VstPlugin vst2)
-        {
-            _globals.RouteToVst(deviceIndex, vst2);
-        }
-        else
-        {
-            // For VST3, MIDI routing would need to be implemented via the IVst3Plugin interface
-            Console.WriteLine($"MIDI routing for VST3 plugins is handled through the event bus system. Use setBusActive(\"event\", \"input\", 0, true) to enable MIDI input.");
-        }
+        _globals.RouteToVst(deviceIndex, _plugin);
         return this;
     }
 
@@ -424,14 +411,7 @@ public class VstPluginControl
         int index = _globals.Engine.GetMidiDeviceIndex(deviceName);
         if (index >= 0)
         {
-            if (_plugin is VstPlugin vst2)
-            {
-                _globals.RouteToVst(index, vst2);
-            }
-            else
-            {
-                Console.WriteLine($"MIDI routing for VST3 plugins is handled through the event bus system. Use setBusActive(\"event\", \"input\", 0, true) to enable MIDI input.");
-            }
+            _globals.RouteToVst(index, _plugin);
         }
         return this;
     }

@@ -1,4 +1,4 @@
-﻿// MusicEngine License (MEL) - Honor-Based Commercial Support
+// MusicEngine License (MEL) - Honor-Based Commercial Support
 // Copyright (c) 2025-2026 Yannis Watermann (watermann420, nullonebinary)
 // https://github.com/watermann420/MusicEngine
 // Description: Core engine component.
@@ -73,35 +73,35 @@ public class FMOperator
 /// </summary>
 public enum FMAlgorithm
 {
-    /// <summary>Algorithm 1: 6→5→4→3→2→1 (series)</summary>
+    /// <summary>Algorithm 1: 6?5?4?3?2?1 (series)</summary>
     Stack6 = 1,
-    /// <summary>Algorithm 2: (6→5)+(4→3→2→1)</summary>
+    /// <summary>Algorithm 2: (6?5)+(4?3?2?1)</summary>
     Split2_4 = 2,
-    /// <summary>Algorithm 3: (6→5→4)+(3→2→1)</summary>
+    /// <summary>Algorithm 3: (6?5?4)+(3?2?1)</summary>
     Split3_3 = 3,
-    /// <summary>Algorithm 4: (6→5)+(4→3)+(2→1)</summary>
+    /// <summary>Algorithm 4: (6?5)+(4?3)+(2?1)</summary>
     Triple = 4,
-    /// <summary>Algorithm 5: 6→5→(4→3→2→1)</summary>
+    /// <summary>Algorithm 5: 6?5?(4?3?2?1)</summary>
     ModSplit = 5,
-    /// <summary>Algorithm 6: (6→5→4→3)+(2→1)</summary>
+    /// <summary>Algorithm 6: (6?5?4?3)+(2?1)</summary>
     Split4_2 = 6,
-    /// <summary>Algorithm 7: 6→(5+4+3)→2→1</summary>
+    /// <summary>Algorithm 7: 6?(5+4+3)?2?1</summary>
     TripleMod = 7,
-    /// <summary>Algorithm 8: 4→3→2→1, 6→5→1 (dual path)</summary>
+    /// <summary>Algorithm 8: 4?3?2?1, 6?5?1 (dual path)</summary>
     DualPath = 8,
     /// <summary>Algorithm 9: All parallel carriers</summary>
     AllParallel = 9,
-    /// <summary>Algorithm 10: 6→5→4, 3→2→1</summary>
+    /// <summary>Algorithm 10: 6?5?4, 3?2?1</summary>
     DualStack = 10,
-    /// <summary>Algorithm 11: (6→5)→4→3→2→1</summary>
+    /// <summary>Algorithm 11: (6?5)?4?3?2?1</summary>
     StackWithFB = 11,
-    /// <summary>Algorithm 12: 6→5→4→(3+2+1)</summary>
+    /// <summary>Algorithm 12: 6?5?4?(3+2+1)</summary>
     OneToThree = 12,
-    /// <summary>Algorithm 13: 6→(5+4)→(3+2+1)</summary>
+    /// <summary>Algorithm 13: 6?(5+4)?(3+2+1)</summary>
     TwoToThree = 13,
-    /// <summary>Algorithm 14: (6+5)→(4+3)→(2+1)</summary>
+    /// <summary>Algorithm 14: (6+5)?(4+3)?(2+1)</summary>
     TwoByTwo = 14,
-    /// <summary>Algorithm 15: 6→5, 4→3, 2→1 (three pairs)</summary>
+    /// <summary>Algorithm 15: 6?5, 4?3, 2?1 (three pairs)</summary>
     ThreePairs = 15,
     /// <summary>Algorithm 16: Classic electric piano</summary>
     EPiano = 16,
@@ -843,24 +843,24 @@ internal class FMVoice
         switch (_synth.Algorithm)
         {
             case FMAlgorithm.Stack6:
-                // 6→5→4→3→2→1
+                // 6?5?4?3?2?1
                 if (opIndex < 5) mod = outputs[opIndex + 1] * Math.PI * 2;
                 break;
 
             case FMAlgorithm.Split2_4:
-                // (6→5) + (4→3→2→1)
+                // (6?5) + (4?3?2?1)
                 if (opIndex == 4) mod = outputs[5] * Math.PI * 2;
                 else if (opIndex < 3) mod = outputs[opIndex + 1] * Math.PI * 2;
                 break;
 
             case FMAlgorithm.Split3_3:
-                // (6→5→4) + (3→2→1)
+                // (6?5?4) + (3?2?1)
                 if (opIndex == 4 || opIndex == 5) mod = opIndex < 5 ? outputs[opIndex + 1] * Math.PI * 2 : 0;
                 else if (opIndex < 2) mod = outputs[opIndex + 1] * Math.PI * 2;
                 break;
 
             case FMAlgorithm.Triple:
-                // (6→5) + (4→3) + (2→1)
+                // (6?5) + (4?3) + (2?1)
                 if (opIndex == 4) mod = outputs[5] * Math.PI * 2;
                 else if (opIndex == 2) mod = outputs[3] * Math.PI * 2;
                 else if (opIndex == 0) mod = outputs[1] * Math.PI * 2;
@@ -871,19 +871,19 @@ internal class FMVoice
                 break;
 
             case FMAlgorithm.DualStack:
-                // (6→5→4) + (3→2→1)
+                // (6?5?4) + (3?2?1)
                 if (opIndex >= 3 && opIndex < 5) mod = outputs[opIndex + 1] * Math.PI * 2;
                 else if (opIndex < 2) mod = outputs[opIndex + 1] * Math.PI * 2;
                 break;
 
             case FMAlgorithm.OneToThree:
-                // 6→5→4→(3+2+1)
+                // 6?5?4?(3+2+1)
                 if (opIndex >= 3 && opIndex < 5) mod = outputs[opIndex + 1] * Math.PI * 2;
                 else if (opIndex < 3) mod = outputs[3] * Math.PI * 2;
                 break;
 
             case FMAlgorithm.ThreePairs:
-                // (6→5) + (4→3) + (2→1)
+                // (6?5) + (4?3) + (2?1)
                 if (opIndex % 2 == 0 && opIndex < 5)
                     mod = outputs[opIndex + 1] * Math.PI * 2;
                 break;

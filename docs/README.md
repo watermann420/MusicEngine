@@ -134,7 +134,7 @@ Git: https://github.com/watermann420/MusicEngineEditor
 
 ### Audio Engine
 - Built on NAudio 2.2.1 for robust Windows audio support
-- DirectSound / WASAPI / ASIO audio output
+- WaveOut output in core; ASIO/WASAPI moved to native CppLayer
 - Multithreaded architecture with thread-safe design
 - Plugin Delay Compensation (PDC)
 - Track Freeze/Bounce for CPU optimization
@@ -161,8 +161,7 @@ Git: https://github.com/watermann420/MusicEngineEditor
 - Time Signature Track (mixed meters)
 
 ### Plugin Hosting
-- **VST2** (.dll) full support
-- **VST3** (.vst3) with complete COM interfaces
+- **VST2/VST3** hosting via native CppLayer
 - **CLAP** plugin format support
 - Automatic plugin scanning with SafeScanMode
 - Plugin Delay Compensation
@@ -578,12 +577,10 @@ dotnet test MusicEngine.Tests
 | Package | Version | Purpose |
 |---------|---------|---------|
 | NAudio | 2.2.1 | Core audio functionality |
-| NAudio.Asio | 2.2.1 | ASIO driver support |
 | NAudio.Midi | 2.2.1 | MIDI device support |
-| NAudio.Wasapi | 2.2.1 | WASAPI audio output |
 | NAudio.WinForms | 2.2.1 | Windows Forms integration |
 | NAudio.WinMM | 2.2.1 | Windows Multimedia support |
-| VST.NET | - | VST2/VST3 plugin hosting |
+| MusicEngine.CppLayer | - | Native VST2/VST3 hosting + DSP hooks |
 | Microsoft.CodeAnalysis.CSharp.Scripting | 5.0.0 | C# scripting via Roslyn |
 | Microsoft.Extensions.Logging | - | Logging abstraction |
 | Microsoft.Extensions.DependencyInjection | - | Dependency injection |

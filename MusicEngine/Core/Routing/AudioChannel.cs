@@ -1,4 +1,4 @@
-﻿// MusicEngine License (MEL) - Honor-Based Commercial Support
+// MusicEngine License (MEL) - Honor-Based Commercial Support
 // Copyright (c) 2025-2026 Yannis Watermann (watermann420, nullonebinary)
 // https://github.com/watermann420/MusicEngine
 // Description: Audio/MIDI routing component.
@@ -142,7 +142,7 @@ public class AudioChannel : ISampleProvider
         if (channels == 2 && Pan != 0f)
         {
             // Constant power panning law
-            float panAngle = (Pan + 1f) * MathF.PI * 0.25f; // -1..1 -> 0..π/2
+            float panAngle = (Pan + 1f) * MathF.PI * 0.25f; // -1..1 -> 0..p/2
             leftGain *= MathF.Cos(panAngle);
             rightGain *= MathF.Sin(panAngle);
         }
