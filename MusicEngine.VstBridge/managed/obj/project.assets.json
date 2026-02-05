@@ -8,24 +8,26 @@
     "net10.0-windows7.0": []
   },
   "packageFolders": {
-    "C:\\Users\\null\\.nuget\\packages\\": {}
+    "C:\\Users\\water\\.nuget\\packages\\": {}
   },
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\null\\RiderProjects\\MusicEngine\\MusicEngine.VstBridge\\managed\\MusicEngine.VstBridge.csproj",
+      "projectUniqueName": "C:\\Users\\water\\RiderProjects\\MusicEngine\\MusicEngine.VstBridge\\managed\\MusicEngine.VstBridge.csproj",
       "projectName": "MusicEngine.VstBridge",
-      "projectPath": "C:\\Users\\null\\RiderProjects\\MusicEngine\\MusicEngine.VstBridge\\managed\\MusicEngine.VstBridge.csproj",
-      "packagesPath": "C:\\Users\\null\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\null\\RiderProjects\\MusicEngine\\MusicEngine.VstBridge\\managed\\obj\\",
+      "projectPath": "C:\\Users\\water\\RiderProjects\\MusicEngine\\MusicEngine.VstBridge\\managed\\MusicEngine.VstBridge.csproj",
+      "packagesPath": "C:\\Users\\water\\.nuget\\packages\\",
+      "outputPath": "C:\\Users\\water\\RiderProjects\\MusicEngine\\MusicEngine.VstBridge\\managed\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
-        "C:\\Users\\null\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        "C:\\Users\\water\\AppData\\Roaming\\NuGet\\NuGet.Config",
+        "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
       ],
       "originalTargetFrameworks": [
         "net10.0-windows"
       ],
       "sources": {
+        "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
         "https://api.nuget.org/v3/index.json": {}
       },
       "frameworks": {
@@ -65,7 +67,7 @@
             "privateAssets": "all"
           }
         },
-        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.101/PortableRuntimeIdentifierGraph.json",
+        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.102/PortableRuntimeIdentifierGraph.json",
         "packagesToPrune": {
           "Microsoft.CSharp": "(,4.7.32767]",
           "Microsoft.VisualBasic": "(,10.4.32767]",
