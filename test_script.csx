@@ -6,7 +6,7 @@ audio.all.gain(0.1); // Master volume //0 to 1.0 // Adjust as needed // Default 
 // Create the synthesizer
 var synth = CreateSynth();
 
-
+var vital = CreateVst("Vital");
 
 // --- Windows GM instrument ---
 var piano = CreateGeneralMidi();
@@ -23,8 +23,9 @@ piano.Name = "GM_Piano";
 
 
 //midi setup
-midi.device(0).to(piano);
+midi.device(0).to(vital);
 midi.device(0).pitchbend().to(val => piano.PitchBend(val * 2f - 1f)); // map wheel to -1..1
+midi.device(0).pitchbend().to(val => vital.PitchBend(val * 2f - 1f)); // -1..1
 //midi.device(0).log.info(true); // Log MIDI input for debugging and mapping midi controls
 
 
