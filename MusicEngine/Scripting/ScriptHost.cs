@@ -235,6 +235,7 @@ public sealed class ScriptGlobals
     {
         var pattern = new Pattern(synth);
         pattern.Sequencer = Sequencer;
+        Engine.RegisterPatternForEditor(pattern);
         return pattern;
     }
 

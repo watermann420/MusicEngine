@@ -29,6 +29,11 @@ public sealed class AudioEngine : IDisposable
     private IWavePlayer? _output;
     private bool _initialized;
     private bool _outputRunning;
+    private bool _editorModeEnabled;
+
+    public event Action<PatternNoteEventInfo>? EditorPatternNote;
+    public event Action<MidiNoteEventInfo>? EditorMidiNote;
+    public event Action<int>? EditorMidiDeviceActive;
 
     public AudioEngine(int? sampleRate = null)
     {
@@ -42,7 +47,11 @@ public sealed class AudioEngine : IDisposable
         var limiter = new LimiterSampleProvider(dcBlock, 0.95f, _waveFormat.SampleRate, attackMs: 2f, releaseMs: 60f);
         _masterChain = new SoftClipSampleProvider(limiter, 0.99f);
         _masterTap = new RecordingTap(_masterChain);
+        _midiRouter.EditorMidiNoteEvent += info => EditorMidiNote?.Invoke(info);
+        _midiRouter.EditorMidiDeviceActive += deviceIndex => EditorMidiDeviceActive?.Invoke(deviceIndex);
     }
+
+    public bool EditorModeEnabled => _editorModeEnabled;
 
     public void Initialize()
     {
@@ -138,6 +147,13 @@ public sealed class AudioEngine : IDisposable
         _midiRouter.SetEnabled(enabled, sendAllNotesOff);
     }
 
+    public void SetEditorMode(bool enabled)
+    {
+        _editorModeEnabled = enabled;
+        Pattern.SetEditorMode(enabled);
+        _midiRouter.SetEditorMode(enabled);
+    }
+
     public RecordingSession StartMasterRecording(string path, string? format = null)
     {
         return _masterTap.StartRecording(path, format);
@@ -231,6 +247,18 @@ public sealed class AudioEngine : IDisposable
         _masterTap.StopAll();
     }
 
+    internal void RegisterPatternForEditor(Pattern pattern)
+    {
+        if (pattern == null) return;
+        pattern.EditorNoteEvent += OnPatternNoteEvent;
+    }
+
+    private void OnPatternNoteEvent(PatternNoteEventInfo info)
+    {
+        var handler = EditorPatternNote;
+        handler?.Invoke(info);
+    }
+
     private void EnsureMidiInput(int deviceIndex)
     {
         if (_midiInputs.ContainsKey(deviceIndex)) return;
@@ -250,6 +278,7 @@ public sealed class AudioEngine : IDisposable
 
     public void Dispose()
     {
+        SetEditorMode(false);
         foreach (var midiIn in _midiInputs.Values)
         {
             midiIn.Stop();

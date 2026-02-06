@@ -12,6 +12,8 @@ namespace MusicEngine.Core;
 
 public sealed class Pattern
 {
+    public static Action<int, bool, int>? NoteEvent;
+    private static volatile bool _editorModeEnabled;
     public Guid Id { get; } = Guid.NewGuid();
     public ISynth Synth { get; }
     public List<ISynth> SynthTargets { get; } = new();
@@ -33,6 +35,13 @@ public sealed class Pattern
     private int? _humanizeSeed;
     private readonly object _stateLock = new();
     private readonly Dictionary<int, NoteActivity> _activeNotes = new();
+
+    public event Action<PatternNoteEventInfo>? EditorNoteEvent;
+
+    public static void SetEditorMode(bool enabled)
+    {
+        _editorModeEnabled = enabled;
+    }
 
     public Pattern(ISynth synth, params ISynth[] moreSynths)
     {
@@ -178,6 +187,15 @@ public sealed class Pattern
                 LastTriggeredUtc = nowUtc;
             }
 
+            try
+            {
+                EmitEditorNoteEvent(ev.Note, velocity, isOn: true);
+                NoteEvent?.Invoke(ev.Note, true, velocity);
+            }
+            catch
+            {
+            }
+
             foreach (var target in SynthTargets)
             {
                 target.NoteOn(ev.Note, velocity);
@@ -189,11 +207,29 @@ public sealed class Pattern
                 target.NoteOff(ev.Note);
             }
 
+            try
+            {
+                EmitEditorNoteEvent(ev.Note, velocity, isOn: false);
+                NoteEvent?.Invoke(ev.Note, false, velocity);
+            }
+            catch
+            {
+            }
+
             lock (_stateLock)
             {
                 _activeNotes.Remove(ev.Note);
             }
         });
+    }
+
+    private void EmitEditorNoteEvent(int note, int velocity, bool isOn)
+    {
+        if (!_editorModeEnabled) return;
+        var handler = EditorNoteEvent;
+        if (handler == null) return;
+        var info = new PatternNoteEventInfo(Id, note, velocity, isOn, DateTime.UtcNow);
+        handler(info);
     }
 
     private static double ApplySwing(double beat, double swing)
@@ -249,4 +285,22 @@ public sealed class NoteActivity
     public int Note { get; init; }
     public int Velocity { get; init; }
     public DateTime StartedUtc { get; init; }
+}
+
+public readonly struct PatternNoteEventInfo
+{
+    public Guid PatternId { get; }
+    public int Note { get; }
+    public int Velocity { get; }
+    public bool IsOn { get; }
+    public DateTime TimestampUtc { get; }
+
+    public PatternNoteEventInfo(Guid patternId, int note, int velocity, bool isOn, DateTime timestampUtc)
+    {
+        PatternId = patternId;
+        Note = note;
+        Velocity = velocity;
+        IsOn = isOn;
+        TimestampUtc = timestampUtc;
+    }
 }

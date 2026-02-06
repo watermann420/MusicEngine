@@ -17,6 +17,13 @@ public sealed class MidiRouter
     private readonly List<MidiMapping> _mappings = new();
     private readonly object _activityLock = new();
     private readonly Dictionary<int, MidiDeviceActivitySnapshot> _activity = new();
+    private readonly object _deviceActiveLock = new();
+    private readonly Dictionary<int, long> _deviceActiveTicks = new();
+    private bool _editorModeEnabled;
+    private const int DeviceActiveDebounceMs = 100;
+
+    public event Action<MidiNoteEventInfo>? EditorMidiNoteEvent;
+    public event Action<int>? EditorMidiDeviceActive;
 
     private sealed class MidiMapping
     {
@@ -56,9 +63,19 @@ public sealed class MidiRouter
         }
     }
 
+    public void SetEditorMode(bool enabled)
+    {
+        _editorModeEnabled = enabled;
+    }
+
     public void HandleMidiMessage(int deviceIndex, MidiInMessageEventArgs args)
     {
         UpdateActivity(deviceIndex, args);
+        if (_editorModeEnabled)
+        {
+            TryEmitDeviceActive(deviceIndex);
+            TryEmitNoteEvent(deviceIndex, args);
+        }
         if (!Enabled)
         {
             return;
@@ -109,6 +126,65 @@ public sealed class MidiRouter
             {
                 mapping.Action(value);
             }
+        }
+    }
+
+    private void TryEmitDeviceActive(int deviceIndex)
+    {
+        var nowTicks = DateTime.UtcNow.Ticks;
+        bool shouldEmit = false;
+        lock (_deviceActiveLock)
+        {
+            if (!_deviceActiveTicks.TryGetValue(deviceIndex, out var lastTicks) ||
+                nowTicks - lastTicks >= TimeSpan.FromMilliseconds(DeviceActiveDebounceMs).Ticks)
+            {
+                _deviceActiveTicks[deviceIndex] = nowTicks;
+                shouldEmit = true;
+            }
+        }
+
+        if (!shouldEmit) return;
+        var handler = EditorMidiDeviceActive;
+        if (handler == null) return;
+        try
+        {
+            handler(deviceIndex);
+        }
+        catch
+        {
+        }
+    }
+
+    private void TryEmitNoteEvent(int deviceIndex, MidiInMessageEventArgs args)
+    {
+        if (args.MidiEvent is not NAudio.Midi.NoteEvent noteEvent) return;
+
+        bool isOn;
+        int velocity;
+        if (noteEvent.CommandCode == MidiCommandCode.NoteOn)
+        {
+            isOn = noteEvent.Velocity > 0;
+            velocity = noteEvent.Velocity;
+        }
+        else if (noteEvent.CommandCode == MidiCommandCode.NoteOff)
+        {
+            isOn = false;
+            velocity = 0;
+        }
+        else
+        {
+            return;
+        }
+
+        var handler = EditorMidiNoteEvent;
+        if (handler == null) return;
+        var info = new MidiNoteEventInfo(deviceIndex, noteEvent.NoteNumber, velocity, isOn, DateTime.UtcNow);
+        try
+        {
+            handler(info);
+        }
+        catch
+        {
         }
     }
 
@@ -187,4 +263,22 @@ public sealed class MidiDeviceActivitySnapshot
     public int? LastVelocity { get; init; }
     public int? LastControlId { get; init; }
     public float? LastControlValue { get; init; }
+}
+
+public readonly struct MidiNoteEventInfo
+{
+    public int DeviceIndex { get; }
+    public int Note { get; }
+    public int Velocity { get; }
+    public bool IsOn { get; }
+    public DateTime TimestampUtc { get; }
+
+    public MidiNoteEventInfo(int deviceIndex, int note, int velocity, bool isOn, DateTime timestampUtc)
+    {
+        DeviceIndex = deviceIndex;
+        Note = note;
+        Velocity = velocity;
+        IsOn = isOn;
+        TimestampUtc = timestampUtc;
+    }
 }

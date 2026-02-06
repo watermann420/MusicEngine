@@ -22,6 +22,7 @@ public static class EngineLauncher
 
         using var engine = new AudioEngine();
         engine.Initialize();
+        engine.SetEditorMode(editorMode);
 
         var sequencer = new Sequencer();
         if (startSequencerOnStartup)
@@ -82,6 +83,20 @@ public static class EngineLauncher
             sequencer.Stop();
             engine.SetTransportMuted(true);
             engine.SetMidiEnabled(false, sendAllNotesOff: false);
+            engine.EditorPatternNote += info =>
+            {
+                Console.WriteLine(info.IsOn ? $"NOTE_ON {info.Note}" : $"NOTE_OFF {info.Note}");
+            };
+            engine.EditorMidiNote += info =>
+            {
+                Console.WriteLine(info.IsOn
+                    ? $"MIDI_IN {info.DeviceIndex} NOTE_ON {info.Note} {info.Velocity}"
+                    : $"MIDI_IN {info.DeviceIndex} NOTE_OFF {info.Note}");
+            };
+            engine.EditorMidiDeviceActive += deviceIndex =>
+            {
+                Console.WriteLine($"MIDI_DEVICE_ACTIVE {deviceIndex}");
+            };
         }
         else if (startSleeping)
         {
