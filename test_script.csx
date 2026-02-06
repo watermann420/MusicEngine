@@ -9,7 +9,7 @@ var synth = CreateSynth();
 var vital = CreateVst("Vital");
 
 // --- Windows GM instrument ---
-var piano = CreateGeneralMidi();
+var piano = CreateGeneralMidi(); 
 
 
 // Optional GM settings
@@ -19,7 +19,7 @@ piano.Reverb = 0f;
 piano.Chorus = 0f;
 piano.ModWheel = 0f;
 piano.Channel = 0;
-piano.Name = "GM_Piano";
+piano.Name = "GM_AcousticGrandPiano";
 
 
 //midi setup
