@@ -12,6 +12,7 @@ namespace MusicEngine.Core;
 
 public sealed class MidiRouter
 {
+    public bool Enabled { get; private set; } = true;
     private readonly Dictionary<int, ISynth> _routing = new();
     private readonly List<MidiMapping> _mappings = new();
     private readonly object _activityLock = new();
@@ -42,9 +43,26 @@ public sealed class MidiRouter
         _mappings.Clear();
     }
 
+    public void SetEnabled(bool enabled, bool sendAllNotesOff = true)
+    {
+        if (Enabled == enabled) return;
+        Enabled = enabled;
+        if (!Enabled && sendAllNotesOff)
+        {
+            foreach (var synth in _routing.Values)
+            {
+                synth.AllNotesOff();
+            }
+        }
+    }
+
     public void HandleMidiMessage(int deviceIndex, MidiInMessageEventArgs args)
     {
         UpdateActivity(deviceIndex, args);
+        if (!Enabled)
+        {
+            return;
+        }
 
         if (_routing.TryGetValue(deviceIndex, out var synth))
         {

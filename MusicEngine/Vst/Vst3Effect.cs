@@ -92,7 +92,11 @@ public sealed class Vst3Effect : IAudioEffect
     {
         if (_disposed) return;
         _disposed = true;
-        Vst3Native.Vst3Host_Close(_hostHandle);
+        VstUiContext.Shared.Invoke(() =>
+        {
+            Vst3Native.Vst3Host_Close(_hostHandle);
+            return 0;
+        });
     }
 
     private void EnsureParameterMap()

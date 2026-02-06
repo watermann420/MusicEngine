@@ -15,4 +15,11 @@ if (args.Length > 0 && args[0].Equals("--play-note", StringComparison.OrdinalIgn
     return;
 }
 
+if (args.Length > 0 && args[0].Equals("--editor", StringComparison.OrdinalIgnoreCase))
+{
+    await EngineLauncher.LaunchAsync(executeScriptOnStartup: false, startSequencerOnStartup: false,
+        startSleeping: false, editorMode: true);
+    return;
+}
+
 await EngineLauncher.LaunchAsync();

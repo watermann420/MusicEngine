@@ -17,9 +17,12 @@ namespace MusicEngine.Scripting;
 
 public sealed class ScriptHost
 {
+    public bool DisposeVstOnClear { get; set; } = false;
+    private VstAccess? _vstAccessCache;
     private readonly AudioEngine _engine;
     private readonly Sequencer _sequencer;
     private readonly Vst3Registry? _vstRegistry;
+    private readonly HashSet<ISynth> _activeSynths = new();
     private ScriptGlobals? _globalsCache;
     private readonly ScriptOptions _options;
     private readonly object _compileLock = new();
@@ -92,6 +95,11 @@ public sealed class ScriptHost
             Host = this,
             VstRegistry = _vstRegistry
         };
+        if (_vstAccessCache != null)
+        {
+            _vstAccessCache.UpdateGlobals(globals);
+            globals.SetVstAccess(_vstAccessCache);
+        }
         _globalsCache = globals;
         return globals;
     }
@@ -113,17 +121,85 @@ public sealed class ScriptHost
 
     public void ClearState()
     {
+        bool resumeOutput = _engine.TrySuspendOutput();
         _sequencer.ClearPatterns();
         _engine.ClearMappings();
         _engine.ClearMixer();
-        _globalsCache?.vst.Clear();
-        _globalsCache = null;
+        _activeSynths.Clear();
+        if (_globalsCache != null)
+        {
+            if (DisposeVstOnClear)
+            {
+                _globalsCache.vst.KeepInstances = false;
+                _globalsCache.vst.Clear();
+                _vstAccessCache = null;
+            }
+            else
+            {
+                _globalsCache.vst.KeepInstances = true;
+                _vstAccessCache = _globalsCache.VstAccessInstance;
+            }
+            _globalsCache = null;
+        }
+        if (resumeOutput)
+        {
+            _engine.ResumeOutput();
+        }
     }
 
     public bool TryOpenVstEditor(string name)
     {
         if (_globalsCache == null) return false;
         return _globalsCache.vst.TryOpenEditor(name);
+    }
+
+    public void ResetVstState()
+    {
+        _globalsCache?.vst.ResetState();
+    }
+
+    public void SetTransportMuted(bool muted)
+    {
+        _engine.SetTransportMuted(muted);
+    }
+
+    public void SetMidiEnabled(bool enabled)
+    {
+        _engine.SetMidiEnabled(enabled, sendAllNotesOff: false);
+    }
+
+    public void StartSequencer()
+    {
+        if (!_sequencer.IsRunning)
+        {
+            _sequencer.Start();
+        }
+    }
+
+    public void StopSequencer()
+    {
+        if (_sequencer.IsRunning)
+        {
+            _sequencer.Stop();
+        }
+    }
+
+    internal void RegisterSynth(ISynth synth)
+    {
+        if (synth == null) return;
+        _activeSynths.Add(synth);
+    }
+
+    public void AllNotesOff()
+    {
+        foreach (var synth in _activeSynths)
+        {
+            if (synth is MusicEngine.Vst.Vst3Instrument)
+            {
+                continue;
+            }
+            synth.AllNotesOff();
+        }
     }
 }
 
@@ -141,6 +217,7 @@ public sealed class ScriptGlobals
     {
         var synth = new SimpleSynth();
         Engine.AddSampleProvider(synth);
+        Host?.RegisterSynth(synth);
         return synth;
     }
 
@@ -148,6 +225,7 @@ public sealed class ScriptGlobals
     {
         var instrument = new GeneralMidiInstrument();
         Engine.AddSampleProvider(instrument);
+        Host?.RegisterSynth(instrument);
         return instrument;
     }
 
@@ -170,6 +248,13 @@ public sealed class ScriptGlobals
     public RandomSource Random { get; } = new RandomSource();
 
     private VstAccess? _vstAccess;
+
+    internal VstAccess? VstAccessInstance => _vstAccess;
+
+    internal void SetVstAccess(VstAccess access)
+    {
+        _vstAccess = access;
+    }
 
     internal void RouteMidi(int deviceIndex, ISynth synth) => Engine.RouteMidiInput(deviceIndex, synth);
 

@@ -6,17 +6,25 @@
 using System;
 using System.Collections.Generic;
 using System.Dynamic;
+using MusicEngine.Core;
 using MusicEngine.Vst;
 
 namespace MusicEngine.Scripting;
 
 public sealed class VstAccess : DynamicObject
 {
-    private readonly ScriptGlobals _globals;
+    private ScriptGlobals _globals;
     private readonly Dictionary<string, Vst3Instrument> _instances = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Vst3Effect> _effects = new(StringComparer.OrdinalIgnoreCase);
 
+    public bool KeepInstances { get; set; }
+
     public VstAccess(ScriptGlobals globals)
+    {
+        _globals = globals;
+    }
+
+    public void UpdateGlobals(ScriptGlobals globals)
     {
         _globals = globals;
     }
@@ -33,6 +41,7 @@ public sealed class VstAccess : DynamicObject
     {
         if (_instances.TryGetValue(name, out var existing))
         {
+            _globals.Engine.AddSampleProvider(existing);
             return existing;
         }
 
@@ -91,6 +100,11 @@ public sealed class VstAccess : DynamicObject
 
     public void Clear()
     {
+        if (KeepInstances)
+        {
+            return;
+        }
+
         foreach (var entry in _instances.Values)
         {
             entry.Dispose();
@@ -101,5 +115,41 @@ public sealed class VstAccess : DynamicObject
         }
         _instances.Clear();
         _effects.Clear();
+    }
+
+    public void Clear(bool keepInstances)
+    {
+        KeepInstances = keepInstances;
+        if (keepInstances)
+        {
+            return;
+        }
+
+        foreach (var entry in _instances.Values)
+        {
+            entry.Dispose();
+        }
+        foreach (var entry in _effects.Values)
+        {
+            entry.Dispose();
+        }
+        _instances.Clear();
+        _effects.Clear();
+    }
+
+    public void Reattach(AudioEngine engine)
+    {
+        foreach (var instrument in _instances.Values)
+        {
+            engine.AddSampleProvider(instrument);
+        }
+    }
+
+    public void ResetState()
+    {
+        foreach (var instrument in _instances.Values)
+        {
+            instrument.ResetState();
+        }
     }
 }

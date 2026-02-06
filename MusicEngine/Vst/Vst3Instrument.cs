@@ -85,6 +85,12 @@ public sealed class Vst3Instrument : ISynth, IDisposable
 
     public void AllNotesOff() => Vst3Native.Vst3Host_AllNotesOff(_hostHandle, 0);
 
+    public void ResetState()
+    {
+        Vst3Native.Vst3Host_AllNotesOff(_hostHandle, 0);
+        Vst3Native.Vst3Host_SendPitchBend(_hostHandle, 0f, 0);
+    }
+
     public void PitchBend(float normalized)
     {
         normalized = Math.Clamp(normalized, -1f, 1f);
@@ -127,7 +133,11 @@ public sealed class Vst3Instrument : ISynth, IDisposable
     {
         if (_disposed) return;
         _disposed = true;
-        Vst3Native.Vst3Host_Close(_hostHandle);
+        VstUiContext.Shared.Invoke(() =>
+        {
+            Vst3Native.Vst3Host_Close(_hostHandle);
+            return 0;
+        });
         if (_tempBuffer != null && _tempBufferFromPool)
         {
             ArrayPool<float>.Shared.Return(_tempBuffer);

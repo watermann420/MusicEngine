@@ -23,7 +23,7 @@ piano.Name = "GM_Piano";
 
 
 //midi setup
-midi.device(0).to(vital);
+midi.device(0).to(piano);
 midi.device(0).pitchbend().to(val => piano.PitchBend(val * 2f - 1f)); // map wheel to -1..1
 midi.device(0).pitchbend().to(val => vital.PitchBend(val * 2f - 1f)); // -1..1
 //midi.device(0).log.info(true); // Log MIDI input for debugging and mapping midi controls

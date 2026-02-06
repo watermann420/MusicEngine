@@ -17,6 +17,7 @@ public sealed class AudioEngine : IDisposable
     private readonly MixingSampleProvider _mixer;
     private readonly AudioEffectChain _masterEffects;
     private readonly VolumeSampleProvider _masterVolume;
+    private readonly VolumeSampleProvider _transportVolume;
     private readonly RecordingTap _masterTap;
     private readonly ISampleProvider _masterChain;
     private readonly Dictionary<int, AudioChannel> _channels = new();
@@ -36,7 +37,8 @@ public sealed class AudioEngine : IDisposable
         _mixer = new MixingSampleProvider(_waveFormat) { ReadFully = true };
         _masterEffects = new AudioEffectChain(_mixer, _waveFormat);
         _masterVolume = new VolumeSampleProvider(_masterEffects) { Volume = 1.0f };
-        var dcBlock = new DcBlockingSampleProvider(_masterVolume, 20f, _waveFormat.SampleRate);
+        _transportVolume = new VolumeSampleProvider(_masterVolume) { Volume = 1.0f };
+        var dcBlock = new DcBlockingSampleProvider(_transportVolume, 20f, _waveFormat.SampleRate);
         var limiter = new LimiterSampleProvider(dcBlock, 0.95f, _waveFormat.SampleRate, attackMs: 2f, releaseMs: 60f);
         _masterChain = new SoftClipSampleProvider(limiter, 0.99f);
         _masterTap = new RecordingTap(_masterChain);
@@ -61,6 +63,14 @@ public sealed class AudioEngine : IDisposable
         if (_output == null) return;
         _output.Stop();
         _outputRunning = false;
+    }
+
+    public bool TrySuspendOutput()
+    {
+        if (_output == null || !_outputRunning) return false;
+        _output.Stop();
+        _outputRunning = false;
+        return true;
     }
 
     public void ResumeOutput()
@@ -104,8 +114,28 @@ public sealed class AudioEngine : IDisposable
 
     public void SetAllChannelsGain(float value)
     {
-        value = Math.Clamp(value, 0f, 1f);
-        _masterVolume.Volume = value;
+        MasterGain = value;
+    }
+
+    public float MasterGain
+    {
+        get => _masterVolume.Volume;
+        set => _masterVolume.Volume = Math.Clamp(value, 0f, 1f);
+    }
+
+    public void SetTransportMuted(bool muted)
+    {
+        _transportVolume.Volume = muted ? 0f : 1f;
+    }
+
+    public void SetMidiEnabled(bool enabled)
+    {
+        _midiRouter.SetEnabled(enabled);
+    }
+
+    public void SetMidiEnabled(bool enabled, bool sendAllNotesOff)
+    {
+        _midiRouter.SetEnabled(enabled, sendAllNotesOff);
     }
 
     public RecordingSession StartMasterRecording(string path, string? format = null)

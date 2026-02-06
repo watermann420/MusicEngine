@@ -13,7 +13,9 @@ namespace MusicEngine.Scripting;
 
 public static class EngineLauncher
 {
-    public static async Task LaunchAsync(string defaultScript = "// Start coding music here...")
+    public static async Task LaunchAsync(string defaultScript = "// Start coding music here...",
+        bool executeScriptOnStartup = true, bool startSequencerOnStartup = true, bool startSleeping = false,
+        bool editorMode = false)
     {
         Console.WriteLine("MusicEngine minimal mode");
         Console.WriteLine("Initializing audio engine...");
@@ -22,7 +24,10 @@ public static class EngineLauncher
         engine.Initialize();
 
         var sequencer = new Sequencer();
-        sequencer.Start();
+        if (startSequencerOnStartup)
+        {
+            sequencer.Start();
+        }
 
         Vst3Registry? registry = null;
         if (VstSystem.TryScan(out var scannedRegistry, out var scanMessage))
@@ -67,9 +72,25 @@ public static class EngineLauncher
             activeScript = File.ReadAllText(scriptPath);
         }
 
-        await host.ExecuteScriptAsync(activeScript);
+        if (executeScriptOnStartup)
+        {
+            await host.ExecuteScriptAsync(activeScript);
+        }
 
-        var ui = new ConsoleInterface(host, activeScript, () => sequencer.Stop(), scriptPath, registry);
+        if (editorMode)
+        {
+            sequencer.Stop();
+            engine.SetTransportMuted(true);
+            engine.SetMidiEnabled(false, sendAllNotesOff: false);
+        }
+        else if (startSleeping)
+        {
+            sequencer.Stop();
+            engine.SuspendOutput();
+        }
+
+        var ui = new ConsoleInterface(host, activeScript, () => sequencer.Stop(), scriptPath, registry,
+            editorMode: editorMode);
         await ui.RunAsync();
     }
 }
