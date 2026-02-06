@@ -1,0 +1,48 @@
+// MusicEngine License (MEL) - Honor-Based Commercial Support
+// Copyright (c) 2025-2026 Yannis Watermann (watermann420, nullonebinary)
+// https://github.com/watermann420/MusicEngine
+// Description: Simple audio file clip for routing.
+
+using System;
+using NAudio.Wave;
+
+namespace MusicEngine.Core;
+
+public sealed class AudioClip : ISampleProvider, IDisposable
+{
+    private readonly AudioFileReader _reader;
+    private bool _disposed;
+
+    public AudioClip(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            throw new ArgumentException("Audio file path is required.", nameof(path));
+        }
+
+        _reader = new AudioFileReader(path);
+    }
+
+    public bool Loop { get; set; }
+
+    public WaveFormat WaveFormat => _reader.WaveFormat;
+
+    public int Read(float[] buffer, int offset, int count)
+    {
+        if (_disposed) return 0;
+        int read = _reader.Read(buffer, offset, count);
+        if (read == 0 && Loop)
+        {
+            _reader.Position = 0;
+            read = _reader.Read(buffer, offset, count);
+        }
+        return read;
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        _reader.Dispose();
+    }
+}

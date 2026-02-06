@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{2D06A3E6-5C4F-4A63-9E86-5D4A9F5CDE3B}</ProjectGuid>
+    <RootNamespace>MusicEngine.CppLayer.Native</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+
+  <PropertyGroup>
+    <TargetName>MusicEngine.CppLayer.Native</TargetName>
+    <OutDir>$(ProjectDir)x64\$(Configuration)\</OutDir>
+    <IntDir>$(ProjectDir)build\$(Configuration)\</IntDir>
+  </PropertyGroup>
+
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <PreprocessorDefinitions>SMTG_USE_STL;NOMINMAX;WIN32;_WINDOWS;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\..\external\vst3sdk;$(ProjectDir)..\..\external\vst3sdk\public.sdk;$(ProjectDir)..\..\external\vst3sdk\pluginterfaces;$(ProjectDir)..\..\external\vst3sdk\base\source;$(ProjectDir)..\..\external\vst3sdk\base\thread\include;$(ProjectDir)..\..\external\vst3sdk\public.sdk\source;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <ModuleDefinitionFile>MusicEngine.CppLayer.Native.def</ModuleDefinitionFile>
+      <AdditionalDependencies>user32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <PreprocessorDefinitions>SMTG_USE_STL;NOMINMAX;WIN32;_WINDOWS;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\..\external\vst3sdk;$(ProjectDir)..\..\external\vst3sdk\public.sdk;$(ProjectDir)..\..\external\vst3sdk\pluginterfaces;$(ProjectDir)..\..\external\vst3sdk\base\source;$(ProjectDir)..\..\external\vst3sdk\base\thread\include;$(ProjectDir)..\..\external\vst3sdk\public.sdk\source;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <ModuleDefinitionFile>MusicEngine.CppLayer.Native.def</ModuleDefinitionFile>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <AdditionalDependencies>user32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <ItemGroup>
+    <ClCompile Include="Vst3Host.cpp" />
+    <ClCompile Include="..\..\external\vst3sdk\base\source\baseiids.cpp" />
+    <ClCompile Include="..\..\external\vst3sdk\base\source\fbuffer.cpp" />
+    <ClCompile Include="..\..\external\vst3sdk\base\source\fdebug.cpp" />
+    <ClCompile Include="..\..\external\vst3sdk\base\source\fdynlib.cpp" />
+    <ClCompile Include="..\..\external\vst3sdk\base\source\fobject.cpp" />
+    <ClCompile Include="..\..\external\vst3sdk\base\source\fstreamer.cpp" />
+    <ClCompile Include="..\..\external\vst3sdk\base\source\fstring.cpp" />
+    <ClCompile Include="..\..\external\vst3sdk\base\source\timer.cpp" />
+    <ClCompile Include="..\..\external\vst3sdk\base\source\updatehandler.cpp" />
+    <ClCompile Include="..\..\external\vst3sdk\base\thread\source\fcondition.cpp" />
+    <ClCompile Include="..\..\external\vst3sdk\base\thread\source\flock.cpp" />
+    <ClCompile Include="..\..\external\vst3sdk\pluginterfaces\base\coreiids.cpp" />
+    <ClCompile Include="..\..\external\vst3sdk\pluginterfaces\base\funknown.cpp" />
+    <ClCompile Include="..\..\external\vst3sdk\pluginterfaces\base\ustring.cpp" />
+    <ClCompile Include="..\..\external\vst3sdk\public.sdk\source\vst\utility\stringconvert.cpp" />
+    <ClCompile Include="..\..\external\vst3sdk\public.sdk\source\common\commoniids.cpp" />
+    <ClCompile Include="..\..\external\vst3sdk\public.sdk\source\common\commonstringconvert.cpp" />
+    <ClCompile Include="..\..\external\vst3sdk\public.sdk\source\common\threadchecker_win32.cpp" />
+    <ClCompile Include="..\..\external\vst3sdk\public.sdk\source\vst\hosting\connectionproxy.cpp" />
+    <ClCompile Include="..\..\external\vst3sdk\public.sdk\source\vst\hosting\eventlist.cpp" />
+    <ClCompile Include="..\..\external\vst3sdk\public.sdk\source\vst\hosting\hostclasses.cpp" />
+    <ClCompile Include="..\..\external\vst3sdk\public.sdk\source\vst\hosting\module.cpp" />
+    <ClCompile Include="..\..\external\vst3sdk\public.sdk\source\vst\hosting\module_win32.cpp" />
+    <ClCompile Include="..\..\external\vst3sdk\public.sdk\source\vst\hosting\parameterchanges.cpp" />
+    <ClCompile Include="..\..\external\vst3sdk\public.sdk\source\vst\hosting\pluginterfacesupport.cpp" />
+    <ClCompile Include="..\..\external\vst3sdk\public.sdk\source\vst\hosting\plugprovider.cpp" />
+    <ClCompile Include="..\..\external\vst3sdk\public.sdk\source\vst\hosting\processdata.cpp" />
+    <ClCompile Include="..\..\external\vst3sdk\public.sdk\source\vst\vstinitiids.cpp" />
+  </ItemGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>
