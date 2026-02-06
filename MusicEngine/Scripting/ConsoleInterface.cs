@@ -72,9 +72,8 @@ public sealed class ConsoleInterface
             _scriptContent = await File.ReadAllTextAsync(_scriptFilePath);
         }
 
-        _host.ClearState();
-        await _host.ExecuteScriptAsync(_scriptContent);
-        Console.WriteLine("Refresh Complete.");
+        bool executed = await _host.RefreshScriptAsync(_scriptContent, skipIfUnchanged: true);
+        Console.WriteLine(executed ? "Refresh Complete." : "No changes detected.");
     }
 
     private void PrintVstList()

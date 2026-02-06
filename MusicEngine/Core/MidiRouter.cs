@@ -5,6 +5,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using NAudio.Midi;
 
 namespace MusicEngine.Core;
@@ -13,6 +14,8 @@ public sealed class MidiRouter
 {
     private readonly Dictionary<int, ISynth> _routing = new();
     private readonly List<MidiMapping> _mappings = new();
+    private readonly object _activityLock = new();
+    private readonly Dictionary<int, MidiDeviceActivitySnapshot> _activity = new();
 
     private sealed class MidiMapping
     {
@@ -41,6 +44,8 @@ public sealed class MidiRouter
 
     public void HandleMidiMessage(int deviceIndex, MidiInMessageEventArgs args)
     {
+        UpdateActivity(deviceIndex, args);
+
         if (_routing.TryGetValue(deviceIndex, out var synth))
         {
             if (args.MidiEvent is NAudio.Midi.NoteEvent noteEvent)
@@ -77,6 +82,8 @@ public sealed class MidiRouter
 
     private void DispatchControl(int deviceIndex, int controlId, float value)
     {
+        UpdateControlActivity(deviceIndex, controlId, value);
+
         for (int i = 0; i < _mappings.Count; i++)
         {
             var mapping = _mappings[i];
@@ -86,4 +93,80 @@ public sealed class MidiRouter
             }
         }
     }
+
+    public IReadOnlyList<MidiDeviceActivitySnapshot> GetActivitySnapshot()
+    {
+        lock (_activityLock)
+        {
+            if (_activity.Count == 0) return Array.Empty<MidiDeviceActivitySnapshot>();
+            return _activity.Values.OrderBy(entry => entry.DeviceIndex).ToArray();
+        }
+    }
+
+    private void UpdateActivity(int deviceIndex, MidiInMessageEventArgs args)
+    {
+        var nowUtc = DateTime.UtcNow;
+        int? note = null;
+        int? velocity = null;
+        int? controlId = null;
+        float? controlValue = null;
+        string messageType = args.MidiEvent?.CommandCode.ToString() ?? "Unknown";
+
+        if (args.MidiEvent is NAudio.Midi.NoteEvent noteEvent)
+        {
+            note = noteEvent.NoteNumber;
+            velocity = noteEvent.Velocity;
+        }
+        else if (args.MidiEvent is PitchWheelChangeEvent bend)
+        {
+            controlId = -1;
+            controlValue = bend.Pitch / 16383f;
+        }
+        else if (args.MidiEvent is ControlChangeEvent cc)
+        {
+            controlId = (int)cc.Controller;
+            controlValue = cc.ControllerValue / 127f;
+        }
+
+        lock (_activityLock)
+        {
+            _activity[deviceIndex] = new MidiDeviceActivitySnapshot
+            {
+                DeviceIndex = deviceIndex,
+                LastMessageUtc = nowUtc,
+                LastMessageType = messageType,
+                LastNote = note,
+                LastVelocity = velocity,
+                LastControlId = controlId,
+                LastControlValue = controlValue
+            };
+        }
+    }
+
+    private void UpdateControlActivity(int deviceIndex, int controlId, float value)
+    {
+        var nowUtc = DateTime.UtcNow;
+        lock (_activityLock)
+        {
+            _activity[deviceIndex] = new MidiDeviceActivitySnapshot
+            {
+                DeviceIndex = deviceIndex,
+                LastMessageUtc = nowUtc,
+                LastMessageType = "Control",
+                LastControlId = controlId,
+                LastControlValue = value
+            };
+        }
+    }
+}
+
+public sealed class MidiDeviceActivitySnapshot
+{
+    public int DeviceIndex { get; init; }
+    public DateTime LastMessageUtc { get; init; }
+    public string LastMessageType { get; init; } = string.Empty;
+    public int? LastNote { get; init; }
+    public int? LastVelocity { get; init; }
+    public int? LastControlId { get; init; }
+    public float? LastControlValue { get; init; }
 }

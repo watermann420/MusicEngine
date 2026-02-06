@@ -21,20 +21,69 @@ public sealed class ScriptHost
     private readonly Sequencer _sequencer;
     private readonly Vst3Registry? _vstRegistry;
     private ScriptGlobals? _globalsCache;
+    private readonly ScriptOptions _options;
+    private readonly object _compileLock = new();
+    private Script<object>? _compiledScript;
+    private string? _compiledCode;
+    private string? _lastExecutedCode;
 
     public ScriptHost(AudioEngine engine, Sequencer sequencer, Vst3Registry? vstRegistry = null)
     {
         _engine = engine;
         _sequencer = sequencer;
         _vstRegistry = vstRegistry;
+        _options = ScriptOptions.Default
+            .WithReferences(typeof(AudioEngine).Assembly, typeof(NAudio.Wave.ISampleProvider).Assembly)
+            .WithImports("System", "MusicEngine.Core", "MusicEngine.Instruments", "MusicEngine.Instruments.Modules",
+                "MusicEngine.Vst", "MusicEngine.Timing", "System.Collections.Generic");
     }
 
     public async Task ExecuteScriptAsync(string code)
     {
-        var options = ScriptOptions.Default
-            .WithReferences(typeof(AudioEngine).Assembly, typeof(NAudio.Wave.ISampleProvider).Assembly)
-            .WithImports("System", "MusicEngine.Core", "MusicEngine.Instruments", "MusicEngine.Instruments.Modules",
-                "MusicEngine.Vst", "MusicEngine.Timing", "System.Collections.Generic");
+        await RunScriptAsync(code, skipIfUnchanged: false, clearState: false);
+    }
+
+    public async Task<bool> ExecuteScriptIfChangedAsync(string code)
+    {
+        return await RunScriptAsync(code, skipIfUnchanged: true, clearState: false);
+    }
+
+    public async Task<bool> RefreshScriptAsync(string code, bool skipIfUnchanged = true)
+    {
+        return await RunScriptAsync(code, skipIfUnchanged, clearState: true);
+    }
+
+    private async Task<bool> RunScriptAsync(string code, bool skipIfUnchanged, bool clearState)
+    {
+        if (skipIfUnchanged && string.Equals(_lastExecutedCode, code, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (clearState)
+        {
+            ClearState();
+        }
+
+        var globals = GetOrCreateGlobals();
+        var script = GetOrCompile(code);
+
+        try
+        {
+            await script.RunAsync(globals);
+            _lastExecutedCode = code;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Script Error: {ex.Message}");
+            return false;
+        }
+    }
+
+    private ScriptGlobals GetOrCreateGlobals()
+    {
+        if (_globalsCache != null) return _globalsCache;
 
         var globals = new ScriptGlobals
         {
@@ -44,14 +93,21 @@ public sealed class ScriptHost
             VstRegistry = _vstRegistry
         };
         _globalsCache = globals;
+        return globals;
+    }
 
-        try
+    private Script<object> GetOrCompile(string code)
+    {
+        lock (_compileLock)
         {
-            await CSharpScript.RunAsync(code, options, globals);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Script Error: {ex.Message}");
+            if (_compiledScript != null && string.Equals(_compiledCode, code, StringComparison.Ordinal))
+            {
+                return _compiledScript;
+            }
+
+            _compiledScript = CSharpScript.Create(code, _options, typeof(ScriptGlobals));
+            _compiledCode = code;
+            return _compiledScript;
         }
     }
 

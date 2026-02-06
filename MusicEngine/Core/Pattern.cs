@@ -12,6 +12,7 @@ namespace MusicEngine.Core;
 
 public sealed class Pattern
 {
+    public Guid Id { get; } = Guid.NewGuid();
     public ISynth Synth { get; }
     public List<ISynth> SynthTargets { get; } = new();
     public List<NoteEvent> Events { get; } = new();
@@ -21,10 +22,17 @@ public sealed class Pattern
     public bool Enabled { get; set; } = true;
     public Sequencer? Sequencer { get; internal set; }
     public TimingSettings Timing { get; } = new TimingSettings();
+    public double CurrentBeat => _currentBeat;
+
+    public NoteActivity? LastTriggeredNote { get; private set; }
+    public double? LastTriggeredBeat { get; private set; }
+    public DateTime? LastTriggeredUtc { get; private set; }
 
     private double _currentBeat;
     private Random? _humanizeRandom;
     private int? _humanizeSeed;
+    private readonly object _stateLock = new();
+    private readonly Dictionary<int, NoteActivity> _activeNotes = new();
 
     public Pattern(ISynth synth, params ISynth[] moreSynths)
     {
@@ -118,7 +126,7 @@ public sealed class Pattern
 
             if (trigger)
             {
-                TriggerNote(ev, bpm, timingMaster.EnableHumanize, humanize);
+                TriggerNote(ev, bpm, timingMaster.EnableHumanize, humanize, eventBeat);
             }
         }
     }
@@ -129,7 +137,7 @@ public sealed class Pattern
         return result < 0 ? result + mod : result;
     }
 
-    private void TriggerNote(NoteEvent ev, double bpm, bool enableHumanize, HumanizeSettings humanize)
+    private void TriggerNote(NoteEvent ev, double bpm, bool enableHumanize, HumanizeSettings humanize, double eventBeat)
     {
         var delayMs = 0.0;
         var velocity = ev.Velocity;
@@ -155,6 +163,21 @@ public sealed class Pattern
                 await Task.Delay(TimeSpan.FromMilliseconds(delayMs));
             }
 
+            var nowUtc = DateTime.UtcNow;
+            var activity = new NoteActivity
+            {
+                Note = ev.Note,
+                Velocity = velocity,
+                StartedUtc = nowUtc
+            };
+            lock (_stateLock)
+            {
+                _activeNotes[ev.Note] = activity;
+                LastTriggeredNote = activity;
+                LastTriggeredBeat = eventBeat;
+                LastTriggeredUtc = nowUtc;
+            }
+
             foreach (var target in SynthTargets)
             {
                 target.NoteOn(ev.Note, velocity);
@@ -164,6 +187,11 @@ public sealed class Pattern
             foreach (var target in SynthTargets)
             {
                 target.NoteOff(ev.Note);
+            }
+
+            lock (_stateLock)
+            {
+                _activeNotes.Remove(ev.Note);
             }
         });
     }
@@ -191,6 +219,21 @@ public sealed class Pattern
         if (_humanizeRandom == null) return 0.0;
         return _humanizeRandom.NextDouble() * 2.0 - 1.0;
     }
+
+    public IReadOnlyList<NoteActivity> GetActiveNotesSnapshot()
+    {
+        lock (_stateLock)
+        {
+            if (_activeNotes.Count == 0) return Array.Empty<NoteActivity>();
+            var snapshot = new NoteActivity[_activeNotes.Count];
+            int index = 0;
+            foreach (var entry in _activeNotes.Values)
+            {
+                snapshot[index++] = entry;
+            }
+            return snapshot;
+        }
+    }
 }
 
 public sealed class NoteEvent
@@ -199,4 +242,11 @@ public sealed class NoteEvent
     public int Note { get; set; }
     public int Velocity { get; set; }
     public double Duration { get; set; }
+}
+
+public sealed class NoteActivity
+{
+    public int Note { get; init; }
+    public int Velocity { get; init; }
+    public DateTime StartedUtc { get; init; }
 }

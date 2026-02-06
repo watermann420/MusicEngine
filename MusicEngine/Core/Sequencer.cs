@@ -34,6 +34,8 @@ public sealed class Sequencer : IDisposable
         set => _currentTimeSeconds = Timing.Bpm <= 0 ? 0 : value * 60.0 / Timing.Bpm;
     }
 
+    public double CurrentTimeSeconds => _currentTimeSeconds;
+
     public IReadOnlyList<Pattern> Patterns
     {
         get

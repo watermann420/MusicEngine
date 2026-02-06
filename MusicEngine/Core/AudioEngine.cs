@@ -27,6 +27,7 @@ public sealed class AudioEngine : IDisposable
     private readonly MidiRouter _midiRouter = new();
     private IWavePlayer? _output;
     private bool _initialized;
+    private bool _outputRunning;
 
     public AudioEngine(int? sampleRate = null)
     {
@@ -52,6 +53,28 @@ public sealed class AudioEngine : IDisposable
         _output.Init(_masterTap);
         _output.Play();
         _initialized = true;
+        _outputRunning = true;
+    }
+
+    public void SuspendOutput()
+    {
+        if (_output == null) return;
+        _output.Stop();
+        _outputRunning = false;
+    }
+
+    public void ResumeOutput()
+    {
+        if (!_initialized)
+        {
+            Initialize();
+            return;
+        }
+
+        if (_output == null) return;
+        if (_outputRunning) return;
+        _output.Play();
+        _outputRunning = true;
     }
 
     public void AddSampleProvider(ISampleProvider provider)
@@ -163,6 +186,11 @@ public sealed class AudioEngine : IDisposable
         _midiRouter.Clear();
     }
 
+    public IReadOnlyList<MidiDeviceActivitySnapshot> GetMidiActivitySnapshot()
+    {
+        return _midiRouter.GetActivitySnapshot();
+    }
+
     public void ClearMixer()
     {
         _mixer.RemoveAllMixerInputs();
@@ -202,6 +230,7 @@ public sealed class AudioEngine : IDisposable
         _output?.Stop();
         _output?.Dispose();
         _output = null;
+        _outputRunning = false;
 
         MidiOutPool.DisposeAll();
     }
