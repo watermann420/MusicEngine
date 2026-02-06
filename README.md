@@ -49,8 +49,8 @@ using MusicEngine.Vst;
 
 ## Links
 
-- License: `../LICENSE`
-- Contributing: `../CONTRIBUTING`
+- License: https://github.com/watermann420/MusicEngine/blob/master/LICENSE
+- Contributing: https://github.com/watermann420/MusicEngine/blob/master/CONTRIBUTING
 
 Copyright 2026 watermann429 and contributers.
 
