@@ -8,6 +8,9 @@ using NAudio.Wave;
 
 namespace MusicEngine.Core;
 
+/// <summary>
+/// Simple audio file clip for playback and routing.
+/// </summary>
 public sealed class AudioClip : ISampleProvider, IDisposable
 {
     private readonly AudioFileReader _reader;
@@ -23,10 +26,19 @@ public sealed class AudioClip : ISampleProvider, IDisposable
         _reader = new AudioFileReader(path);
     }
 
+    /// <summary>
+    /// When enabled, the clip restarts automatically at the end.
+    /// </summary>
     public bool Loop { get; set; }
 
+    /// <summary>
+    /// Wave format reported by the underlying file reader.
+    /// </summary>
     public WaveFormat WaveFormat => _reader.WaveFormat;
 
+    /// <summary>
+    /// Read audio samples into the buffer.
+    /// </summary>
     public int Read(float[] buffer, int offset, int count)
     {
         if (_disposed) return 0;

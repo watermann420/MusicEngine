@@ -11,28 +11,90 @@ using MusicEngine.Vst;
 
 namespace MusicEngine.Scripting;
 
+/// <summary>
+/// Configuration options for <see cref="EngineScriptInterface"/>.
+/// </summary>
 public sealed class EngineScriptInterfaceOptions
 {
+    /// <summary>
+    /// Enable scanning for VST3 plugins on startup.
+    /// </summary>
     public bool EnableVstScanning { get; set; } = true;
+
+    /// <summary>
+    /// Start the sequencer automatically on startup.
+    /// </summary>
     public bool StartSequencerOnStartup { get; set; } = true;
+
+    /// <summary>
+    /// Optional sample rate override for the audio engine.
+    /// </summary>
     public int? SampleRate { get; set; }
 }
 
+/// <summary>
+/// Script-oriented engine interface for embedding in host applications.
+/// </summary>
 public interface IEngineScriptInterface : IDisposable
 {
+    /// <summary>
+    /// Audio engine instance.
+    /// </summary>
     AudioEngine Engine { get; }
+
+    /// <summary>
+    /// Sequencer instance.
+    /// </summary>
     Sequencer Sequencer { get; }
+
+    /// <summary>
+    /// Script host used for execution and state.
+    /// </summary>
     ScriptHost Host { get; }
+
+    /// <summary>
+    /// VST3 registry populated during scanning (if enabled).
+    /// </summary>
     Vst3Registry? VstRegistry { get; }
+
+    /// <summary>
+    /// Whether the engine is currently sleeping.
+    /// </summary>
     bool IsSleeping { get; }
 
+    /// <summary>
+    /// Initialize the engine and optional startup script.
+    /// </summary>
+    /// <param name="startupScript">Optional script to run after initialization.</param>
     Task StartupAsync(string? startupScript = null);
+
+    /// <summary>
+    /// Run a script, optionally clearing state and skipping unchanged code.
+    /// </summary>
+    /// <param name="code">Script source code.</param>
+    /// <param name="clearState">Clear script state before running.</param>
+    /// <param name="skipIfUnchanged">Skip execution when code is unchanged.</param>
     Task RunScriptAsync(string code, bool clearState = true, bool skipIfUnchanged = true);
+
+    /// <summary>
+    /// Snapshot current engine state for inspection or UI.
+    /// </summary>
     EngineStateSnapshot GetStateSnapshot();
+
+    /// <summary>
+    /// Suspend audio and sequencer processing.
+    /// </summary>
     void Sleep();
+
+    /// <summary>
+    /// Resume audio and sequencer processing.
+    /// </summary>
     void Wake();
 }
 
+/// <summary>
+/// Script-friendly wrapper around engine, sequencer, and VST registry.
+/// </summary>
 public sealed class EngineScriptInterface : IEngineScriptInterface
 {
     private readonly EngineScriptInterfaceOptions _options;
@@ -40,12 +102,35 @@ public sealed class EngineScriptInterface : IEngineScriptInterface
     private bool _initialized;
     private bool _sleeping;
 
+    /// <summary>
+    /// Audio engine instance.
+    /// </summary>
     public AudioEngine Engine { get; }
+
+    /// <summary>
+    /// Sequencer instance.
+    /// </summary>
     public Sequencer Sequencer { get; }
+
+    /// <summary>
+    /// Script host used for execution and state.
+    /// </summary>
     public ScriptHost Host => _host ?? throw new InvalidOperationException("Call StartupAsync before using the host.");
+
+    /// <summary>
+    /// VST3 registry populated during scanning (if enabled).
+    /// </summary>
     public Vst3Registry? VstRegistry { get; private set; }
+
+    /// <summary>
+    /// Whether the engine is currently sleeping.
+    /// </summary>
     public bool IsSleeping => _sleeping;
 
+    /// <summary>
+    /// Create a new interface with optional configuration.
+    /// </summary>
+    /// <param name="options">Configuration options.</param>
     public EngineScriptInterface(EngineScriptInterfaceOptions? options = null)
     {
         _options = options ?? new EngineScriptInterfaceOptions();
@@ -53,6 +138,9 @@ public sealed class EngineScriptInterface : IEngineScriptInterface
         Sequencer = new Sequencer();
     }
 
+    /// <summary>
+    /// Initialize the engine, scan for VST3, and run an optional startup script.
+    /// </summary>
     public async Task StartupAsync(string? startupScript = null)
     {
         if (_initialized) return;
@@ -79,6 +167,9 @@ public sealed class EngineScriptInterface : IEngineScriptInterface
         }
     }
 
+    /// <summary>
+    /// Run a script, optionally clearing state and skipping unchanged code.
+    /// </summary>
     public async Task RunScriptAsync(string code, bool clearState = true, bool skipIfUnchanged = true)
     {
         if (!_initialized)
@@ -101,6 +192,9 @@ public sealed class EngineScriptInterface : IEngineScriptInterface
         await Host.ExecuteScriptAsync(code);
     }
 
+    /// <summary>
+    /// Snapshot current engine state for inspection or UI.
+    /// </summary>
     public EngineStateSnapshot GetStateSnapshot()
     {
         if (!_initialized)
@@ -175,6 +269,9 @@ public sealed class EngineScriptInterface : IEngineScriptInterface
         };
     }
 
+    /// <summary>
+    /// Suspend audio and sequencer processing.
+    /// </summary>
     public void Sleep()
     {
         if (!_initialized)
@@ -188,6 +285,9 @@ public sealed class EngineScriptInterface : IEngineScriptInterface
         _sleeping = true;
     }
 
+    /// <summary>
+    /// Resume audio and sequencer processing.
+    /// </summary>
     public void Wake()
     {
         if (!_initialized)
@@ -204,6 +304,9 @@ public sealed class EngineScriptInterface : IEngineScriptInterface
         _sleeping = false;
     }
 
+    /// <summary>
+    /// Dispose engine resources.
+    /// </summary>
     public void Dispose()
     {
         Sequencer.Dispose();

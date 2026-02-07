@@ -8,14 +8,23 @@ using MusicEngine.Core;
 
 namespace MusicEngine.Scripting.FluentApi;
 
+/// <summary>
+/// Fluent API entry point for MIDI routing and mapping.
+/// </summary>
 public sealed class MidiControl
 {
     private readonly ScriptGlobals _globals;
     public MidiControl(ScriptGlobals globals) => _globals = globals;
 
+    /// <summary>
+    /// Access a MIDI device by index.
+    /// </summary>
     public DeviceControl device(int index) => new DeviceControl(_globals, index);
 }
 
+/// <summary>
+/// MIDI device routing and control mapping.
+/// </summary>
 public sealed class DeviceControl
 {
     private readonly ScriptGlobals _globals;
@@ -27,13 +36,25 @@ public sealed class DeviceControl
         _deviceIndex = deviceIndex;
     }
 
+    /// <summary>
+    /// Route the device to a synth.
+    /// </summary>
     public void to(ISynth synth) => _globals.RouteMidi(_deviceIndex, synth);
 
+    /// <summary>
+    /// Map pitch bend to a control action.
+    /// </summary>
     public ControlMapping pitchbend() => new ControlMapping(_globals, _deviceIndex, -1);
 
+    /// <summary>
+    /// Map a control change ID to a control action.
+    /// </summary>
     public ControlMapping control(int controlId) => new ControlMapping(_globals, _deviceIndex, controlId);
 }
 
+/// <summary>
+/// Control mapping configuration.
+/// </summary>
 public sealed class ControlMapping
 {
     private readonly ScriptGlobals _globals;
@@ -47,5 +68,8 @@ public sealed class ControlMapping
         _controlId = controlId;
     }
 
+    /// <summary>
+    /// Map the control to an action.
+    /// </summary>
     public void to(Action<float> action) => _globals.MapControlAction(_deviceIndex, _controlId, action);
 }

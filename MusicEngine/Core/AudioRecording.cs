@@ -9,6 +9,9 @@ using NAudio.Wave;
 
 namespace MusicEngine.Core;
 
+/// <summary>
+/// Represents an active audio recording session.
+/// </summary>
 public sealed class RecordingSession : IDisposable
 {
     private readonly string _targetPath;
@@ -31,6 +34,9 @@ public sealed class RecordingSession : IDisposable
         _writer.WriteSamples(buffer, offset, count);
     }
 
+    /// <summary>
+    /// Finalize and write the recording to disk.
+    /// </summary>
     public void Dispose()
     {
         if (_disposed) return;

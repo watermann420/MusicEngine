@@ -11,6 +11,9 @@ using MusicEngine.Vst;
 
 namespace MusicEngine.Scripting;
 
+/// <summary>
+/// Minimal interactive console interface for script execution.
+/// </summary>
 public sealed class ConsoleInterface
 {
     private readonly ScriptHost _host;
@@ -23,6 +26,15 @@ public sealed class ConsoleInterface
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
     private bool _hasExecutedScript;
 
+    /// <summary>
+    /// Create a console interface bound to a script host.
+    /// </summary>
+    /// <param name="host">Script host instance.</param>
+    /// <param name="scriptContent">Initial script content.</param>
+    /// <param name="onExit">Callback when exiting.</param>
+    /// <param name="scriptFilePath">Optional script file path.</param>
+    /// <param name="vst3Registry">Optional VST3 registry for listing/opening plugins.</param>
+    /// <param name="editorMode">Enable editor mode commands.</param>
     public ConsoleInterface(ScriptHost host, string scriptContent, Action onExit, string? scriptFilePath = null,
         Vst3Registry? vst3Registry = null, bool editorMode = false)
     {
@@ -35,6 +47,9 @@ public sealed class ConsoleInterface
         _quietMode = _editorMode || Console.IsInputRedirected || Console.IsOutputRedirected;
     }
 
+    /// <summary>
+    /// Run the interactive console loop.
+    /// </summary>
     public async Task RunAsync()
     {
         Console.WriteLine("Music Engine Running.");

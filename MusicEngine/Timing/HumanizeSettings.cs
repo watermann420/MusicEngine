@@ -4,9 +4,23 @@
 
 namespace MusicEngine.Timing;
 
+/// <summary>
+/// Humanize settings for timing and velocity jitter.
+/// </summary>
 public sealed class HumanizeSettings
 {
+    /// <summary>
+    /// Max timing jitter in milliseconds.
+    /// </summary>
     public double TimeMs { get; set; }
+
+    /// <summary>
+    /// Velocity jitter amount (0-1 range multiplier).
+    /// </summary>
     public double Velocity { get; set; }
+
+    /// <summary>
+    /// Optional RNG seed for deterministic humanize.
+    /// </summary>
     public int? Seed { get; set; }
 }

@@ -28,6 +28,8 @@ internal static class Vst3Native
     private const string ParamCountExport = "Vst3Host_GetParameterCount";
     private const string ParamInfoExport = "Vst3Host_GetParameterInfo";
     private const string ParamSetExport = "Vst3Host_SetParameter";
+    private const string EditorSizeExport = "Vst3Host_GetEditorSize";
+    private const string EditorResizeExport = "Vst3Host_ResizeEditor";
 
     public static bool TryValidate(out string message)
     {
@@ -59,7 +61,9 @@ internal static class Vst3Native
                  NativeLibrary.TryGetExport(handle, PitchBendExport, out _) &&
                  NativeLibrary.TryGetExport(handle, ParamCountExport, out _) &&
                  NativeLibrary.TryGetExport(handle, ParamInfoExport, out _) &&
-                 NativeLibrary.TryGetExport(handle, ParamSetExport, out _);
+                 NativeLibrary.TryGetExport(handle, ParamSetExport, out _) &&
+                 NativeLibrary.TryGetExport(handle, EditorSizeExport, out _) &&
+                 NativeLibrary.TryGetExport(handle, EditorResizeExport, out _);
         NativeLibrary.Free(handle);
 
         message = ok
@@ -152,4 +156,12 @@ internal static class Vst3Native
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
     public static extern void Vst3Host_SetParameter(IntPtr handle, int id, double normalized);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    public static extern bool Vst3Host_GetEditorSize(IntPtr handle, out int width, out int height);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    public static extern bool Vst3Host_ResizeEditor(IntPtr handle, int width, int height);
 }

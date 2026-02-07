@@ -12,8 +12,12 @@ using NAudio.Wave;
 
 namespace MusicEngine.Vst;
 
+/// <summary>
+/// VST3-backed instrument wrapper for MIDI routing and audio output.
+/// </summary>
 public sealed class Vst3Instrument : ISynth, IDisposable
 {
+    private readonly string _pluginPath;
     private readonly IntPtr _hostHandle;
     private readonly int _outputChannels;
     private readonly WaveFormat _waveFormat;
@@ -23,6 +27,11 @@ public sealed class Vst3Instrument : ISynth, IDisposable
     private bool _tempBufferFromPool;
     private Dictionary<string, int>? _parameterMap;
 
+    /// <summary>
+    /// Create a VST3 instrument from a plugin path.
+    /// </summary>
+    /// <param name="pluginPath">Path to the VST3 plugin.</param>
+    /// <param name="name">Display name for the instance.</param>
     public Vst3Instrument(string pluginPath, string name)
     {
         if (string.IsNullOrWhiteSpace(pluginPath))
@@ -30,6 +39,7 @@ public sealed class Vst3Instrument : ISynth, IDisposable
             throw new ArgumentException("Plugin path is required.", nameof(pluginPath));
         }
 
+        _pluginPath = pluginPath;
         _hostHandle = VstUiContext.Shared.Invoke(() => Vst3Native.Vst3Host_Create(pluginPath));
         if (_hostHandle == IntPtr.Zero)
         {
@@ -41,10 +51,19 @@ public sealed class Vst3Instrument : ISynth, IDisposable
         Name = name;
     }
 
+    /// <summary>
+    /// Display name for the instance.
+    /// </summary>
     public string Name { get; set; }
 
+    /// <summary>
+    /// Output format for this instrument.
+    /// </summary>
     public WaveFormat WaveFormat => _waveFormat;
 
+    /// <summary>
+    /// Read audio samples into the target buffer.
+    /// </summary>
     public int Read(float[] buffer, int offset, int count)
     {
         if (_disposed) return 0;
@@ -79,29 +98,50 @@ public sealed class Vst3Instrument : ISynth, IDisposable
         return count;
     }
 
+    /// <summary>
+    /// Trigger a MIDI note-on.
+    /// </summary>
     public void NoteOn(int note, int velocity) => Vst3Native.Vst3Host_SendNoteOn(_hostHandle, note, velocity, 0);
 
+    /// <summary>
+    /// Trigger a MIDI note-off.
+    /// </summary>
     public void NoteOff(int note) => Vst3Native.Vst3Host_SendNoteOff(_hostHandle, note, 0, 0);
 
+    /// <summary>
+    /// Send all-notes-off to the plugin.
+    /// </summary>
     public void AllNotesOff() => Vst3Native.Vst3Host_AllNotesOff(_hostHandle, 0);
 
+    /// <summary>
+    /// Reset common performance state such as notes and pitch bend.
+    /// </summary>
     public void ResetState()
     {
         Vst3Native.Vst3Host_AllNotesOff(_hostHandle, 0);
         Vst3Native.Vst3Host_SendPitchBend(_hostHandle, 0f, 0);
     }
 
+    /// <summary>
+    /// Send pitch bend in normalized range [-1, 1].
+    /// </summary>
     public void PitchBend(float normalized)
     {
         normalized = Math.Clamp(normalized, -1f, 1f);
         Vst3Native.Vst3Host_SendPitchBend(_hostHandle, normalized, 0);
     }
 
+    /// <summary>
+    /// Set a named parameter (normalized).
+    /// </summary>
     public void SetParameter(string name, float value)
     {
         SetParameterNormalized(name, value);
     }
 
+    /// <summary>
+    /// Set a named parameter with normalized value in [0, 1].
+    /// </summary>
     public void SetParameterNormalized(string name, float value)
     {
         if (string.IsNullOrWhiteSpace(name)) return;
@@ -115,6 +155,9 @@ public sealed class Vst3Instrument : ISynth, IDisposable
         Vst3Native.Vst3Host_SetParameter(_hostHandle, id, normalized);
     }
 
+    /// <summary>
+    /// Create a setter for automation.
+    /// </summary>
     public Action<float> Param(string name, float min = 0f, float max = 1f)
     {
         return value =>
@@ -124,11 +167,17 @@ public sealed class Vst3Instrument : ISynth, IDisposable
         };
     }
 
+    /// <summary>
+    /// Open the VST3 editor window for this instrument.
+    /// </summary>
     public void OpenEditor()
     {
-        Vst3EditorWindow.OpenExisting(_hostHandle, Name);
+        Vst3EditorWindow.OpenExisting(_hostHandle, Name, _pluginPath);
     }
 
+    /// <summary>
+    /// Close the plugin and release native resources.
+    /// </summary>
     public void Dispose()
     {
         if (_disposed) return;

@@ -10,8 +10,17 @@ using MusicEngine.Instruments;
 
 namespace MusicEngine.Scripting;
 
+/// <summary>
+/// Minimal helper to play a single note from the command line.
+/// </summary>
 public static class QuickNotePlayer
 {
+    /// <summary>
+    /// Play a single note using the default GM instrument.
+    /// </summary>
+    /// <param name="note">MIDI note number.</param>
+    /// <param name="velocity">MIDI velocity.</param>
+    /// <param name="durationSeconds">Note length in seconds.</param>
     public static async Task PlayOnceAsync(int note = 60, int velocity = 100, double durationSeconds = 0.6)
     {
         note = Math.Clamp(note, 0, 127);

@@ -10,8 +10,14 @@ using NAudio.Midi;
 
 namespace MusicEngine.Core;
 
+/// <summary>
+/// Shared MIDI routing and control mapping for instruments.
+/// </summary>
 public sealed class MidiRouter
 {
+    /// <summary>
+    /// Whether MIDI routing is currently enabled.
+    /// </summary>
     public bool Enabled { get; private set; } = true;
     private readonly Dictionary<int, ISynth> _routing = new();
     private readonly List<MidiMapping> _mappings = new();
@@ -22,7 +28,14 @@ public sealed class MidiRouter
     private bool _editorModeEnabled;
     private const int DeviceActiveDebounceMs = 100;
 
+    /// <summary>
+    /// Raised when a note event arrives while editor mode is enabled.
+    /// </summary>
     public event Action<MidiNoteEventInfo>? EditorMidiNoteEvent;
+
+    /// <summary>
+    /// Raised when a device becomes active while editor mode is enabled.
+    /// </summary>
     public event Action<int>? EditorMidiDeviceActive;
 
     private sealed class MidiMapping
@@ -32,8 +45,19 @@ public sealed class MidiRouter
         public Action<float> Action { get; init; } = null!;
     }
 
+    /// <summary>
+    /// Route a MIDI device to a synth.
+    /// </summary>
+    /// <param name="deviceIndex">MIDI device index.</param>
+    /// <param name="synth">Target synth.</param>
     public void Route(int deviceIndex, ISynth synth) => _routing[deviceIndex] = synth;
 
+    /// <summary>
+    /// Map a control change to a custom action.
+    /// </summary>
+    /// <param name="deviceIndex">MIDI device index.</param>
+    /// <param name="controlId">Control change ID.</param>
+    /// <param name="action">Action invoked with normalized value.</param>
     public void MapControlAction(int deviceIndex, int controlId, Action<float> action)
     {
         _mappings.Add(new MidiMapping
@@ -44,12 +68,20 @@ public sealed class MidiRouter
         });
     }
 
+    /// <summary>
+    /// Clear all routes and control mappings.
+    /// </summary>
     public void Clear()
     {
         _routing.Clear();
         _mappings.Clear();
     }
 
+    /// <summary>
+    /// Enable or disable MIDI processing.
+    /// </summary>
+    /// <param name="enabled">True to enable.</param>
+    /// <param name="sendAllNotesOff">Send all-notes-off on disable.</param>
     public void SetEnabled(bool enabled, bool sendAllNotesOff = true)
     {
         if (Enabled == enabled) return;
@@ -63,11 +95,19 @@ public sealed class MidiRouter
         }
     }
 
+    /// <summary>
+    /// Enable or disable editor mode events.
+    /// </summary>
     public void SetEditorMode(bool enabled)
     {
         _editorModeEnabled = enabled;
     }
 
+    /// <summary>
+    /// Process a MIDI message for routing, mapping, and editor events.
+    /// </summary>
+    /// <param name="deviceIndex">MIDI device index.</param>
+    /// <param name="args">Incoming MIDI message event args.</param>
     public void HandleMidiMessage(int deviceIndex, MidiInMessageEventArgs args)
     {
         UpdateActivity(deviceIndex, args);
@@ -188,6 +228,10 @@ public sealed class MidiRouter
         }
     }
 
+    /// <summary>
+    /// Snapshot of recent MIDI device activity.
+    /// </summary>
+    /// <returns>Sorted list of device activity snapshots.</returns>
     public IReadOnlyList<MidiDeviceActivitySnapshot> GetActivitySnapshot()
     {
         lock (_activityLock)
@@ -254,25 +298,70 @@ public sealed class MidiRouter
     }
 }
 
+/// <summary>
+/// Snapshot of the last activity seen for a MIDI device.
+/// </summary>
 public sealed class MidiDeviceActivitySnapshot
 {
+    /// <summary>
+    /// MIDI device index.
+    /// </summary>
     public int DeviceIndex { get; init; }
+    /// <summary>
+    /// UTC timestamp of the last message.
+    /// </summary>
     public DateTime LastMessageUtc { get; init; }
+    /// <summary>
+    /// String description of the last message type.
+    /// </summary>
     public string LastMessageType { get; init; } = string.Empty;
+    /// <summary>
+    /// Last MIDI note number, if applicable.
+    /// </summary>
     public int? LastNote { get; init; }
+    /// <summary>
+    /// Last velocity value, if applicable.
+    /// </summary>
     public int? LastVelocity { get; init; }
+    /// <summary>
+    /// Last control ID, if applicable.
+    /// </summary>
     public int? LastControlId { get; init; }
+    /// <summary>
+    /// Last control value, normalized to 0..1 where possible.
+    /// </summary>
     public float? LastControlValue { get; init; }
 }
 
+/// <summary>
+/// Lightweight note event data for editor feedback.
+/// </summary>
 public readonly struct MidiNoteEventInfo
 {
+    /// <summary>
+    /// MIDI device index.
+    /// </summary>
     public int DeviceIndex { get; }
+    /// <summary>
+    /// MIDI note number.
+    /// </summary>
     public int Note { get; }
+    /// <summary>
+    /// Velocity value.
+    /// </summary>
     public int Velocity { get; }
+    /// <summary>
+    /// True when this is a note-on event.
+    /// </summary>
     public bool IsOn { get; }
+    /// <summary>
+    /// UTC timestamp of the event.
+    /// </summary>
     public DateTime TimestampUtc { get; }
 
+    /// <summary>
+    /// Create a new note event info record.
+    /// </summary>
     public MidiNoteEventInfo(int deviceIndex, int note, int velocity, bool isOn, DateTime timestampUtc)
     {
         DeviceIndex = deviceIndex;

@@ -5,12 +5,21 @@
 
 namespace MusicEngine.Instruments;
 
+/// <summary>
+/// Core waveform types for oscillators.
+/// </summary>
 public enum WaveType
 {
+    /// <summary>Pure sine wave.</summary>
     Sine,
+    /// <summary>Square wave.</summary>
     Square,
+    /// <summary>Sawtooth wave.</summary>
     Sawtooth,
+    /// <summary>Triangle wave.</summary>
     Triangle,
+    /// <summary>Pulse wave with adjustable width.</summary>
     Pulse,
+    /// <summary>Noise source.</summary>
     Noise
 }

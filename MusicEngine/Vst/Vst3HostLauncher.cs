@@ -7,6 +7,9 @@ using System.Diagnostics;
 
 namespace MusicEngine.Vst;
 
+/// <summary>
+/// Launches an external VST3 host to open plugin editors.
+/// </summary>
 public static class Vst3HostLauncher
 {
     private const string HostEnvVar = "MUSICENGINE_VST3_HOST";
@@ -20,6 +23,12 @@ public static class Vst3HostLauncher
         @"C:\Program Files\Steinberg\VST3 Host\vst3_host.exe"
     };
 
+    /// <summary>
+    /// Try to open a plugin in an external VST3 host application.
+    /// </summary>
+    /// <param name="pluginPath">Path to the VST3 plugin.</param>
+    /// <param name="message">Status message for diagnostics.</param>
+    /// <returns>True when the host launches successfully.</returns>
     public static bool TryOpenPlugin(string pluginPath, out string message)
     {
         var hostPath = ResolveHostPath();

@@ -10,24 +10,84 @@ using MusicEngine.Timing;
 
 namespace MusicEngine.Core;
 
+/// <summary>
+/// Pattern container for step-based note events and playback state.
+/// </summary>
 public sealed class Pattern
 {
+    /// <summary>
+    /// Global note event callback for pattern playback.
+    /// </summary>
     public static Action<int, bool, int>? NoteEvent;
     private static volatile bool _editorModeEnabled;
+    /// <summary>
+    /// Unique pattern identifier.
+    /// </summary>
     public Guid Id { get; } = Guid.NewGuid();
+
+    /// <summary>
+    /// Primary synth used for this pattern.
+    /// </summary>
     public ISynth Synth { get; }
+
+    /// <summary>
+    /// Synths targeted by this pattern (includes <see cref="Synth"/>).
+    /// </summary>
     public List<ISynth> SynthTargets { get; } = new();
+
+    /// <summary>
+    /// List of note events in the pattern.
+    /// </summary>
     public List<NoteEvent> Events { get; } = new();
+
+    /// <summary>
+    /// Pattern length in beats.
+    /// </summary>
     public double LoopLength { get; set; } = 4.0;
+
+    /// <summary>
+    /// Whether the pattern loops after <see cref="LoopLength"/>.
+    /// </summary>
     public bool IsLooping { get; set; } = true;
+
+    /// <summary>
+    /// Optional absolute start beat for scheduling.
+    /// </summary>
     public double? StartBeat { get; set; }
+
+    /// <summary>
+    /// Enable or disable pattern playback.
+    /// </summary>
     public bool Enabled { get; set; } = true;
+
+    /// <summary>
+    /// Sequencer instance driving this pattern, if any.
+    /// </summary>
     public Sequencer? Sequencer { get; internal set; }
+
+    /// <summary>
+    /// Timing settings for this pattern.
+    /// </summary>
     public TimingSettings Timing { get; } = new TimingSettings();
+
+    /// <summary>
+    /// Current playback beat position.
+    /// </summary>
     public double CurrentBeat => _currentBeat;
 
+    /// <summary>
+    /// Last note activity triggered by this pattern.
+    /// </summary>
     public NoteActivity? LastTriggeredNote { get; private set; }
+
+    /// <summary>
+    /// Beat position of the last triggered note.
+    /// </summary>
     public double? LastTriggeredBeat { get; private set; }
+
+    /// <summary>
+    /// UTC timestamp of the last triggered note.
+    /// </summary>
     public DateTime? LastTriggeredUtc { get; private set; }
 
     private double _currentBeat;
@@ -36,13 +96,25 @@ public sealed class Pattern
     private readonly object _stateLock = new();
     private readonly Dictionary<int, NoteActivity> _activeNotes = new();
 
+    /// <summary>
+    /// Raised when a note triggers in editor mode.
+    /// </summary>
     public event Action<PatternNoteEventInfo>? EditorNoteEvent;
 
+    /// <summary>
+    /// Enable or disable editor events globally for patterns.
+    /// </summary>
+    /// <param name="enabled">True to enable editor events.</param>
     public static void SetEditorMode(bool enabled)
     {
         _editorModeEnabled = enabled;
     }
 
+    /// <summary>
+    /// Create a new pattern targeting one or more synths.
+    /// </summary>
+    /// <param name="synth">Primary synth.</param>
+    /// <param name="moreSynths">Additional synth targets.</param>
     public Pattern(ISynth synth, params ISynth[] moreSynths)
     {
         Synth = synth;
@@ -53,6 +125,14 @@ public sealed class Pattern
         }
     }
 
+    /// <summary>
+    /// Add a note event to the pattern.
+    /// </summary>
+    /// <param name="note">MIDI note number.</param>
+    /// <param name="beat">Beat position within the loop.</param>
+    /// <param name="duration">Duration in beats.</param>
+    /// <param name="velocity">MIDI velocity.</param>
+    /// <returns>This pattern for chaining.</returns>
     public Pattern Note(int note, double beat, double duration, int velocity)
     {
         MidiValidation.ValidateNote(note);
@@ -69,6 +149,9 @@ public sealed class Pattern
         return this;
     }
 
+    /// <summary>
+    /// Add this pattern to its sequencer and start playback.
+    /// </summary>
     public void Play()
     {
         if (Sequencer == null) return;
@@ -79,6 +162,9 @@ public sealed class Pattern
         }
     }
 
+    /// <summary>
+    /// Remove this pattern from its sequencer and stop all notes.
+    /// </summary>
     public void Stop()
     {
         Sequencer?.RemovePattern(this);
@@ -88,6 +174,11 @@ public sealed class Pattern
         }
     }
 
+    /// <summary>
+    /// Advance playback and trigger events for the current time slice.
+    /// </summary>
+    /// <param name="deltaSeconds">Delta time in seconds.</param>
+    /// <param name="timingMaster">Timing master to pull BPM/groove from.</param>
     public void Process(double deltaSeconds, TimingMaster timingMaster)
     {
         if (!Enabled) return;
@@ -256,6 +347,10 @@ public sealed class Pattern
         return _humanizeRandom.NextDouble() * 2.0 - 1.0;
     }
 
+    /// <summary>
+    /// Snapshot of currently active notes.
+    /// </summary>
+    /// <returns>List of active note activities.</returns>
     public IReadOnlyList<NoteActivity> GetActiveNotesSnapshot()
     {
         lock (_stateLock)
@@ -272,29 +367,77 @@ public sealed class Pattern
     }
 }
 
+/// <summary>
+/// Pattern note event configuration.
+/// </summary>
 public sealed class NoteEvent
 {
+    /// <summary>
+    /// Beat position of the note.
+    /// </summary>
     public double Beat { get; set; }
+    /// <summary>
+    /// MIDI note number.
+    /// </summary>
     public int Note { get; set; }
+    /// <summary>
+    /// MIDI velocity.
+    /// </summary>
     public int Velocity { get; set; }
+    /// <summary>
+    /// Duration in beats.
+    /// </summary>
     public double Duration { get; set; }
 }
 
+/// <summary>
+/// Runtime note activity information.
+/// </summary>
 public sealed class NoteActivity
 {
+    /// <summary>
+    /// MIDI note number.
+    /// </summary>
     public int Note { get; init; }
+    /// <summary>
+    /// Velocity used when triggered.
+    /// </summary>
     public int Velocity { get; init; }
+    /// <summary>
+    /// UTC timestamp when the note started.
+    /// </summary>
     public DateTime StartedUtc { get; init; }
 }
 
+/// <summary>
+/// Lightweight note event data for editor feedback.
+/// </summary>
 public readonly struct PatternNoteEventInfo
 {
+    /// <summary>
+    /// Pattern identifier.
+    /// </summary>
     public Guid PatternId { get; }
+    /// <summary>
+    /// MIDI note number.
+    /// </summary>
     public int Note { get; }
+    /// <summary>
+    /// MIDI velocity.
+    /// </summary>
     public int Velocity { get; }
+    /// <summary>
+    /// True when this is a note-on event.
+    /// </summary>
     public bool IsOn { get; }
+    /// <summary>
+    /// UTC timestamp of the event.
+    /// </summary>
     public DateTime TimestampUtc { get; }
 
+    /// <summary>
+    /// Create a new pattern note event info record.
+    /// </summary>
     public PatternNoteEventInfo(Guid patternId, int note, int velocity, bool isOn, DateTime timestampUtc)
     {
         PatternId = patternId;

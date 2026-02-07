@@ -15,3 +15,5 @@ EXPORTS
     Vst3Host_GetParameterCount
     Vst3Host_GetParameterInfo
     Vst3Host_SetParameter
+    Vst3Host_GetEditorSize
+    Vst3Host_ResizeEditor

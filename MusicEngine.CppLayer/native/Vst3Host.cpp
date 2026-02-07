@@ -47,6 +47,8 @@ public:
 		return kResultTrue;
 	}
 
+	HWND hwnd () const { return hwnd_; }
+
 private:
 	tresult PLUGIN_API queryInterface (const TUID _iid, void** obj) override
 	{
@@ -458,6 +460,43 @@ struct Vst3HostInstance
 		queueParam (id, std::clamp (value, 0.0, 1.0));
 	}
 
+	bool getEditorSize (int32* width, int32* height) const
+	{
+		if (!view || !width || !height)
+			return false;
+		ViewRect size {};
+		if (view->getSize (&size) != kResultTrue)
+			return false;
+		*width = size.right - size.left;
+		*height = size.bottom - size.top;
+		return *width > 0 && *height > 0;
+	}
+
+	bool resizeEditor (int32 width, int32 height)
+	{
+		if (!view || width <= 0 || height <= 0)
+			return false;
+		if (view->canResize () == kResultFalse)
+			return false;
+
+		ViewRect newSize {0, 0, width, height};
+		if (view->checkSizeConstraint (&newSize) == kResultFalse)
+			return false;
+		if (view->onSize (&newSize) != kResultTrue)
+			return false;
+
+		if (frame)
+		{
+			if (auto hwnd = frame->hwnd ())
+			{
+				const int newWidth = newSize.right - newSize.left;
+				const int newHeight = newSize.bottom - newSize.top;
+				::SetWindowPos (hwnd, nullptr, 0, 0, newWidth, newHeight, SWP_NOZORDER | SWP_NOMOVE);
+			}
+		}
+		return true;
+	}
+
 	int32 getOutputChannels () const { return outputChannelCount > 0 ? outputChannelCount : 2; }
 	int32 getInputChannels () const { return inputChannelCount > 0 ? inputChannelCount : 0; }
 
@@ -786,5 +825,21 @@ __declspec (dllexport) void __cdecl Vst3Host_SetParameter (void* handle, int id,
 		return;
 	auto instance = reinterpret_cast<Vst3HostInstance*> (handle);
 	instance->setParameter (static_cast<ParamID> (id), normalized);
+}
+
+__declspec (dllexport) bool __cdecl Vst3Host_GetEditorSize (void* handle, int* width, int* height)
+{
+	if (!handle)
+		return false;
+	auto instance = reinterpret_cast<Vst3HostInstance*> (handle);
+	return instance->getEditorSize (width, height);
+}
+
+__declspec (dllexport) bool __cdecl Vst3Host_ResizeEditor (void* handle, int width, int height)
+{
+	if (!handle)
+		return false;
+	auto instance = reinterpret_cast<Vst3HostInstance*> (handle);
+	return instance->resizeEditor (width, height);
 }
 }

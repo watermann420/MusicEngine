@@ -7,8 +7,23 @@ using System;
 
 namespace MusicEngine.Instruments.Modules;
 
+/// <summary>
+/// ADSR envelope helper for synths.
+/// </summary>
 public static class EnvelopeGenerator
 {
+    /// <summary>
+    /// Advance an ADSR envelope one sample.
+    /// </summary>
+    /// <param name="stage">Current envelope stage (0=attack, 1=decay, 2=sustain, 3=release).</param>
+    /// <param name="current">Current envelope value.</param>
+    /// <param name="attack">Attack time in seconds.</param>
+    /// <param name="decay">Decay time in seconds.</param>
+    /// <param name="sustain">Sustain level in [0, 1].</param>
+    /// <param name="release">Release time in seconds.</param>
+    /// <param name="sampleRate">Sample rate in Hz.</param>
+    /// <param name="stageRef">Stage reference to advance when thresholds are reached.</param>
+    /// <returns>Updated envelope value.</returns>
     public static float Process(int stage, float current, float attack, float decay,
         float sustain, float release, int sampleRate, ref int stageRef)
     {

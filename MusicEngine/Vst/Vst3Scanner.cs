@@ -5,6 +5,9 @@
 
 namespace MusicEngine.Vst;
 
+/// <summary>
+/// VST3 scanner for Windows search paths.
+/// </summary>
 public static class Vst3Scanner
 {
     private const string Vst3PathsEnvVar = "MUSICENGINE_VST3_PATHS";
@@ -17,6 +20,10 @@ public static class Vst3Scanner
         @"C:\Program Files (x86)\Common Files\VST3"
     };
 
+    /// <summary>
+    /// Scan for VST3 plugins on disk.
+    /// </summary>
+    /// <returns>List of discovered VST3 plugins.</returns>
     public static List<Vst3PluginInfo> Scan()
     {
         var roots = GetSearchPaths();

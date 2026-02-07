@@ -11,6 +11,9 @@ using MusicEngine.Timing;
 
 namespace MusicEngine.Core;
 
+/// <summary>
+/// Background sequencer that advances patterns over time.
+/// </summary>
 public sealed class Sequencer : IDisposable
 {
     private readonly object _lock = new();
@@ -18,24 +21,42 @@ public sealed class Sequencer : IDisposable
     private Thread? _thread;
     private volatile bool _running;
     private double _currentTimeSeconds;
+    /// <summary>
+    /// Timing master controlling BPM and groove.
+    /// </summary>
     public TimingMaster Timing { get; } = new TimingMaster();
 
+    /// <summary>
+    /// Current tempo in beats per minute.
+    /// </summary>
     public double Bpm
     {
         get => Timing.Bpm;
         set => Timing.Bpm = value;
     }
 
+    /// <summary>
+    /// True while the sequencer thread is running.
+    /// </summary>
     public bool IsRunning => _running;
 
+    /// <summary>
+    /// Current beat position of the sequencer.
+    /// </summary>
     public double CurrentBeat
     {
         get => _currentTimeSeconds * Timing.Bpm / 60.0;
         set => _currentTimeSeconds = Timing.Bpm <= 0 ? 0 : value * 60.0 / Timing.Bpm;
     }
 
+    /// <summary>
+    /// Current time in seconds.
+    /// </summary>
     public double CurrentTimeSeconds => _currentTimeSeconds;
 
+    /// <summary>
+    /// Snapshot of registered patterns.
+    /// </summary>
     public IReadOnlyList<Pattern> Patterns
     {
         get
@@ -47,6 +68,9 @@ public sealed class Sequencer : IDisposable
         }
     }
 
+    /// <summary>
+    /// Start the sequencer thread.
+    /// </summary>
     public void Start()
     {
         if (_running) return;
@@ -59,12 +83,18 @@ public sealed class Sequencer : IDisposable
         _thread.Start();
     }
 
+    /// <summary>
+    /// Stop the sequencer thread.
+    /// </summary>
     public void Stop()
     {
         _running = false;
         _thread?.Join(200);
     }
 
+    /// <summary>
+    /// Add a pattern to the sequencer.
+    /// </summary>
     public void AddPattern(Pattern pattern)
     {
         lock (_lock)
@@ -75,6 +105,9 @@ public sealed class Sequencer : IDisposable
         }
     }
 
+    /// <summary>
+    /// Remove a pattern from the sequencer.
+    /// </summary>
     public void RemovePattern(Pattern pattern)
     {
         lock (_lock)
@@ -83,6 +116,9 @@ public sealed class Sequencer : IDisposable
         }
     }
 
+    /// <summary>
+    /// Remove all patterns and stop their playback.
+    /// </summary>
     public void ClearPatterns()
     {
         lock (_lock)
@@ -123,6 +159,9 @@ public sealed class Sequencer : IDisposable
         }
     }
 
+    /// <summary>
+    /// Stop the sequencer and clear patterns.
+    /// </summary>
     public void Dispose()
     {
         Stop();

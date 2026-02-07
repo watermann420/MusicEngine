@@ -10,6 +10,9 @@ using NAudio.Wave;
 
 namespace MusicEngine.Instruments;
 
+/// <summary>
+/// General MIDI program numbers.
+/// </summary>
 public enum GeneralMidiProgram
 {
     AcousticGrandPiano = 0,
@@ -142,6 +145,9 @@ public enum GeneralMidiProgram
     Gunshot = 127
 }
 
+/// <summary>
+/// Simple General MIDI synth wrapper backed by the system MIDI out device.
+/// </summary>
 public sealed class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
 {
     private readonly MidiOut? _midiOut;
@@ -155,10 +161,18 @@ public sealed class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
     private float _chorus;
     private float _modWheel;
 
+    /// <summary>
+    /// Create a default GM instrument on channel 0.
+    /// </summary>
     public GeneralMidiInstrument() : this(GeneralMidiProgram.AcousticGrandPiano, 0)
     {
     }
 
+    /// <summary>
+    /// Create a GM instrument with a specific program and channel.
+    /// </summary>
+    /// <param name="program">Program number.</param>
+    /// <param name="channel">MIDI channel (0-15).</param>
     public GeneralMidiInstrument(GeneralMidiProgram program, int channel = 0)
     {
         _program = program;
@@ -181,10 +195,19 @@ public sealed class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
         WaveFormat = WaveFormat.CreateIeeeFloatWaveFormat(Settings.SampleRate, Settings.Channels);
     }
 
+    /// <summary>
+    /// Display name for the instrument.
+    /// </summary>
     public string Name { get; set; } = "GM";
 
+    /// <summary>
+    /// Output format used by the synth (silent provider).
+    /// </summary>
     public WaveFormat WaveFormat { get; }
 
+    /// <summary>
+    /// Current program for the instrument.
+    /// </summary>
     public GeneralMidiProgram Program
     {
         get => _program;
@@ -195,6 +218,9 @@ public sealed class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
         }
     }
 
+    /// <summary>
+    /// MIDI channel (0-15).
+    /// </summary>
     public int Channel
     {
         get => _channel;
@@ -205,6 +231,9 @@ public sealed class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
         }
     }
 
+    /// <summary>
+    /// Main volume in [0, 1].
+    /// </summary>
     public float Volume
     {
         get => _volume;
@@ -217,6 +246,9 @@ public sealed class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
         }
     }
 
+    /// <summary>
+    /// Pan in [-1, 1].
+    /// </summary>
     public float Pan
     {
         get => _pan;
@@ -229,6 +261,9 @@ public sealed class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
         }
     }
 
+    /// <summary>
+    /// Reverb send in [0, 1].
+    /// </summary>
     public float Reverb
     {
         get => _reverb;
@@ -241,6 +276,9 @@ public sealed class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
         }
     }
 
+    /// <summary>
+    /// Chorus send in [0, 1].
+    /// </summary>
     public float Chorus
     {
         get => _chorus;
@@ -253,6 +291,9 @@ public sealed class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
         }
     }
 
+    /// <summary>
+    /// Modulation wheel value in [0, 1].
+    /// </summary>
     public float ModWheel
     {
         get => _modWheel;
@@ -265,6 +306,9 @@ public sealed class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
         }
     }
 
+    /// <summary>
+    /// Send pitch bend in [-1, 1].
+    /// </summary>
     public void PitchBend(float bend)
     {
         if (!_available || _midiOut == null) return;
@@ -273,6 +317,9 @@ public sealed class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
         _midiOut.Send(new PitchWheelChangeEvent(0, _channel + 1, pitchValue).GetAsShortMessage());
     }
 
+    /// <summary>
+    /// Trigger a MIDI note-on.
+    /// </summary>
     public void NoteOn(int note, int velocity)
     {
         if (!_available || _midiOut == null) return;
@@ -281,6 +328,9 @@ public sealed class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
         _midiOut.Send(new NoteOnEvent(0, _channel + 1, note, velocity, 0).GetAsShortMessage());
     }
 
+    /// <summary>
+    /// Trigger a MIDI note-off.
+    /// </summary>
     public void NoteOff(int note)
     {
         if (!_available || _midiOut == null) return;
@@ -288,12 +338,18 @@ public sealed class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
         _midiOut.Send(new NoteOnEvent(0, _channel + 1, note, 0, 0).GetAsShortMessage());
     }
 
+    /// <summary>
+    /// Send all-notes-off to the device.
+    /// </summary>
     public void AllNotesOff()
     {
         if (!_available || _midiOut == null) return;
         _midiOut.Send(new ControlChangeEvent(0, _channel + 1, MidiController.AllNotesOff, 0).GetAsShortMessage());
     }
 
+    /// <summary>
+    /// Set a named parameter (volume, pan, reverb, chorus, modulation, pitchbend).
+    /// </summary>
     public void SetParameter(string name, float value)
     {
         switch (name.ToLowerInvariant())
@@ -319,6 +375,9 @@ public sealed class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
         }
     }
 
+    /// <summary>
+    /// Create a parameter setter for mapping automation values.
+    /// </summary>
     public Action<float> Param(string name, float min = 0f, float max = 1f)
     {
         return value =>
@@ -328,12 +387,18 @@ public sealed class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
         };
     }
 
+    /// <summary>
+    /// Read audio samples (silence for MIDI-only instruments).
+    /// </summary>
     public int Read(float[] buffer, int offset, int count)
     {
         Array.Clear(buffer, offset, count);
         return count;
     }
 
+    /// <summary>
+    /// Release MIDI resources and stop all notes.
+    /// </summary>
     public void Dispose()
     {
         AllNotesOff();

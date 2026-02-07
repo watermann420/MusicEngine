@@ -7,8 +7,18 @@ using System;
 
 namespace MusicEngine.Instruments.Modules;
 
+/// <summary>
+/// Waveform generation helpers for synth modules.
+/// </summary>
 public static class WaveformGenerator
 {
+    /// <summary>
+    /// Basic waveform generation without band-limiting.
+    /// </summary>
+    /// <param name="type">Waveform type.</param>
+    /// <param name="phase">Normalized phase in [0, 1].</param>
+    /// <param name="pulseWidth">Pulse width for pulse wave.</param>
+    /// <returns>Sample value.</returns>
     public static float Basic(WaveType type, float phase, float pulseWidth)
     {
         return type switch
@@ -23,6 +33,15 @@ public static class WaveformGenerator
         };
     }
 
+    /// <summary>
+    /// Band-limited oscillator using PolyBLEP for selected waveforms.
+    /// </summary>
+    /// <param name="type">Waveform type.</param>
+    /// <param name="phase">Normalized phase in [0, 1].</param>
+    /// <param name="pulseWidth">Pulse width for pulse wave.</param>
+    /// <param name="random">Random source for noise.</param>
+    /// <param name="phaseInc">Phase increment per sample.</param>
+    /// <returns>Sample value.</returns>
     public static float Oscillator(WaveType type, float phase, float pulseWidth, Random random, float phaseInc)
     {
         float dt = phaseInc;
@@ -39,6 +58,12 @@ public static class WaveformGenerator
         };
     }
 
+    /// <summary>
+    /// PolyBLEP correction term for band-limiting.
+    /// </summary>
+    /// <param name="t">Normalized phase.</param>
+    /// <param name="dt">Phase increment.</param>
+    /// <returns>Correction term.</returns>
     public static float PolyBlep(float t, float dt)
     {
         if (t < dt)

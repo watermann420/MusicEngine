@@ -12,8 +12,12 @@ using NAudio.Wave;
 
 namespace MusicEngine.Vst;
 
+/// <summary>
+/// VST3 effect wrapper for audio routing chains.
+/// </summary>
 public sealed class Vst3Effect : IAudioEffect
 {
+    private readonly string _pluginPath;
     private readonly IntPtr _hostHandle;
     private readonly int _inputChannels;
     private readonly int _outputChannels;
@@ -22,6 +26,11 @@ public sealed class Vst3Effect : IAudioEffect
     private Vst3EffectProcessor? _processor;
     private Dictionary<string, int>? _parameterMap;
 
+    /// <summary>
+    /// Create a VST3 effect from a plugin path.
+    /// </summary>
+    /// <param name="pluginPath">Path to the VST3 plugin.</param>
+    /// <param name="name">Display name for the instance.</param>
     public Vst3Effect(string pluginPath, string name)
     {
         if (string.IsNullOrWhiteSpace(pluginPath))
@@ -29,6 +38,7 @@ public sealed class Vst3Effect : IAudioEffect
             throw new ArgumentException("Plugin path is required.", nameof(pluginPath));
         }
 
+        _pluginPath = pluginPath;
         _hostHandle = VstUiContext.Shared.Invoke(() => Vst3Native.Vst3Host_Create(pluginPath));
         if (_hostHandle == IntPtr.Zero)
         {
@@ -40,8 +50,14 @@ public sealed class Vst3Effect : IAudioEffect
         Name = name;
     }
 
+    /// <summary>
+    /// Display name for the effect.
+    /// </summary>
     public string Name { get; }
 
+    /// <summary>
+    /// Attach the effect to an input stream.
+    /// </summary>
     public ISampleProvider Attach(ISampleProvider input, WaveFormat targetFormat)
     {
         if (_disposed) throw new ObjectDisposedException(nameof(Vst3Effect));
@@ -51,6 +67,9 @@ public sealed class Vst3Effect : IAudioEffect
         return _processor;
     }
 
+    /// <summary>
+    /// Detach and release processing state.
+    /// </summary>
     public void Detach()
     {
         _attached = false;
@@ -61,6 +80,9 @@ public sealed class Vst3Effect : IAudioEffect
         }
     }
 
+    /// <summary>
+    /// Set a named parameter with normalized value in [0, 1].
+    /// </summary>
     public void SetParameterNormalized(string name, float value)
     {
         if (string.IsNullOrWhiteSpace(name)) return;
@@ -74,6 +96,9 @@ public sealed class Vst3Effect : IAudioEffect
         Vst3Native.Vst3Host_SetParameter(_hostHandle, id, normalized);
     }
 
+    /// <summary>
+    /// Create a setter for automation.
+    /// </summary>
     public Action<float> Param(string name, float min = 0f, float max = 1f)
     {
         return value =>
@@ -83,11 +108,17 @@ public sealed class Vst3Effect : IAudioEffect
         };
     }
 
+    /// <summary>
+    /// Open the VST3 editor window for this effect.
+    /// </summary>
     public void OpenEditor()
     {
-        Vst3EditorWindow.OpenExisting(_hostHandle, Name);
+        Vst3EditorWindow.OpenExisting(_hostHandle, Name, _pluginPath);
     }
 
+    /// <summary>
+    /// Close the plugin and release native resources.
+    /// </summary>
     public void Dispose()
     {
         if (_disposed) return;

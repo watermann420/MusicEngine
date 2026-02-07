@@ -11,6 +11,9 @@ using NAudio.Wave.SampleProviders;
 
 namespace MusicEngine.Core;
 
+/// <summary>
+/// Minimal audio engine for script-driven playback, routing, and recording.
+/// </summary>
 public sealed class AudioEngine : IDisposable
 {
     private readonly WaveFormat _waveFormat;
@@ -31,10 +34,25 @@ public sealed class AudioEngine : IDisposable
     private bool _outputRunning;
     private bool _editorModeEnabled;
 
+    /// <summary>
+    /// Raised when a pattern note is triggered in editor mode.
+    /// </summary>
     public event Action<PatternNoteEventInfo>? EditorPatternNote;
+
+    /// <summary>
+    /// Raised when a MIDI note is received in editor mode.
+    /// </summary>
     public event Action<MidiNoteEventInfo>? EditorMidiNote;
+
+    /// <summary>
+    /// Raised when a MIDI device becomes active in editor mode.
+    /// </summary>
     public event Action<int>? EditorMidiDeviceActive;
 
+    /// <summary>
+    /// Create a new engine with an optional sample rate override.
+    /// </summary>
+    /// <param name="sampleRate">Sample rate in Hz. Uses <see cref="Settings.SampleRate"/> when null.</param>
     public AudioEngine(int? sampleRate = null)
     {
         var rate = sampleRate ?? Settings.SampleRate;
@@ -51,8 +69,14 @@ public sealed class AudioEngine : IDisposable
         _midiRouter.EditorMidiDeviceActive += deviceIndex => EditorMidiDeviceActive?.Invoke(deviceIndex);
     }
 
+    /// <summary>
+    /// Whether editor mode is currently enabled.
+    /// </summary>
     public bool EditorModeEnabled => _editorModeEnabled;
 
+    /// <summary>
+    /// Initialize the audio output and start playback.
+    /// </summary>
     public void Initialize()
     {
         if (_initialized) return;
@@ -67,6 +91,9 @@ public sealed class AudioEngine : IDisposable
         _outputRunning = true;
     }
 
+    /// <summary>
+    /// Stop audio output without tearing down routing state.
+    /// </summary>
     public void SuspendOutput()
     {
         if (_output == null) return;
@@ -74,6 +101,10 @@ public sealed class AudioEngine : IDisposable
         _outputRunning = false;
     }
 
+    /// <summary>
+    /// Try to suspend output if it is currently running.
+    /// </summary>
+    /// <returns>True when output was running and has been stopped.</returns>
     public bool TrySuspendOutput()
     {
         if (_output == null || !_outputRunning) return false;
@@ -82,6 +113,9 @@ public sealed class AudioEngine : IDisposable
         return true;
     }
 
+    /// <summary>
+    /// Resume audio output, initializing if needed.
+    /// </summary>
     public void ResumeOutput()
     {
         if (!_initialized)
@@ -96,11 +130,20 @@ public sealed class AudioEngine : IDisposable
         _outputRunning = true;
     }
 
+    /// <summary>
+    /// Route a provider to channel 1.
+    /// </summary>
+    /// <param name="provider">Sample provider to route.</param>
     public void AddSampleProvider(ISampleProvider provider)
     {
         RouteToChannel(provider, 1);
     }
 
+    /// <summary>
+    /// Route a provider into a specific channel mix.
+    /// </summary>
+    /// <param name="provider">Sample provider to route.</param>
+    /// <param name="channelIndex">1-based channel index.</param>
     public void RouteToChannel(ISampleProvider provider, int channelIndex)
     {
         if (provider == null) return;
@@ -121,32 +164,56 @@ public sealed class AudioEngine : IDisposable
         }
     }
 
+    /// <summary>
+    /// Set master gain for all channels.
+    /// </summary>
+    /// <param name="value">Gain in [0, 1].</param>
     public void SetAllChannelsGain(float value)
     {
         MasterGain = value;
     }
 
+    /// <summary>
+    /// Master output gain in [0, 1].
+    /// </summary>
     public float MasterGain
     {
         get => _masterVolume.Volume;
         set => _masterVolume.Volume = Math.Clamp(value, 0f, 1f);
     }
 
+    /// <summary>
+    /// Mute or unmute the transport output.
+    /// </summary>
+    /// <param name="muted">True to mute, false to restore.</param>
     public void SetTransportMuted(bool muted)
     {
         _transportVolume.Volume = muted ? 0f : 1f;
     }
 
+    /// <summary>
+    /// Enable or disable MIDI input processing.
+    /// </summary>
+    /// <param name="enabled">True to enable MIDI input.</param>
     public void SetMidiEnabled(bool enabled)
     {
         _midiRouter.SetEnabled(enabled);
     }
 
+    /// <summary>
+    /// Enable or disable MIDI input processing with optional all-notes-off.
+    /// </summary>
+    /// <param name="enabled">True to enable MIDI input.</param>
+    /// <param name="sendAllNotesOff">Send all-notes-off when disabling.</param>
     public void SetMidiEnabled(bool enabled, bool sendAllNotesOff)
     {
         _midiRouter.SetEnabled(enabled, sendAllNotesOff);
     }
 
+    /// <summary>
+    /// Toggle editor mode for patterns and MIDI routing.
+    /// </summary>
+    /// <param name="enabled">True to enable editor mode.</param>
     public void SetEditorMode(bool enabled)
     {
         _editorModeEnabled = enabled;
@@ -154,26 +221,48 @@ public sealed class AudioEngine : IDisposable
         _midiRouter.SetEditorMode(enabled);
     }
 
+    /// <summary>
+    /// Start recording the master output.
+    /// </summary>
+    /// <param name="path">Target file path.</param>
+    /// <param name="format">Optional format override.</param>
+    /// <returns>Recording session instance.</returns>
     public RecordingSession StartMasterRecording(string path, string? format = null)
     {
         return _masterTap.StartRecording(path, format);
     }
 
+    /// <summary>
+    /// Stop master recording.
+    /// </summary>
+    /// <param name="session">Specific session to stop (optional).</param>
     public void StopMasterRecording(RecordingSession? session = null)
     {
         _masterTap.StopRecording(session);
     }
 
+    /// <summary>
+    /// Add an effect to the master chain.
+    /// </summary>
+    /// <param name="effect">Effect to add.</param>
     public void AddMasterEffect(IAudioEffect effect)
     {
         _masterEffects.AddEffect(effect);
     }
 
+    /// <summary>
+    /// Remove all master effects.
+    /// </summary>
     public void ClearMasterEffects()
     {
         _masterEffects.ClearEffects();
     }
 
+    /// <summary>
+    /// Set the gain for a specific channel.
+    /// </summary>
+    /// <param name="index">1-based channel index.</param>
+    /// <param name="value">Gain in [0, 1].</param>
     public void SetChannelGain(int index, float value)
     {
         if (index < 1) return;
@@ -183,6 +272,11 @@ public sealed class AudioEngine : IDisposable
         }
     }
 
+    /// <summary>
+    /// Add an effect to a channel chain.
+    /// </summary>
+    /// <param name="index">1-based channel index.</param>
+    /// <param name="effect">Effect to add.</param>
     public void AddChannelEffect(int index, IAudioEffect effect)
     {
         if (index < 1) return;
@@ -190,6 +284,10 @@ public sealed class AudioEngine : IDisposable
         channel.Effects.AddEffect(effect);
     }
 
+    /// <summary>
+    /// Clear all effects on a channel.
+    /// </summary>
+    /// <param name="index">1-based channel index.</param>
     public void ClearChannelEffects(int index)
     {
         if (index < 1) return;
@@ -199,6 +297,13 @@ public sealed class AudioEngine : IDisposable
         }
     }
 
+    /// <summary>
+    /// Start recording a specific channel.
+    /// </summary>
+    /// <param name="index">1-based channel index.</param>
+    /// <param name="path">Target file path.</param>
+    /// <param name="format">Optional format override.</param>
+    /// <returns>Recording session instance.</returns>
     public RecordingSession StartChannelRecording(int index, string path, string? format = null)
     {
         if (index < 1) index = 1;
@@ -206,6 +311,11 @@ public sealed class AudioEngine : IDisposable
         return channel.Tap.StartRecording(path, format);
     }
 
+    /// <summary>
+    /// Stop channel recording.
+    /// </summary>
+    /// <param name="index">1-based channel index.</param>
+    /// <param name="session">Specific session to stop (optional).</param>
     public void StopChannelRecording(int index, RecordingSession? session = null)
     {
         if (index < 1) index = 1;
@@ -215,28 +325,49 @@ public sealed class AudioEngine : IDisposable
         }
     }
 
+    /// <summary>
+    /// Route a MIDI input device to a synth.
+    /// </summary>
+    /// <param name="deviceIndex">MIDI device index.</param>
+    /// <param name="synth">Target synth.</param>
     public void RouteMidiInput(int deviceIndex, ISynth synth)
     {
         _midiRouter.Route(deviceIndex, synth);
         EnsureMidiInput(deviceIndex);
     }
 
+    /// <summary>
+    /// Map a MIDI controller to a custom action.
+    /// </summary>
+    /// <param name="deviceIndex">MIDI device index.</param>
+    /// <param name="controlId">Control change ID.</param>
+    /// <param name="action">Action invoked with normalized value.</param>
     public void MapControlAction(int deviceIndex, int controlId, Action<float> action)
     {
         _midiRouter.MapControlAction(deviceIndex, controlId, action);
         EnsureMidiInput(deviceIndex);
     }
 
+    /// <summary>
+    /// Clear all MIDI control mappings and routes.
+    /// </summary>
     public void ClearMappings()
     {
         _midiRouter.Clear();
     }
 
+    /// <summary>
+    /// Snapshot of recent MIDI device activity.
+    /// </summary>
+    /// <returns>List of activity snapshots.</returns>
     public IReadOnlyList<MidiDeviceActivitySnapshot> GetMidiActivitySnapshot()
     {
         return _midiRouter.GetActivitySnapshot();
     }
 
+    /// <summary>
+    /// Remove all routed providers and reset effects/recording state.
+    /// </summary>
     public void ClearMixer()
     {
         _mixer.RemoveAllMixerInputs();
@@ -276,6 +407,9 @@ public sealed class AudioEngine : IDisposable
         _midiRouter.HandleMidiMessage(deviceIndex, args);
     }
 
+    /// <summary>
+    /// Dispose the audio engine and release resources.
+    /// </summary>
     public void Dispose()
     {
         SetEditorMode(false);

@@ -3,13 +3,15 @@ audio.all.gain(0.1); // Master volume //0 to 1.0 // Adjust as needed // Default 
 
 
 
-// Create the synthesizer
+// Create the synthesizer instance
 var synth = CreateSynth();
 
+// Create a VST instrument instance (replace "Vital" with your desired plugin name)
 var vital = CreateVst("Vital");
 
 // --- Windows GM instrument ---
-var piano = CreateGeneralMidi(); 
+var piano = CreateGeneralMidi();
+
 
 
 // Optional GM settings
@@ -19,7 +21,7 @@ piano.Reverb = 0f;
 piano.Chorus = 0f;
 piano.ModWheel = 0f;
 piano.Channel = 0;
-piano.Name = "GM_AcousticGrandPiano";
+piano.Name = "GM_AcousticGrandPiano"; // Set to desired GM instrument name (e.g., "GM_AcousticGrandPiano", "GM_BrightAcousticPiano", etc.)
 
 
 //midi setup
@@ -144,11 +146,11 @@ if (playPattern)
 
 // OPTIONAL: PLAY TETRIS THEME (Korobeiniki)
 
-var playTetris = true;  // Set to true to play
+var playTetris = false;  // Set to true to play
 
 if (playTetris)
 {
-    var tetris = CreatePattern(synth);
+    var tetris = CreatePattern(vital);
     tetris.LoopLength = 16.0;
 
 

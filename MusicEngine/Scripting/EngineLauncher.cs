@@ -11,8 +11,19 @@ using MusicEngine.Vst;
 
 namespace MusicEngine.Scripting;
 
+/// <summary>
+/// Minimal engine launcher for script-driven sessions.
+/// </summary>
 public static class EngineLauncher
 {
+    /// <summary>
+    /// Launch the engine with optional default script and runtime options.
+    /// </summary>
+    /// <param name="defaultScript">Default script content.</param>
+    /// <param name="executeScriptOnStartup">Execute the script immediately.</param>
+    /// <param name="startSequencerOnStartup">Start the sequencer immediately.</param>
+    /// <param name="startSleeping">Start with audio output suspended.</param>
+    /// <param name="editorMode">Enable editor mode hooks.</param>
     public static async Task LaunchAsync(string defaultScript = "// Start coding music here...",
         bool executeScriptOnStartup = true, bool startSequencerOnStartup = true, bool startSleeping = false,
         bool editorMode = false)

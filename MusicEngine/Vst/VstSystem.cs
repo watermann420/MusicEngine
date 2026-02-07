@@ -5,8 +5,17 @@
 
 namespace MusicEngine.Vst;
 
+/// <summary>
+/// VST system status and scanning helpers.
+/// </summary>
 public static class VstSystem
 {
+    /// <summary>
+    /// Try to scan for VST3 plugins and populate a registry.
+    /// </summary>
+    /// <param name="registry">Registry populated with scan results.</param>
+    /// <param name="message">Status message for diagnostics.</param>
+    /// <returns>True when scanning succeeds and VST is available.</returns>
     public static bool TryScan(out Vst3Registry registry, out string message)
     {
         registry = new Vst3Registry();

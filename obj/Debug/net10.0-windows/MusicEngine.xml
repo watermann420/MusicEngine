@@ -1,0 +1,2259 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>MusicEngine</name>
+    </assembly>
+    <members>
+        <member name="T:MusicEngine.Core.AudioClip">
+            <summary>
+            Simple audio file clip for playback and routing.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.AudioClip.Loop">
+            <summary>
+            When enabled, the clip restarts automatically at the end.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.AudioClip.WaveFormat">
+            <summary>
+            Wave format reported by the underlying file reader.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioClip.Read(System.Single[],System.Int32,System.Int32)">
+            <summary>
+            Read audio samples into the buffer.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Core.AudioEngine">
+            <summary>
+            Minimal audio engine for script-driven playback, routing, and recording.
+            </summary>
+        </member>
+        <member name="E:MusicEngine.Core.AudioEngine.EditorPatternNote">
+            <summary>
+            Raised when a pattern note is triggered in editor mode.
+            </summary>
+        </member>
+        <member name="E:MusicEngine.Core.AudioEngine.EditorMidiNote">
+            <summary>
+            Raised when a MIDI note is received in editor mode.
+            </summary>
+        </member>
+        <member name="E:MusicEngine.Core.AudioEngine.EditorMidiDeviceActive">
+            <summary>
+            Raised when a MIDI device becomes active in editor mode.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.#ctor(System.Nullable{System.Int32})">
+            <summary>
+            Create a new engine with an optional sample rate override.
+            </summary>
+            <param name="sampleRate">Sample rate in Hz. Uses <see cref="P:MusicEngine.Core.Settings.SampleRate"/> when null.</param>
+        </member>
+        <member name="P:MusicEngine.Core.AudioEngine.EditorModeEnabled">
+            <summary>
+            Whether editor mode is currently enabled.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.Initialize">
+            <summary>
+            Initialize the audio output and start playback.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.SuspendOutput">
+            <summary>
+            Stop audio output without tearing down routing state.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.TrySuspendOutput">
+            <summary>
+            Try to suspend output if it is currently running.
+            </summary>
+            <returns>True when output was running and has been stopped.</returns>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.ResumeOutput">
+            <summary>
+            Resume audio output, initializing if needed.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.AddSampleProvider(NAudio.Wave.ISampleProvider)">
+            <summary>
+            Route a provider to channel 1.
+            </summary>
+            <param name="provider">Sample provider to route.</param>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.RouteToChannel(NAudio.Wave.ISampleProvider,System.Int32)">
+            <summary>
+            Route a provider into a specific channel mix.
+            </summary>
+            <param name="provider">Sample provider to route.</param>
+            <param name="channelIndex">1-based channel index.</param>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.SetAllChannelsGain(System.Single)">
+            <summary>
+            Set master gain for all channels.
+            </summary>
+            <param name="value">Gain in [0, 1].</param>
+        </member>
+        <member name="P:MusicEngine.Core.AudioEngine.MasterGain">
+            <summary>
+            Master output gain in [0, 1].
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.SetTransportMuted(System.Boolean)">
+            <summary>
+            Mute or unmute the transport output.
+            </summary>
+            <param name="muted">True to mute, false to restore.</param>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.SetMidiEnabled(System.Boolean)">
+            <summary>
+            Enable or disable MIDI input processing.
+            </summary>
+            <param name="enabled">True to enable MIDI input.</param>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.SetMidiEnabled(System.Boolean,System.Boolean)">
+            <summary>
+            Enable or disable MIDI input processing with optional all-notes-off.
+            </summary>
+            <param name="enabled">True to enable MIDI input.</param>
+            <param name="sendAllNotesOff">Send all-notes-off when disabling.</param>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.SetEditorMode(System.Boolean)">
+            <summary>
+            Toggle editor mode for patterns and MIDI routing.
+            </summary>
+            <param name="enabled">True to enable editor mode.</param>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.StartMasterRecording(System.String,System.String)">
+            <summary>
+            Start recording the master output.
+            </summary>
+            <param name="path">Target file path.</param>
+            <param name="format">Optional format override.</param>
+            <returns>Recording session instance.</returns>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.StopMasterRecording(MusicEngine.Core.RecordingSession)">
+            <summary>
+            Stop master recording.
+            </summary>
+            <param name="session">Specific session to stop (optional).</param>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.AddMasterEffect(MusicEngine.Core.IAudioEffect)">
+            <summary>
+            Add an effect to the master chain.
+            </summary>
+            <param name="effect">Effect to add.</param>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.ClearMasterEffects">
+            <summary>
+            Remove all master effects.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.SetChannelGain(System.Int32,System.Single)">
+            <summary>
+            Set the gain for a specific channel.
+            </summary>
+            <param name="index">1-based channel index.</param>
+            <param name="value">Gain in [0, 1].</param>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.AddChannelEffect(System.Int32,MusicEngine.Core.IAudioEffect)">
+            <summary>
+            Add an effect to a channel chain.
+            </summary>
+            <param name="index">1-based channel index.</param>
+            <param name="effect">Effect to add.</param>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.ClearChannelEffects(System.Int32)">
+            <summary>
+            Clear all effects on a channel.
+            </summary>
+            <param name="index">1-based channel index.</param>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.StartChannelRecording(System.Int32,System.String,System.String)">
+            <summary>
+            Start recording a specific channel.
+            </summary>
+            <param name="index">1-based channel index.</param>
+            <param name="path">Target file path.</param>
+            <param name="format">Optional format override.</param>
+            <returns>Recording session instance.</returns>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.StopChannelRecording(System.Int32,MusicEngine.Core.RecordingSession)">
+            <summary>
+            Stop channel recording.
+            </summary>
+            <param name="index">1-based channel index.</param>
+            <param name="session">Specific session to stop (optional).</param>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.RouteMidiInput(System.Int32,MusicEngine.Core.ISynth)">
+            <summary>
+            Route a MIDI input device to a synth.
+            </summary>
+            <param name="deviceIndex">MIDI device index.</param>
+            <param name="synth">Target synth.</param>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.MapControlAction(System.Int32,System.Int32,System.Action{System.Single})">
+            <summary>
+            Map a MIDI controller to a custom action.
+            </summary>
+            <param name="deviceIndex">MIDI device index.</param>
+            <param name="controlId">Control change ID.</param>
+            <param name="action">Action invoked with normalized value.</param>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.ClearMappings">
+            <summary>
+            Clear all MIDI control mappings and routes.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.GetMidiActivitySnapshot">
+            <summary>
+            Snapshot of recent MIDI device activity.
+            </summary>
+            <returns>List of activity snapshots.</returns>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.ClearMixer">
+            <summary>
+            Remove all routed providers and reset effects/recording state.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.Dispose">
+            <summary>
+            Dispose the audio engine and release resources.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Core.RecordingSession">
+            <summary>
+            Represents an active audio recording session.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.RecordingSession.Dispose">
+            <summary>
+            Finalize and write the recording to disk.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Core.Guard">
+            <summary>
+            Small guard helpers for argument validation.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Guard.InRange``1(``0,``0,``0,System.String)">
+            <summary>
+            Ensure a value stays within an inclusive range.
+            </summary>
+            <typeparam name="T">Comparable value type.</typeparam>
+            <param name="value">Value to validate.</param>
+            <param name="min">Inclusive minimum.</param>
+            <param name="max">Inclusive maximum.</param>
+            <param name="paramName">Parameter name for exceptions.</param>
+            <returns>The validated value.</returns>
+        </member>
+        <member name="M:MusicEngine.Core.Guard.NotNegative(System.Double,System.String)">
+            <summary>
+            Ensure a value is not negative.
+            </summary>
+            <param name="value">Value to validate.</param>
+            <param name="paramName">Parameter name for exceptions.</param>
+            <returns>The validated value.</returns>
+        </member>
+        <member name="T:MusicEngine.Core.IAudioEffect">
+            <summary>
+            Base interface for effects that wrap an input and emit processed audio.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.IAudioEffect.Name">
+            <summary>
+            Display name for the effect instance.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.IAudioEffect.Attach(NAudio.Wave.ISampleProvider,NAudio.Wave.WaveFormat)">
+            <summary>
+            Attach the effect to a source and return a processed provider.
+            </summary>
+            <param name="input">Input source to process.</param>
+            <param name="targetFormat">Desired output format.</param>
+            <returns>Processed sample provider.</returns>
+        </member>
+        <member name="M:MusicEngine.Core.IAudioEffect.Detach">
+            <summary>
+            Detach and release any processing state.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Core.ISynth">
+            <summary>
+            Minimal synth interface for note playback and parameter control.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.ISynth.Name">
+            <summary>
+            Display name for the synth instance.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.ISynth.NoteOn(System.Int32,System.Int32)">
+            <summary>
+            Trigger a MIDI note-on.
+            </summary>
+            <param name="note">MIDI note number (0-127).</param>
+            <param name="velocity">MIDI velocity (0-127).</param>
+        </member>
+        <member name="M:MusicEngine.Core.ISynth.NoteOff(System.Int32)">
+            <summary>
+            Trigger a MIDI note-off.
+            </summary>
+            <param name="note">MIDI note number (0-127).</param>
+        </member>
+        <member name="M:MusicEngine.Core.ISynth.AllNotesOff">
+            <summary>
+            Immediately stop all notes on the synth.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.ISynth.SetParameter(System.String,System.Single)">
+            <summary>
+            Set a named parameter on the synth.
+            </summary>
+            <param name="name">Parameter name.</param>
+            <param name="value">Normalized or raw value (implementation-specific).</param>
+        </member>
+        <member name="T:MusicEngine.Core.MidiRouter">
+            <summary>
+            Shared MIDI routing and control mapping for instruments.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.MidiRouter.Enabled">
+            <summary>
+            Whether MIDI routing is currently enabled.
+            </summary>
+        </member>
+        <member name="E:MusicEngine.Core.MidiRouter.EditorMidiNoteEvent">
+            <summary>
+            Raised when a note event arrives while editor mode is enabled.
+            </summary>
+        </member>
+        <member name="E:MusicEngine.Core.MidiRouter.EditorMidiDeviceActive">
+            <summary>
+            Raised when a device becomes active while editor mode is enabled.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.MidiRouter.Route(System.Int32,MusicEngine.Core.ISynth)">
+            <summary>
+            Route a MIDI device to a synth.
+            </summary>
+            <param name="deviceIndex">MIDI device index.</param>
+            <param name="synth">Target synth.</param>
+        </member>
+        <member name="M:MusicEngine.Core.MidiRouter.MapControlAction(System.Int32,System.Int32,System.Action{System.Single})">
+            <summary>
+            Map a control change to a custom action.
+            </summary>
+            <param name="deviceIndex">MIDI device index.</param>
+            <param name="controlId">Control change ID.</param>
+            <param name="action">Action invoked with normalized value.</param>
+        </member>
+        <member name="M:MusicEngine.Core.MidiRouter.Clear">
+            <summary>
+            Clear all routes and control mappings.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.MidiRouter.SetEnabled(System.Boolean,System.Boolean)">
+            <summary>
+            Enable or disable MIDI processing.
+            </summary>
+            <param name="enabled">True to enable.</param>
+            <param name="sendAllNotesOff">Send all-notes-off on disable.</param>
+        </member>
+        <member name="M:MusicEngine.Core.MidiRouter.SetEditorMode(System.Boolean)">
+            <summary>
+            Enable or disable editor mode events.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.MidiRouter.HandleMidiMessage(System.Int32,NAudio.Midi.MidiInMessageEventArgs)">
+            <summary>
+            Process a MIDI message for routing, mapping, and editor events.
+            </summary>
+            <param name="deviceIndex">MIDI device index.</param>
+            <param name="args">Incoming MIDI message event args.</param>
+        </member>
+        <member name="M:MusicEngine.Core.MidiRouter.GetActivitySnapshot">
+            <summary>
+            Snapshot of recent MIDI device activity.
+            </summary>
+            <returns>Sorted list of device activity snapshots.</returns>
+        </member>
+        <member name="T:MusicEngine.Core.MidiDeviceActivitySnapshot">
+            <summary>
+            Snapshot of the last activity seen for a MIDI device.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.MidiDeviceActivitySnapshot.DeviceIndex">
+            <summary>
+            MIDI device index.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.MidiDeviceActivitySnapshot.LastMessageUtc">
+            <summary>
+            UTC timestamp of the last message.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.MidiDeviceActivitySnapshot.LastMessageType">
+            <summary>
+            String description of the last message type.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.MidiDeviceActivitySnapshot.LastNote">
+            <summary>
+            Last MIDI note number, if applicable.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.MidiDeviceActivitySnapshot.LastVelocity">
+            <summary>
+            Last velocity value, if applicable.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.MidiDeviceActivitySnapshot.LastControlId">
+            <summary>
+            Last control ID, if applicable.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.MidiDeviceActivitySnapshot.LastControlValue">
+            <summary>
+            Last control value, normalized to 0..1 where possible.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Core.MidiNoteEventInfo">
+            <summary>
+            Lightweight note event data for editor feedback.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.MidiNoteEventInfo.DeviceIndex">
+            <summary>
+            MIDI device index.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.MidiNoteEventInfo.Note">
+            <summary>
+            MIDI note number.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.MidiNoteEventInfo.Velocity">
+            <summary>
+            Velocity value.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.MidiNoteEventInfo.IsOn">
+            <summary>
+            True when this is a note-on event.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.MidiNoteEventInfo.TimestampUtc">
+            <summary>
+            UTC timestamp of the event.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.MidiNoteEventInfo.#ctor(System.Int32,System.Int32,System.Int32,System.Boolean,System.DateTime)">
+            <summary>
+            Create a new note event info record.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Core.MidiValidation">
+            <summary>
+            MIDI value validation helpers.
+            </summary>
+        </member>
+        <member name="F:MusicEngine.Core.MidiValidation.MinNote">
+            <summary>
+            Minimum MIDI note value.
+            </summary>
+        </member>
+        <member name="F:MusicEngine.Core.MidiValidation.MaxNote">
+            <summary>
+            Maximum MIDI note value.
+            </summary>
+        </member>
+        <member name="F:MusicEngine.Core.MidiValidation.MinVelocity">
+            <summary>
+            Minimum MIDI velocity value.
+            </summary>
+        </member>
+        <member name="F:MusicEngine.Core.MidiValidation.MaxVelocity">
+            <summary>
+            Maximum MIDI velocity value.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.MidiValidation.ValidateNote(System.Int32)">
+            <summary>
+            Validate a MIDI note number.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.MidiValidation.ValidateVelocity(System.Int32)">
+            <summary>
+            Validate a MIDI velocity value.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Core.Pattern">
+            <summary>
+            Pattern container for step-based note events and playback state.
+            </summary>
+        </member>
+        <member name="F:MusicEngine.Core.Pattern.NoteEvent">
+            <summary>
+            Global note event callback for pattern playback.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Pattern.Id">
+            <summary>
+            Unique pattern identifier.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Pattern.Synth">
+            <summary>
+            Primary synth used for this pattern.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Pattern.SynthTargets">
+            <summary>
+            Synths targeted by this pattern (includes <see cref="P:MusicEngine.Core.Pattern.Synth"/>).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Pattern.Events">
+            <summary>
+            List of note events in the pattern.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Pattern.LoopLength">
+            <summary>
+            Pattern length in beats.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Pattern.IsLooping">
+            <summary>
+            Whether the pattern loops after <see cref="P:MusicEngine.Core.Pattern.LoopLength"/>.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Pattern.StartBeat">
+            <summary>
+            Optional absolute start beat for scheduling.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Pattern.Enabled">
+            <summary>
+            Enable or disable pattern playback.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Pattern.Sequencer">
+            <summary>
+            Sequencer instance driving this pattern, if any.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Pattern.Timing">
+            <summary>
+            Timing settings for this pattern.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Pattern.CurrentBeat">
+            <summary>
+            Current playback beat position.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Pattern.LastTriggeredNote">
+            <summary>
+            Last note activity triggered by this pattern.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Pattern.LastTriggeredBeat">
+            <summary>
+            Beat position of the last triggered note.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Pattern.LastTriggeredUtc">
+            <summary>
+            UTC timestamp of the last triggered note.
+            </summary>
+        </member>
+        <member name="E:MusicEngine.Core.Pattern.EditorNoteEvent">
+            <summary>
+            Raised when a note triggers in editor mode.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Pattern.SetEditorMode(System.Boolean)">
+            <summary>
+            Enable or disable editor events globally for patterns.
+            </summary>
+            <param name="enabled">True to enable editor events.</param>
+        </member>
+        <member name="M:MusicEngine.Core.Pattern.#ctor(MusicEngine.Core.ISynth,MusicEngine.Core.ISynth[])">
+            <summary>
+            Create a new pattern targeting one or more synths.
+            </summary>
+            <param name="synth">Primary synth.</param>
+            <param name="moreSynths">Additional synth targets.</param>
+        </member>
+        <member name="M:MusicEngine.Core.Pattern.Note(System.Int32,System.Double,System.Double,System.Int32)">
+            <summary>
+            Add a note event to the pattern.
+            </summary>
+            <param name="note">MIDI note number.</param>
+            <param name="beat">Beat position within the loop.</param>
+            <param name="duration">Duration in beats.</param>
+            <param name="velocity">MIDI velocity.</param>
+            <returns>This pattern for chaining.</returns>
+        </member>
+        <member name="M:MusicEngine.Core.Pattern.Play">
+            <summary>
+            Add this pattern to its sequencer and start playback.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Pattern.Stop">
+            <summary>
+            Remove this pattern from its sequencer and stop all notes.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Pattern.Process(System.Double,MusicEngine.Timing.TimingMaster)">
+            <summary>
+            Advance playback and trigger events for the current time slice.
+            </summary>
+            <param name="deltaSeconds">Delta time in seconds.</param>
+            <param name="timingMaster">Timing master to pull BPM/groove from.</param>
+        </member>
+        <member name="M:MusicEngine.Core.Pattern.GetActiveNotesSnapshot">
+            <summary>
+            Snapshot of currently active notes.
+            </summary>
+            <returns>List of active note activities.</returns>
+        </member>
+        <member name="T:MusicEngine.Core.NoteEvent">
+            <summary>
+            Pattern note event configuration.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.NoteEvent.Beat">
+            <summary>
+            Beat position of the note.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.NoteEvent.Note">
+            <summary>
+            MIDI note number.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.NoteEvent.Velocity">
+            <summary>
+            MIDI velocity.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.NoteEvent.Duration">
+            <summary>
+            Duration in beats.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Core.NoteActivity">
+            <summary>
+            Runtime note activity information.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.NoteActivity.Note">
+            <summary>
+            MIDI note number.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.NoteActivity.Velocity">
+            <summary>
+            Velocity used when triggered.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.NoteActivity.StartedUtc">
+            <summary>
+            UTC timestamp when the note started.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Core.PatternNoteEventInfo">
+            <summary>
+            Lightweight note event data for editor feedback.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.PatternNoteEventInfo.PatternId">
+            <summary>
+            Pattern identifier.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.PatternNoteEventInfo.Note">
+            <summary>
+            MIDI note number.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.PatternNoteEventInfo.Velocity">
+            <summary>
+            MIDI velocity.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.PatternNoteEventInfo.IsOn">
+            <summary>
+            True when this is a note-on event.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.PatternNoteEventInfo.TimestampUtc">
+            <summary>
+            UTC timestamp of the event.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.PatternNoteEventInfo.#ctor(System.Guid,System.Int32,System.Int32,System.Boolean,System.DateTime)">
+            <summary>
+            Create a new pattern note event info record.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Core.Sequencer">
+            <summary>
+            Background sequencer that advances patterns over time.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Sequencer.Timing">
+            <summary>
+            Timing master controlling BPM and groove.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Sequencer.Bpm">
+            <summary>
+            Current tempo in beats per minute.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Sequencer.IsRunning">
+            <summary>
+            True while the sequencer thread is running.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Sequencer.CurrentBeat">
+            <summary>
+            Current beat position of the sequencer.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Sequencer.CurrentTimeSeconds">
+            <summary>
+            Current time in seconds.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Sequencer.Patterns">
+            <summary>
+            Snapshot of registered patterns.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Sequencer.Start">
+            <summary>
+            Start the sequencer thread.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Sequencer.Stop">
+            <summary>
+            Stop the sequencer thread.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Sequencer.AddPattern(MusicEngine.Core.Pattern)">
+            <summary>
+            Add a pattern to the sequencer.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Sequencer.RemovePattern(MusicEngine.Core.Pattern)">
+            <summary>
+            Remove a pattern from the sequencer.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Sequencer.ClearPatterns">
+            <summary>
+            Remove all patterns and stop their playback.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Sequencer.Dispose">
+            <summary>
+            Stop the sequencer and clear patterns.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Core.Settings">
+            <summary>
+            Global engine defaults used when creating audio devices and signal paths.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Settings.SampleRate">
+            <summary>
+            Global sample rate in Hz for playback and processing.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Settings.Channels">
+            <summary>
+            Global output channel count (typically 1 for mono or 2 for stereo).
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Instruments.GeneralMidiProgram">
+            <summary>
+            General MIDI program numbers.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Instruments.GeneralMidiInstrument">
+            <summary>
+            Simple General MIDI synth wrapper backed by the system MIDI out device.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Instruments.GeneralMidiInstrument.#ctor">
+            <summary>
+            Create a default GM instrument on channel 0.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Instruments.GeneralMidiInstrument.#ctor(MusicEngine.Instruments.GeneralMidiProgram,System.Int32)">
+            <summary>
+            Create a GM instrument with a specific program and channel.
+            </summary>
+            <param name="program">Program number.</param>
+            <param name="channel">MIDI channel (0-15).</param>
+        </member>
+        <member name="P:MusicEngine.Instruments.GeneralMidiInstrument.Name">
+            <summary>
+            Display name for the instrument.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.GeneralMidiInstrument.WaveFormat">
+            <summary>
+            Output format used by the synth (silent provider).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.GeneralMidiInstrument.Program">
+            <summary>
+            Current program for the instrument.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.GeneralMidiInstrument.Channel">
+            <summary>
+            MIDI channel (0-15).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.GeneralMidiInstrument.Volume">
+            <summary>
+            Main volume in [0, 1].
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.GeneralMidiInstrument.Pan">
+            <summary>
+            Pan in [-1, 1].
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.GeneralMidiInstrument.Reverb">
+            <summary>
+            Reverb send in [0, 1].
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.GeneralMidiInstrument.Chorus">
+            <summary>
+            Chorus send in [0, 1].
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.GeneralMidiInstrument.ModWheel">
+            <summary>
+            Modulation wheel value in [0, 1].
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Instruments.GeneralMidiInstrument.PitchBend(System.Single)">
+            <summary>
+            Send pitch bend in [-1, 1].
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Instruments.GeneralMidiInstrument.NoteOn(System.Int32,System.Int32)">
+            <summary>
+            Trigger a MIDI note-on.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Instruments.GeneralMidiInstrument.NoteOff(System.Int32)">
+            <summary>
+            Trigger a MIDI note-off.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Instruments.GeneralMidiInstrument.AllNotesOff">
+            <summary>
+            Send all-notes-off to the device.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Instruments.GeneralMidiInstrument.SetParameter(System.String,System.Single)">
+            <summary>
+            Set a named parameter (volume, pan, reverb, chorus, modulation, pitchbend).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Instruments.GeneralMidiInstrument.Param(System.String,System.Single,System.Single)">
+            <summary>
+            Create a parameter setter for mapping automation values.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Instruments.GeneralMidiInstrument.Read(System.Single[],System.Int32,System.Int32)">
+            <summary>
+            Read audio samples (silence for MIDI-only instruments).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Instruments.GeneralMidiInstrument.Dispose">
+            <summary>
+            Release MIDI resources and stop all notes.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Instruments.Modules.EnvelopeGenerator">
+            <summary>
+            ADSR envelope helper for synths.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Instruments.Modules.EnvelopeGenerator.Process(System.Int32,System.Single,System.Single,System.Single,System.Single,System.Single,System.Int32,System.Int32@)">
+            <summary>
+            Advance an ADSR envelope one sample.
+            </summary>
+            <param name="stage">Current envelope stage (0=attack, 1=decay, 2=sustain, 3=release).</param>
+            <param name="current">Current envelope value.</param>
+            <param name="attack">Attack time in seconds.</param>
+            <param name="decay">Decay time in seconds.</param>
+            <param name="sustain">Sustain level in [0, 1].</param>
+            <param name="release">Release time in seconds.</param>
+            <param name="sampleRate">Sample rate in Hz.</param>
+            <param name="stageRef">Stage reference to advance when thresholds are reached.</param>
+            <returns>Updated envelope value.</returns>
+        </member>
+        <member name="T:MusicEngine.Instruments.Modules.WaveformGenerator">
+            <summary>
+            Waveform generation helpers for synth modules.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Instruments.Modules.WaveformGenerator.Basic(MusicEngine.Instruments.WaveType,System.Single,System.Single)">
+            <summary>
+            Basic waveform generation without band-limiting.
+            </summary>
+            <param name="type">Waveform type.</param>
+            <param name="phase">Normalized phase in [0, 1].</param>
+            <param name="pulseWidth">Pulse width for pulse wave.</param>
+            <returns>Sample value.</returns>
+        </member>
+        <member name="M:MusicEngine.Instruments.Modules.WaveformGenerator.Oscillator(MusicEngine.Instruments.WaveType,System.Single,System.Single,System.Random,System.Single)">
+            <summary>
+            Band-limited oscillator using PolyBLEP for selected waveforms.
+            </summary>
+            <param name="type">Waveform type.</param>
+            <param name="phase">Normalized phase in [0, 1].</param>
+            <param name="pulseWidth">Pulse width for pulse wave.</param>
+            <param name="random">Random source for noise.</param>
+            <param name="phaseInc">Phase increment per sample.</param>
+            <returns>Sample value.</returns>
+        </member>
+        <member name="M:MusicEngine.Instruments.Modules.WaveformGenerator.PolyBlep(System.Single,System.Single)">
+            <summary>
+            PolyBLEP correction term for band-limiting.
+            </summary>
+            <param name="t">Normalized phase.</param>
+            <param name="dt">Phase increment.</param>
+            <returns>Correction term.</returns>
+        </member>
+        <member name="T:MusicEngine.Instruments.WaveType">
+            <summary>
+            Core waveform types for oscillators.
+            </summary>
+        </member>
+        <member name="F:MusicEngine.Instruments.WaveType.Sine">
+            <summary>Pure sine wave.</summary>
+        </member>
+        <member name="F:MusicEngine.Instruments.WaveType.Square">
+            <summary>Square wave.</summary>
+        </member>
+        <member name="F:MusicEngine.Instruments.WaveType.Sawtooth">
+            <summary>Sawtooth wave.</summary>
+        </member>
+        <member name="F:MusicEngine.Instruments.WaveType.Triangle">
+            <summary>Triangle wave.</summary>
+        </member>
+        <member name="F:MusicEngine.Instruments.WaveType.Pulse">
+            <summary>Pulse wave with adjustable width.</summary>
+        </member>
+        <member name="F:MusicEngine.Instruments.WaveType.Noise">
+            <summary>Noise source.</summary>
+        </member>
+        <member name="T:MusicEngine.Instruments.SimpleSynth">
+            <summary>
+            Polyphonic synthesizer with extensive sound design capabilities.
+            Features: Dual oscillators, ADSR envelopes, filter, LFO, and built-in effects.
+            Uses lock-free data structures for minimal MIDI latency.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.Waveform">
+            <summary>Oscillator 1 waveform type</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.Osc1Octave">
+            <summary>Oscillator 1 octave offset (-3 to +3)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.Osc1Semi">
+            <summary>Oscillator 1 semitone detune (-12 to +12)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.Osc1Fine">
+            <summary>Oscillator 1 fine tune in cents (-100 to +100)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.Osc1Level">
+            <summary>Oscillator 1 level (0 to 1)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.Osc1PulseWidth">
+            <summary>Oscillator 1 pulse width for pulse wave (0.1 to 0.9)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.Osc2Waveform">
+            <summary>Oscillator 2 waveform type</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.Osc2Octave">
+            <summary>Oscillator 2 octave offset (-3 to +3)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.Osc2Semi">
+            <summary>Oscillator 2 semitone detune (-12 to +12)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.Osc2Fine">
+            <summary>Oscillator 2 fine tune in cents (-100 to +100)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.Osc2Level">
+            <summary>Oscillator 2 level (0 to 1)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.Osc2PulseWidth">
+            <summary>Oscillator 2 pulse width (0.1 to 0.9)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.Osc2Enabled">
+            <summary>Enable oscillator 2</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.SubOscLevel">
+            <summary>Sub oscillator level (0 to 1) - plays one octave below</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.SubOscWaveform">
+            <summary>Sub oscillator waveform (Sine or Square)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.NoiseLevel">
+            <summary>Noise level (0 to 1)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.Cutoff">
+            <summary>Filter cutoff frequency normalized (0 to 1, maps to 20-20000 Hz)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.Resonance">
+            <summary>Filter resonance (0 to 1)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.FilterEnvAmount">
+            <summary>Filter envelope amount (-1 to 1)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.FilterKeyTrack">
+            <summary>Filter keyboard tracking (0 to 1)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.FilterDrive">
+            <summary>Filter drive/saturation (0 to 1)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.Attack">
+            <summary>Amplitude attack time in seconds (0.001 to 10)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.Decay">
+            <summary>Amplitude decay time in seconds (0.001 to 10)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.Sustain">
+            <summary>Amplitude sustain level (0 to 1)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.Release">
+            <summary>Amplitude release time in seconds (0.001 to 10)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.FilterAttack">
+            <summary>Filter envelope attack time</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.FilterDecay">
+            <summary>Filter envelope decay time</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.FilterSustain">
+            <summary>Filter envelope sustain level</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.FilterRelease">
+            <summary>Filter envelope release time</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.LfoRate">
+            <summary>LFO rate in Hz (0.01 to 50)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.LfoWaveform">
+            <summary>LFO waveform</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.LfoToPitch">
+            <summary>LFO to pitch amount in semitones (0 to 12)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.LfoToFilter">
+            <summary>LFO to filter cutoff amount (0 to 1)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.LfoToAmp">
+            <summary>LFO to amplitude amount (0 to 1)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.LfoToPulseWidth">
+            <summary>LFO to pulse width amount (0 to 0.4)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.PitchBend">
+            <summary>Pitch bend value (-1 to 1)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.PitchBendRange">
+            <summary>Pitch bend range in semitones (1 to 24)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.ModWheel">
+            <summary>Mod wheel value (0 to 1) - controls vibrato</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.VibratoRate">
+            <summary>Vibrato rate in Hz</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.VibratoDepth">
+            <summary>Vibrato depth in semitones</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.Portamento">
+            <summary>Portamento time in seconds (0 = off)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.UnisonVoices">
+            <summary>Unison voices (1 to 8)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.UnisonDetune">
+            <summary>Unison detune in cents (0 to 50)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.UnisonSpread">
+            <summary>Unison stereo spread (0 to 1)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.DelayMix">
+            <summary>Delay mix (0 to 1)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.DelayTime">
+            <summary>Delay time in milliseconds (1 to 2000)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.DelayFeedback">
+            <summary>Delay feedback (0 to 0.95)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.ReverbMix">
+            <summary>Reverb mix (0 to 1)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.ReverbSize">
+            <summary>Reverb size (0 to 1)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.ReverbDamping">
+            <summary>Reverb damping (0 to 1)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.Volume">
+            <summary>Master volume (0 to 1)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.Pan">
+            <summary>Pan position (-1 left, 0 center, 1 right)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.MaxPolyphony">
+            <summary>Maximum polyphony (1 to 64)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.VelocitySensitivity">
+            <summary>Velocity sensitivity (0 to 1)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.Name">
+            <summary>Synth name for identification</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.WaveFormat">
+            <summary>Wave format for audio output</summary>
+        </member>
+        <member name="M:MusicEngine.Instruments.SimpleSynth.#ctor(System.Nullable{System.Int32})">
+            <summary>
+            Creates a new SimpleSynth instance
+            </summary>
+            <param name="sampleRate">Optional sample rate override</param>
+        </member>
+        <member name="M:MusicEngine.Instruments.SimpleSynth.NoteOn(System.Int32,System.Int32)">
+            <summary>
+            Triggers a note on event (lock-free for MIDI thread)
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Instruments.SimpleSynth.NoteOff(System.Int32)">
+            <summary>
+            Triggers a note off event (lock-free for MIDI thread)
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Instruments.SimpleSynth.AllNotesOff">
+            <summary>
+            Stops all playing notes immediately (lock-free)
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Instruments.SimpleSynth.SetParameter(System.String,System.Single)">
+            <summary>
+            Sets a parameter by name
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Instruments.SimpleSynth.Read(System.Single[],System.Int32,System.Int32)">
+            <summary>
+            Reads audio samples into the buffer (optimized, minimal locking)
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Instruments.SimpleSynth.SoftClip(System.Single)">
+            <summary>
+            Soft-clip function to prevent harsh digital clipping.
+            Uses tanh for smooth saturation above threshold.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Instruments.SimpleSynth.Voice">
+            <summary>
+            Internal voice class for polyphonic playback
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Scripting.ConsoleInterface">
+            <summary>
+            Minimal interactive console interface for script execution.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ConsoleInterface.#ctor(MusicEngine.Scripting.ScriptHost,System.String,System.Action,System.String,MusicEngine.Vst.Vst3Registry,System.Boolean)">
+            <summary>
+            Create a console interface bound to a script host.
+            </summary>
+            <param name="host">Script host instance.</param>
+            <param name="scriptContent">Initial script content.</param>
+            <param name="onExit">Callback when exiting.</param>
+            <param name="scriptFilePath">Optional script file path.</param>
+            <param name="vst3Registry">Optional VST3 registry for listing/opening plugins.</param>
+            <param name="editorMode">Enable editor mode commands.</param>
+        </member>
+        <member name="M:MusicEngine.Scripting.ConsoleInterface.RunAsync">
+            <summary>
+            Run the interactive console loop.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Scripting.EngineLauncher">
+            <summary>
+            Minimal engine launcher for script-driven sessions.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.EngineLauncher.LaunchAsync(System.String,System.Boolean,System.Boolean,System.Boolean,System.Boolean)">
+            <summary>
+            Launch the engine with optional default script and runtime options.
+            </summary>
+            <param name="defaultScript">Default script content.</param>
+            <param name="executeScriptOnStartup">Execute the script immediately.</param>
+            <param name="startSequencerOnStartup">Start the sequencer immediately.</param>
+            <param name="startSleeping">Start with audio output suspended.</param>
+            <param name="editorMode">Enable editor mode hooks.</param>
+        </member>
+        <member name="T:MusicEngine.Scripting.EngineScriptInterfaceOptions">
+            <summary>
+            Configuration options for <see cref="T:MusicEngine.Scripting.EngineScriptInterface"/>.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.EngineScriptInterfaceOptions.EnableVstScanning">
+            <summary>
+            Enable scanning for VST3 plugins on startup.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.EngineScriptInterfaceOptions.StartSequencerOnStartup">
+            <summary>
+            Start the sequencer automatically on startup.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.EngineScriptInterfaceOptions.SampleRate">
+            <summary>
+            Optional sample rate override for the audio engine.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Scripting.IEngineScriptInterface">
+            <summary>
+            Script-oriented engine interface for embedding in host applications.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.IEngineScriptInterface.Engine">
+            <summary>
+            Audio engine instance.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.IEngineScriptInterface.Sequencer">
+            <summary>
+            Sequencer instance.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.IEngineScriptInterface.Host">
+            <summary>
+            Script host used for execution and state.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.IEngineScriptInterface.VstRegistry">
+            <summary>
+            VST3 registry populated during scanning (if enabled).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.IEngineScriptInterface.IsSleeping">
+            <summary>
+            Whether the engine is currently sleeping.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.IEngineScriptInterface.StartupAsync(System.String)">
+            <summary>
+            Initialize the engine and optional startup script.
+            </summary>
+            <param name="startupScript">Optional script to run after initialization.</param>
+        </member>
+        <member name="M:MusicEngine.Scripting.IEngineScriptInterface.RunScriptAsync(System.String,System.Boolean,System.Boolean)">
+            <summary>
+            Run a script, optionally clearing state and skipping unchanged code.
+            </summary>
+            <param name="code">Script source code.</param>
+            <param name="clearState">Clear script state before running.</param>
+            <param name="skipIfUnchanged">Skip execution when code is unchanged.</param>
+        </member>
+        <member name="M:MusicEngine.Scripting.IEngineScriptInterface.GetStateSnapshot">
+            <summary>
+            Snapshot current engine state for inspection or UI.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.IEngineScriptInterface.Sleep">
+            <summary>
+            Suspend audio and sequencer processing.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.IEngineScriptInterface.Wake">
+            <summary>
+            Resume audio and sequencer processing.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Scripting.EngineScriptInterface">
+            <summary>
+            Script-friendly wrapper around engine, sequencer, and VST registry.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.EngineScriptInterface.Engine">
+            <summary>
+            Audio engine instance.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.EngineScriptInterface.Sequencer">
+            <summary>
+            Sequencer instance.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.EngineScriptInterface.Host">
+            <summary>
+            Script host used for execution and state.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.EngineScriptInterface.VstRegistry">
+            <summary>
+            VST3 registry populated during scanning (if enabled).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.EngineScriptInterface.IsSleeping">
+            <summary>
+            Whether the engine is currently sleeping.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.EngineScriptInterface.#ctor(MusicEngine.Scripting.EngineScriptInterfaceOptions)">
+            <summary>
+            Create a new interface with optional configuration.
+            </summary>
+            <param name="options">Configuration options.</param>
+        </member>
+        <member name="M:MusicEngine.Scripting.EngineScriptInterface.StartupAsync(System.String)">
+            <summary>
+            Initialize the engine, scan for VST3, and run an optional startup script.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.EngineScriptInterface.RunScriptAsync(System.String,System.Boolean,System.Boolean)">
+            <summary>
+            Run a script, optionally clearing state and skipping unchanged code.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.EngineScriptInterface.GetStateSnapshot">
+            <summary>
+            Snapshot current engine state for inspection or UI.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.EngineScriptInterface.Sleep">
+            <summary>
+            Suspend audio and sequencer processing.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.EngineScriptInterface.Wake">
+            <summary>
+            Resume audio and sequencer processing.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.EngineScriptInterface.Dispose">
+            <summary>
+            Dispose engine resources.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Scripting.EngineStateSnapshot">
+            <summary>
+            Lightweight engine state snapshot for visualization/debugging.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.EngineStateSnapshot.IsSleeping">
+            <summary>
+            True when the engine is sleeping.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.EngineStateSnapshot.SequencerRunning">
+            <summary>
+            True when the sequencer is running.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.EngineStateSnapshot.CurrentBeat">
+            <summary>
+            Current sequencer beat.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.EngineStateSnapshot.CurrentTimeSeconds">
+            <summary>
+            Current sequencer time in seconds.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.EngineStateSnapshot.Patterns">
+            <summary>
+            Pattern snapshots.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.EngineStateSnapshot.MidiDevices">
+            <summary>
+            MIDI device activity snapshots.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Scripting.PatternStateSnapshot">
+            <summary>
+            Snapshot of a pattern state.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.PatternStateSnapshot.Id">
+            <summary>
+            Pattern identifier.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.PatternStateSnapshot.Enabled">
+            <summary>
+            Whether the pattern is enabled.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.PatternStateSnapshot.IsLooping">
+            <summary>
+            Whether the pattern is looping.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.PatternStateSnapshot.LoopLength">
+            <summary>
+            Pattern loop length in beats.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.PatternStateSnapshot.StartBeat">
+            <summary>
+            Optional start beat.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.PatternStateSnapshot.CurrentBeat">
+            <summary>
+            Current beat position.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.PatternStateSnapshot.PositionInLoop">
+            <summary>
+            Position within the loop, if applicable.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.PatternStateSnapshot.HasActiveNotes">
+            <summary>
+            True when there are active notes.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.PatternStateSnapshot.ActiveNotes">
+            <summary>
+            Active note snapshots.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.PatternStateSnapshot.LastTriggeredNote">
+            <summary>
+            Last triggered note, if any.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.PatternStateSnapshot.LastTriggeredBeat">
+            <summary>
+            Beat position of the last triggered note.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.PatternStateSnapshot.LastTriggeredUtc">
+            <summary>
+            UTC timestamp of the last triggered note.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.PatternStateSnapshot.SynthTargets">
+            <summary>
+            Names of synth targets.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Scripting.NoteActivitySnapshot">
+            <summary>
+            Snapshot of a single note activity.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.NoteActivitySnapshot.Note">
+            <summary>
+            MIDI note number.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.NoteActivitySnapshot.Velocity">
+            <summary>
+            MIDI velocity.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.NoteActivitySnapshot.StartedUtc">
+            <summary>
+            UTC timestamp when the note started.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Scripting.FluentApi.AudioControl">
+            <summary>
+            Fluent API entry point for audio routing and controls.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.FluentApi.AudioControl.master">
+            <summary>
+            Master channel controls.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.FluentApi.AudioControl.all">
+            <summary>
+            Controls that apply to all channels.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AudioControl.channel(System.Int32)">
+            <summary>
+            Access a specific channel control by index.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Scripting.FluentApi.AllChannelsControl">
+            <summary>
+            Controls that apply to all channels.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AllChannelsControl.gain(System.Single)">
+            <summary>
+            Set gain for all channels.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AllChannelsControl.gain(System.Double)">
+            <summary>
+            Set gain for all channels (double overload).
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Scripting.FluentApi.MasterAudioControl">
+            <summary>
+            Controls for the master output.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MasterAudioControl.gain(System.Single)">
+            <summary>
+            Set master gain.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MasterAudioControl.gain(System.Double)">
+            <summary>
+            Set master gain (double overload).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MasterAudioControl.effect(MusicEngine.Core.IAudioEffect)">
+            <summary>
+            Add an effect to the master chain.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MasterAudioControl.clearEffects">
+            <summary>
+            Clear all master effects.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.FluentApi.MasterAudioControl.record">
+            <summary>
+            Recording controls for the master output.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Scripting.FluentApi.AudioChannelControl">
+            <summary>
+            Controls for a specific audio channel.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AudioChannelControl.gain(System.Single)">
+            <summary>
+            Set gain for the channel.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AudioChannelControl.gain(System.Double)">
+            <summary>
+            Set gain for the channel (double overload).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AudioChannelControl.route(MusicEngine.Core.ISynth)">
+            <summary>
+            Route a synth to this channel.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AudioChannelControl.route(MusicEngine.Core.Pattern)">
+            <summary>
+            Route all synth targets from a pattern to this channel.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AudioChannelControl.effect(MusicEngine.Core.IAudioEffect)">
+            <summary>
+            Add an effect to this channel.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AudioChannelControl.clearEffects">
+            <summary>
+            Clear all effects on this channel.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.FluentApi.AudioChannelControl.record">
+            <summary>
+            Recording controls for this channel.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Scripting.FluentApi.RecordingControl">
+            <summary>
+            Recording controls used by fluent API.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.RecordingControl.start(System.String,System.String)">
+            <summary>
+            Start a new recording session.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.RecordingControl.stop">
+            <summary>
+            Stop the last recording session.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.RecordingControl.stop(MusicEngine.Core.RecordingSession)">
+            <summary>
+            Stop a specific recording session.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Scripting.FluentApi.MidiControl">
+            <summary>
+            Fluent API entry point for MIDI routing and mapping.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MidiControl.device(System.Int32)">
+            <summary>
+            Access a MIDI device by index.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Scripting.FluentApi.DeviceControl">
+            <summary>
+            MIDI device routing and control mapping.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.DeviceControl.to(MusicEngine.Core.ISynth)">
+            <summary>
+            Route the device to a synth.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.DeviceControl.pitchbend">
+            <summary>
+            Map pitch bend to a control action.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.DeviceControl.control(System.Int32)">
+            <summary>
+            Map a control change ID to a control action.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Scripting.FluentApi.ControlMapping">
+            <summary>
+            Control mapping configuration.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.ControlMapping.to(System.Action{System.Single})">
+            <summary>
+            Map the control to an action.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Scripting.QuickNotePlayer">
+            <summary>
+            Minimal helper to play a single note from the command line.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.QuickNotePlayer.PlayOnceAsync(System.Int32,System.Int32,System.Double)">
+            <summary>
+            Play a single note using the default GM instrument.
+            </summary>
+            <param name="note">MIDI note number.</param>
+            <param name="velocity">MIDI velocity.</param>
+            <param name="durationSeconds">Note length in seconds.</param>
+        </member>
+        <member name="T:MusicEngine.Scripting.RandomSource">
+            <summary>
+            Script-friendly random value helper with configurable ranges and modes.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.RandomSource.#ctor">
+            <summary>
+            Create a new random source with a time-based seed.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.RandomSource.#ctor(System.Int32)">
+            <summary>
+            Create a new random source with an explicit seed.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.RandomSource.Range(System.Single,System.Single)">
+            <summary>
+            Set the float range for <see cref="M:MusicEngine.Scripting.RandomSource.NextFloat"/>.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.RandomSource.Steps(System.Int32)">
+            <summary>
+            Quantize the float range into a number of discrete steps.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.RandomSource.Bool(System.Single)">
+            <summary>
+            Switch to boolean mode with a given true probability.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.RandomSource.Int(System.Int32,System.Int32)">
+            <summary>
+            Switch to integer mode with a given inclusive range.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.RandomSource.Reset">
+            <summary>
+            Reset to default float range and modes.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.RandomSource.NextFloat">
+            <summary>
+            Get the next random float based on current settings.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.RandomSource.NextBool">
+            <summary>
+            Get the next random boolean based on current probability.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.RandomSource.NextInt">
+            <summary>
+            Get the next random integer based on current range.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.RandomSource.op_Implicit(MusicEngine.Scripting.RandomSource)~System.Single">
+            <summary>
+            Implicit conversion to float using <see cref="M:MusicEngine.Scripting.RandomSource.NextFloat"/>.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.RandomSource.op_Implicit(MusicEngine.Scripting.RandomSource)~System.Boolean">
+            <summary>
+            Implicit conversion to bool using <see cref="M:MusicEngine.Scripting.RandomSource.NextBool"/>.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Scripting.ScriptHost">
+            <summary>
+            Script host for executing C# scripts against the engine.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.ScriptHost.DisposeVstOnClear">
+            <summary>
+            When true, VST instances are disposed when clearing script state.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptHost.#ctor(MusicEngine.Core.AudioEngine,MusicEngine.Core.Sequencer,MusicEngine.Vst.Vst3Registry)">
+            <summary>
+            Create a script host bound to an engine and sequencer.
+            </summary>
+            <param name="engine">Audio engine instance.</param>
+            <param name="sequencer">Sequencer instance.</param>
+            <param name="vstRegistry">Optional VST registry.</param>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptHost.ExecuteScriptAsync(System.String)">
+            <summary>
+            Execute script code without clearing state.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptHost.ExecuteScriptIfChangedAsync(System.String)">
+            <summary>
+            Execute script code only if it has changed.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptHost.RefreshScriptAsync(System.String,System.Boolean)">
+            <summary>
+            Clear state then execute script code.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptHost.ClearState">
+            <summary>
+            Clear script state, routing, and mappings.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptHost.TryOpenVstEditor(System.String)">
+            <summary>
+            Try to open a VST editor by name if already loaded.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptHost.ResetVstState">
+            <summary>
+            Reset VST state in the script globals.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptHost.SetTransportMuted(System.Boolean)">
+            <summary>
+            Mute or unmute the transport output.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptHost.SetMidiEnabled(System.Boolean)">
+            <summary>
+            Enable or disable MIDI input.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptHost.StartSequencer">
+            <summary>
+            Start the sequencer if not running.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptHost.StopSequencer">
+            <summary>
+            Stop the sequencer if running.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptHost.AllNotesOff">
+            <summary>
+            Send all-notes-off to active non-VST synths.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Scripting.ScriptGlobals">
+            <summary>
+            Globals exposed to scripts for building synths, patterns, and routing.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.ScriptGlobals.Engine">
+            <summary>
+            Audio engine instance.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.ScriptGlobals.Sequencer">
+            <summary>
+            Sequencer instance.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.ScriptGlobals.Host">
+            <summary>
+            Script host instance.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.ScriptGlobals.VstRegistry">
+            <summary>
+            VST registry if scanning is enabled.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.ScriptGlobals.Timing">
+            <summary>
+            Timing master from the sequencer.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.CreateSynth">
+            <summary>
+            Create and route a SimpleSynth instance.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.CreateGeneralMidi">
+            <summary>
+            Create and route a General MIDI instrument.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.CreatePattern">
+            <summary>
+            Create a pattern using the last created synth.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.CreatePattern(MusicEngine.Core.ISynth)">
+            <summary>
+            Create a pattern targeting a specific synth.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.CreateVst(System.String)">
+            <summary>
+            Create or reuse a VST3 instrument by name.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.CreateVstEffect(System.String)">
+            <summary>
+            Create or reuse a VST3 effect by name.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.CreateAudioClip(System.String)">
+            <summary>
+            Load an audio clip from disk.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.ScriptGlobals.audio">
+            <summary>
+            Fluent audio control API.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.ScriptGlobals.midi">
+            <summary>
+            Fluent MIDI control API.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.ScriptGlobals.vst">
+            <summary>
+            Dynamic VST access API.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.ScriptGlobals.Random">
+            <summary>
+            Random source helper for scripts.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Scripting.VstAccess">
+            <summary>
+            Script helper for creating and reusing VST instruments/effects.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.VstAccess.KeepInstances">
+            <summary>
+            When true, instances are kept across script refreshes.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.VstAccess.#ctor(MusicEngine.Scripting.ScriptGlobals)">
+            <summary>
+            Create a new VST access helper bound to script globals.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.VstAccess.UpdateGlobals(MusicEngine.Scripting.ScriptGlobals)">
+            <summary>
+            Update the globals reference after a script refresh.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.VstAccess.Item(System.String)">
+            <summary>
+            Indexer access to VST instruments by name.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.VstAccess.TryGetMember(System.Dynamic.GetMemberBinder,System.Object@)">
+            <summary>
+            Dynamic member access to VST instruments by name.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.VstAccess.Get(System.String)">
+            <summary>
+            Get or create a VST3 instrument by name.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.VstAccess.GetEffect(System.String)">
+            <summary>
+            Get or create a VST3 effect by name.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.VstAccess.TryOpenEditor(System.String)">
+            <summary>
+            Try to open the editor for a loaded instrument.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.VstAccess.Clear">
+            <summary>
+            Dispose and clear instances unless <see cref="P:MusicEngine.Scripting.VstAccess.KeepInstances"/> is true.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.VstAccess.Clear(System.Boolean)">
+            <summary>
+            Dispose and clear instances unless <paramref name="keepInstances"/> is true.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.VstAccess.Reattach(MusicEngine.Core.AudioEngine)">
+            <summary>
+            Reattach cached instruments to a new engine.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.VstAccess.ResetState">
+            <summary>
+            Reset state for all cached instruments.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Timing.GrooveSettings">
+            <summary>
+            Groove settings for swing and humanize.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Timing.GrooveSettings.Swing">
+            <summary>
+            Swing amount in [0, 1].
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Timing.GrooveSettings.Humanize">
+            <summary>
+            Humanize settings for timing and velocity.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Timing.HumanizeSettings">
+            <summary>
+            Humanize settings for timing and velocity jitter.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Timing.HumanizeSettings.TimeMs">
+            <summary>
+            Max timing jitter in milliseconds.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Timing.HumanizeSettings.Velocity">
+            <summary>
+            Velocity jitter amount (0-1 range multiplier).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Timing.HumanizeSettings.Seed">
+            <summary>
+            Optional RNG seed for deterministic humanize.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Timing.TimingMaster">
+            <summary>
+            Global timing controller for BPM, swing, and humanize.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Timing.TimingMaster.Bpm">
+            <summary>
+            Current tempo in beats per minute.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Timing.TimingMaster.Groove">
+            <summary>
+            Groove and humanize settings.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Timing.TimingMaster.EnableGroove">
+            <summary>
+            Enable or disable groove swing.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Timing.TimingMaster.EnableHumanize">
+            <summary>
+            Enable or disable humanize jitter.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Timing.TimingSettings">
+            <summary>
+            Per-pattern timing settings that can override the master.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Timing.TimingSettings.Bpm">
+            <summary>
+            Optional BPM override for the pattern.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Timing.TimingSettings.UseMasterGroove">
+            <summary>
+            Whether to use the master's groove settings.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Timing.TimingSettings.Groove">
+            <summary>
+            Groove settings to use when <see cref="P:MusicEngine.Timing.TimingSettings.UseMasterGroove"/> is false.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Vst.Vst3EditorWindow">
+            <summary>
+            WinForms host window for VST3 editors.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Vst.Vst3EditorWindow.Open(System.String,System.String)">
+            <summary>
+            Open a new VST3 editor window from a plugin path.
+            </summary>
+            <param name="pluginPath">Path to the VST3 plugin.</param>
+            <param name="displayName">Display name for the window title.</param>
+        </member>
+        <member name="M:MusicEngine.Vst.Vst3EditorWindow.OpenExisting(System.IntPtr,System.String,System.String)">
+            <summary>
+            Open a VST3 editor window for an existing native handle.
+            </summary>
+            <param name="hostHandle">Native host handle.</param>
+            <param name="displayName">Display name for the window title.</param>
+            <param name="pluginPath">Path to the VST3 plugin for icon lookup.</param>
+        </member>
+        <member name="T:MusicEngine.Vst.Vst3Effect">
+            <summary>
+            VST3 effect wrapper for audio routing chains.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Vst.Vst3Effect.#ctor(System.String,System.String)">
+            <summary>
+            Create a VST3 effect from a plugin path.
+            </summary>
+            <param name="pluginPath">Path to the VST3 plugin.</param>
+            <param name="name">Display name for the instance.</param>
+        </member>
+        <member name="P:MusicEngine.Vst.Vst3Effect.Name">
+            <summary>
+            Display name for the effect.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Vst.Vst3Effect.Attach(NAudio.Wave.ISampleProvider,NAudio.Wave.WaveFormat)">
+            <summary>
+            Attach the effect to an input stream.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Vst.Vst3Effect.Detach">
+            <summary>
+            Detach and release processing state.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Vst.Vst3Effect.SetParameterNormalized(System.String,System.Single)">
+            <summary>
+            Set a named parameter with normalized value in [0, 1].
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Vst.Vst3Effect.Param(System.String,System.Single,System.Single)">
+            <summary>
+            Create a setter for automation.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Vst.Vst3Effect.OpenEditor">
+            <summary>
+            Open the VST3 editor window for this effect.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Vst.Vst3Effect.Dispose">
+            <summary>
+            Close the plugin and release native resources.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Vst.Vst3HostLauncher">
+            <summary>
+            Launches an external VST3 host to open plugin editors.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Vst.Vst3HostLauncher.TryOpenPlugin(System.String,System.String@)">
+            <summary>
+            Try to open a plugin in an external VST3 host application.
+            </summary>
+            <param name="pluginPath">Path to the VST3 plugin.</param>
+            <param name="message">Status message for diagnostics.</param>
+            <returns>True when the host launches successfully.</returns>
+        </member>
+        <member name="T:MusicEngine.Vst.Vst3Instrument">
+            <summary>
+            VST3-backed instrument wrapper for MIDI routing and audio output.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Vst.Vst3Instrument.#ctor(System.String,System.String)">
+            <summary>
+            Create a VST3 instrument from a plugin path.
+            </summary>
+            <param name="pluginPath">Path to the VST3 plugin.</param>
+            <param name="name">Display name for the instance.</param>
+        </member>
+        <member name="P:MusicEngine.Vst.Vst3Instrument.Name">
+            <summary>
+            Display name for the instance.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Vst.Vst3Instrument.WaveFormat">
+            <summary>
+            Output format for this instrument.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Vst.Vst3Instrument.Read(System.Single[],System.Int32,System.Int32)">
+            <summary>
+            Read audio samples into the target buffer.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Vst.Vst3Instrument.NoteOn(System.Int32,System.Int32)">
+            <summary>
+            Trigger a MIDI note-on.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Vst.Vst3Instrument.NoteOff(System.Int32)">
+            <summary>
+            Trigger a MIDI note-off.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Vst.Vst3Instrument.AllNotesOff">
+            <summary>
+            Send all-notes-off to the plugin.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Vst.Vst3Instrument.ResetState">
+            <summary>
+            Reset common performance state such as notes and pitch bend.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Vst.Vst3Instrument.PitchBend(System.Single)">
+            <summary>
+            Send pitch bend in normalized range [-1, 1].
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Vst.Vst3Instrument.SetParameter(System.String,System.Single)">
+            <summary>
+            Set a named parameter (normalized).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Vst.Vst3Instrument.SetParameterNormalized(System.String,System.Single)">
+            <summary>
+            Set a named parameter with normalized value in [0, 1].
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Vst.Vst3Instrument.Param(System.String,System.Single,System.Single)">
+            <summary>
+            Create a setter for automation.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Vst.Vst3Instrument.OpenEditor">
+            <summary>
+            Open the VST3 editor window for this instrument.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Vst.Vst3Instrument.Dispose">
+            <summary>
+            Close the plugin and release native resources.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Vst.Vst3PluginInfo">
+            <summary>
+            VST3 plugin metadata discovered by scanning.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Vst.Vst3PluginInfo.Name">
+            <summary>
+            Display name of the plugin.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Vst.Vst3PluginInfo.Path">
+            <summary>
+            Filesystem path to the plugin.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Vst.Vst3PluginInfo.Index">
+            <summary>
+            Index assigned within a registry list.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Vst.Vst3Registry">
+            <summary>
+            Registry for scanned VST3 plugins.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Vst.Vst3Registry.Plugins">
+            <summary>
+            Current list of plugins in the registry.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Vst.Vst3Registry.SetPlugins(System.Collections.Generic.IEnumerable{MusicEngine.Vst.Vst3PluginInfo})">
+            <summary>
+            Replace the registry contents with a new plugin list.
+            </summary>
+            <param name="plugins">Plugins to store.</param>
+        </member>
+        <member name="M:MusicEngine.Vst.Vst3Registry.FindByName(System.String)">
+            <summary>
+            Find a plugin by display name.
+            </summary>
+            <param name="name">Plugin display name.</param>
+            <returns>Matching plugin info or null.</returns>
+        </member>
+        <member name="T:MusicEngine.Vst.Vst3Scanner">
+            <summary>
+            VST3 scanner for Windows search paths.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Vst.Vst3Scanner.Scan">
+            <summary>
+            Scan for VST3 plugins on disk.
+            </summary>
+            <returns>List of discovered VST3 plugins.</returns>
+        </member>
+        <member name="T:MusicEngine.Vst.VstSystem">
+            <summary>
+            VST system status and scanning helpers.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Vst.VstSystem.TryScan(MusicEngine.Vst.Vst3Registry@,System.String@)">
+            <summary>
+            Try to scan for VST3 plugins and populate a registry.
+            </summary>
+            <param name="registry">Registry populated with scan results.</param>
+            <param name="message">Status message for diagnostics.</param>
+            <returns>True when scanning succeeds and VST is available.</returns>
+        </member>
+    </members>
+</doc>
