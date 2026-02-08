@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using Microsoft.CodeAnalysis.CSharp.Scripting;
 using Microsoft.CodeAnalysis.Scripting;
 using MusicEngine.Core;
+using MusicEngine.Core.Modulation;
 using MusicEngine.Effects.Audio;
 using MusicEngine.Effects.Midi;
 using MusicEngine.Effects.Vst;
@@ -678,6 +679,48 @@ public sealed class ScriptGlobals
     }
 
     /// <summary>
+    /// Create a reverb preset effect.
+    /// </summary>
+    public SimpleReverbEffect ReverbPreset(string name, Action<SimpleReverbEffect>? configure = null)
+        => Effect.ReverbPreset(name, configure);
+
+    /// <summary>
+    /// Create a delay preset effect.
+    /// </summary>
+    public SimpleDelayEffect DelayPreset(string name, Action<SimpleDelayEffect>? configure = null)
+        => Effect.DelayPreset(name, configure);
+
+    /// <summary>
+    /// Create a tremolo preset effect.
+    /// </summary>
+    public TremoloEffect TremoloPreset(string name, Action<TremoloEffect>? configure = null)
+        => Effect.TremoloPreset(name, configure);
+
+    /// <summary>
+    /// Create a bit crush preset effect.
+    /// </summary>
+    public BitCrusherEffect BitCrushPreset(string name, Action<BitCrusherEffect>? configure = null)
+        => Effect.BitCrushPreset(name, configure);
+
+    /// <summary>
+    /// Create a noise preset effect.
+    /// </summary>
+    public NoiseEffect NoisePreset(string name, Action<NoiseEffect>? configure = null)
+        => Effect.NoisePreset(name, configure);
+
+    /// <summary>
+    /// Create a drive preset effect.
+    /// </summary>
+    public DriveEffect DrivePreset(string name, Action<DriveEffect>? configure = null)
+        => Effect.DrivePreset(name, configure);
+
+    /// <summary>
+    /// Create a filter preset effect.
+    /// </summary>
+    public SimpleFilterEffect FilterPreset(string name, Action<SimpleFilterEffect>? configure = null)
+        => Effect.FilterPreset(name, configure);
+
+    /// <summary>
     /// Create a modular MIDI effect rack.
     /// </summary>
     public MidiEffectRack CreateMidiEffect()
@@ -934,6 +977,18 @@ public sealed class ScriptGlobals
     /// </summary>
     public Action<float> BindSwitch(Func<bool> getter, Action<bool> setter)
         => ActionBinder.Switch(getter, setter);
+
+    /// <summary>
+    /// Create a modulated variable from any writable property/field.
+    /// </summary>
+    public ModVar Var(object target, string member, float? initial = null)
+        => Mod.Var(target, member, initial);
+
+    /// <summary>
+    /// Alias for Var.
+    /// </summary>
+    public ModVar Param(object target, string member, float? initial = null)
+        => Var(target, member, initial);
 
     private VstAccess? _vstAccess;
     private MidiMap? _midiMap;

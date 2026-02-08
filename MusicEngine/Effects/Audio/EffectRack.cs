@@ -89,6 +89,27 @@ public sealed class EffectRack : IAudioEffect
         return Add(effect);
     }
 
+    public EffectRack ReverbPreset(string name, Action<SimpleReverbEffect>? configure = null)
+        => Add(Effect.ReverbPreset(name, configure));
+
+    public EffectRack DelayPreset(string name, Action<SimpleDelayEffect>? configure = null)
+        => Add(Effect.DelayPreset(name, configure));
+
+    public EffectRack TremoloPreset(string name, Action<TremoloEffect>? configure = null)
+        => Add(Effect.TremoloPreset(name, configure));
+
+    public EffectRack BitCrushPreset(string name, Action<BitCrusherEffect>? configure = null)
+        => Add(Effect.BitCrushPreset(name, configure));
+
+    public EffectRack NoisePreset(string name, Action<NoiseEffect>? configure = null)
+        => Add(Effect.NoisePreset(name, configure));
+
+    public EffectRack DrivePreset(string name, Action<DriveEffect>? configure = null)
+        => Add(Effect.DrivePreset(name, configure));
+
+    public EffectRack FilterPreset(string name, Action<SimpleFilterEffect>? configure = null)
+        => Add(Effect.FilterPreset(name, configure));
+
     public EffectRack Custom(Action<float[], int, int, WaveFormat> process, string? name = null)
     {
         var effect = new CustomEffect(process, name ?? "Custom");

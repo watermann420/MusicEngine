@@ -11,6 +11,27 @@ var pan = Mod.Bind(
     initial: 0f);
 ```
 
+## Bind by Name (Quick)
+
+```csharp
+var oscOct = Var(synth, "Osc1Octave");
+oscOct.Lfo(-12f, 12f, rateHz: 0.2f);
+
+var cutoff = Param(synth, "Cutoff");
+cutoff.Random(0.2f, 0.9f, everyMs: 300);
+```
+
+## Works With Any Object
+
+```csharp
+var drive = Var(Effect.Drive, "Drive");
+drive.Lfo(0.2f, 4f, rateHz: 0.5f);
+
+var rec = Audio.Master.Record;
+var bitrate = Var(rec, "BitRateKbps");
+bitrate.Set(192f);
+```
+
 ## Short Helpers
 
 ```csharp

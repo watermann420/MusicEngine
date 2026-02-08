@@ -46,8 +46,8 @@ Notes:
 
 Manual overrides still work:
 ```csharp
-vital.LoadState("States/vital.state");
-vital.SaveState("States/vital.state");
+vital.LoadState("States.vital.state");
+vital.SaveState("States.vital.state");
 ```
 
 ## Disable Auto Save

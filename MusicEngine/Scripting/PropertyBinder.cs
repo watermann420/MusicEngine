@@ -54,6 +54,7 @@ internal static class PropertyBinder
         throw new InvalidOperationException($"Member '{member}' not found or not writable on {type.Name}.");
     }
 
+
     private static object? ConvertValue(float value, Type targetType, float min, float max)
     {
         if (targetType == typeof(float)) return value;
@@ -75,4 +76,5 @@ internal static class PropertyBinder
 
         return Convert.ChangeType(value, targetType);
     }
+
 }

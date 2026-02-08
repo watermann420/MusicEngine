@@ -158,6 +158,22 @@ Audio.CreateChannel(1).Effect(fx);
 
 var preset = Effect.Reverb;
 Audio.CreateChannel(2).Effect(preset);
+
+var fx2 = CreateEffect()
+    .ReverbPreset("Hall")
+    .DelayPreset("Echo")
+    .DrivePreset("Warm");
+Audio.CreateChannel(3).Effect(fx2);
+
+var fx3 = CreateEffect()
+    .ReverbPreset("Hall", r => r.Mix = 0.4f)
+    .DelayPreset("Echo", d => d.TimeMs = 500f)
+    .FilterPreset("Low", f => f.CutoffHz = 800f);
+Audio.CreateChannel(4).Effect(fx3);
+
+var reverbFx3 = ReverbPreset("Hall", r => r.Mix = 0.4f);
+var mix = Mod.Var(reverbFx3, "Mix");
+mix.Lfo(0.2f, 0.6f, rateHz: 0.5f);
 ```
 
 ## Custom MIDI Effects
@@ -198,6 +214,19 @@ Midi.Device(0).Control(24).To(BindSwitch(rec, "Loop"));
 
 // getter/setter form
 Midi.Device(0).cc(25).To(BindSwitch(() => rec.Loop, v => rec.Loop = v));
+```
+
+## Mod Variables (Any Property)
+
+```csharp
+var oscOct = Var(synth, "Osc1Octave");
+oscOct.Lfo(-12f, 12f, rateHz: 0.2f);
+
+var cutoff = Param(synth, "Cutoff");
+cutoff.Random(0.2f, 0.9f, everyMs: 300);
+
+var drive = Var(Effect.Drive, "Drive");
+drive.Lfo(0.2f, 4f, rateHz: 0.5f);
 ```
 
 ## Recording / Render

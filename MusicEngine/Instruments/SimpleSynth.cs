@@ -26,6 +26,8 @@ public class SimpleSynth : ISynth
     private readonly List<Voice> _releasingVoices = new(); // Voices in release phase (only accessed by audio thread)
     private readonly object _releaseLock = new(); // Only for releasing voices list
     private int _activeVoiceCount; // Atomic counter for polyphony
+    private readonly object _extraOscLock = new();
+    private volatile SynthOscillator[] _extraOscillators = Array.Empty<SynthOscillator>();
 
     // LFO state
     private float _lfoPhase;
@@ -233,6 +235,43 @@ public class SimpleSynth : ISynth
 
     /// <summary>Wave format for audio output</summary>
     public WaveFormat WaveFormat => _waveFormat;
+
+    /// <summary>
+    /// Create a modular oscillator instance (added to the synth).
+    /// </summary>
+    public SynthOscillator Oscillator()
+    {
+        var osc = new SynthOscillator();
+        lock (_extraOscLock)
+        {
+            var next = new SynthOscillator[_extraOscillators.Length + 1];
+            Array.Copy(_extraOscillators, next, _extraOscillators.Length);
+            next[^1] = osc;
+            _extraOscillators = next;
+        }
+        return osc;
+    }
+
+    /// <summary>
+    /// Alias for Oscillator().
+    /// </summary>
+    public SynthOscillator Oscelater() => Oscillator();
+
+    /// <summary>
+    /// Current modular oscillators.
+    /// </summary>
+    public IReadOnlyList<SynthOscillator> Oscillators => _extraOscillators;
+
+    /// <summary>
+    /// Remove all modular oscillators.
+    /// </summary>
+    public void ClearOscillators()
+    {
+        lock (_extraOscLock)
+        {
+            _extraOscillators = Array.Empty<SynthOscillator>();
+        }
+    }
 
     // Track last played note for portamento
     private float _lastNote = 60f;
@@ -562,6 +601,7 @@ public class SimpleSynth : ISynth
 #pragma warning restore CS0169
         private float _osc2Phase;
         private float _subPhase;
+        private float[] _extraPhases = Array.Empty<float>();
 
         // Unison phases
         private readonly float[] _unisonPhases = new float[8];
@@ -679,6 +719,50 @@ public class SimpleSynth : ISynth
                 signalR += osc1 * panR * unisonGain;
             }
 
+            var extraOscs = synth._extraOscillators;
+            float extraAmpScale = 1f;
+            if (extraOscs.Length > 0)
+            {
+                if (_extraPhases.Length != extraOscs.Length)
+                {
+                    _extraPhases = new float[extraOscs.Length];
+                }
+
+                float extraPitchMod = 0f;
+                float extraFilterMod = 0f;
+                float extraAmpMod = 0f;
+                float extraPwMod = 0f;
+
+                for (int i = 0; i < extraOscs.Length; i++)
+                {
+                    var osc = extraOscs[i];
+                    if (!osc.Enabled) continue;
+
+                    float oscFreq = baseFreq * (float)Math.Pow(2, osc.Octave + osc.Semi / 12f + osc.Fine / 1200f);
+                    float phaseInc = oscFreq / sampleRate;
+                    float pw = Math.Clamp(osc.PulseWidth + pwMod, 0.0001f, 0.9999f);
+                    float oscSample = WaveformGenerator.Oscillator(osc.Waveform, _extraPhases[i], pw, _random, phaseInc);
+                    _extraPhases[i] += phaseInc;
+                    if (_extraPhases[i] >= 1f) _extraPhases[i] -= 1f;
+
+                    float panL = Math.Min(1f, 1f - osc.Pan);
+                    float panR = Math.Min(1f, 1f + osc.Pan);
+                    float scaled = oscSample * osc.Level;
+                    signalL += scaled * panL;
+                    signalR += scaled * panR;
+
+                    extraPitchMod += oscSample * osc.ModToPitch;
+                    extraFilterMod += oscSample * osc.ModToFilter;
+                    extraAmpMod += oscSample * osc.ModToAmp;
+                    extraPwMod += oscSample * osc.ModToPulseWidth;
+                }
+
+                pitchMod += extraPitchMod;
+                filterMod += extraFilterMod;
+                extraAmpScale = 1f + extraAmpMod;
+                pwMod += extraPwMod;
+            }
+
             // Oscillator 2 with band-limiting
             if (synth.Osc2Enabled)
             {
@@ -769,6 +853,8 @@ public class SimpleSynth : ISynth
             signalR = _filterState2;
 
             // Apply amplitude envelope and velocity
+            signalL *= extraAmpScale;
+            signalR *= extraAmpScale;
             float ampMult = _ampEnv * _velocity;
             signalL *= ampMult;
             signalR *= ampMult;

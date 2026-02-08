@@ -29,7 +29,7 @@ piano.Name = "GM_AcousticGrandPiano"; // Set to desired GM instrument name (e.g.
 
 
 //midi setup
-midi.Device(0).to(piano); // MIDI channel 1 (0-based)
+midi.Device(0).to(synth); // MIDI channel 1 (0-based)
 Midi.Device(0).Pitchbend().to((Action<float>)(val => piano.PitchBend(val * 2f - 1f))); // map wheel to -1..1
 Midi.Device(0).Pitchbend().to((Action<float>)(val => vital.PitchBend(val * 2f - 1f))); // -1..1
 //midi.device(0).log.info(true); // Log MIDI input for debugging and mapping midi controls
@@ -105,12 +105,12 @@ synth.UnisonSpread = 1f;            // Stereo spread: 0 to 1
 
 // EFFECTS (shared audio effects)
 var synthChannel = Audio.CreateChannel(2);
-synthChannel.Route(synth);
+synthChannel.Route(synth); // Route synth output to this channel for effects processing
 
-var synthDelay = new SimpleDelayEffect { Mix = 0.0f, TimeMs = 300f, Feedback = 0.4f };
-var synthReverb = new SimpleReverbEffect { Mix = 0.0f, Size = 0.1f, Damping = 0.5f };
-synthChannel.Effect(synthDelay);
-synthChannel.Effect(synthReverb);
+var synthDelay = new SimpleDelayEffect { Mix = 0.0f, TimeMs = 300f, Feedback = 0.4f }; // Delay time in ms: 1 to 1000, Feedback: 0 to 0.95, Mix: 0 to 1
+var synthReverb = new SimpleReverbEffect { Mix = 0.0f, Size = 0.1f, Damping = 0.5f }; // Reverb size: 0.1 to 1, Damping: 0 to 1, Mix: 0 to 1
+synthChannel.Effect(synthDelay); // Add delay effect to the channel
+synthChannel.Effect(synthReverb); // Add reverb effect to the channel
 
 // OUTPUT SETTINGS
 synth.Volume = 0.7f;                    // Synth master volume: 0 to 1
@@ -120,28 +120,25 @@ synth.VelocitySensitivity = 0.7f;    // Velocity response: 0 to 1
 
 
 
-
 // OPTIONAL: PLAY A PATTERN
 var playPattern = false;  // Set to true to play
 
 if (playPattern)
 {
-    var pattern = CreatePattern(synth);
-    pattern.LoopLength = 4.0;
+    var pattern = CreatePattern(synth);// Create a pattern
+    pattern.LoopLength = 4.0; // Loop length in seconds (e.g., 4.0 for 4 seconds, 8.0 for 8 seconds, etc.)
 
     // Add some notes
-    pattern.Note(60, 0.0, 0.5, 100);   // C4
-    pattern.Note(64, 0.5, 0.5, 90);    // E4
-    pattern.Note(67, 1.0, 0.5, 100);   // G4
-    pattern.Note(72, 1.5, 0.5, 110);   // C5
-    pattern.Note(67, 2.0, 0.5, 90);    // G4
-    pattern.Note(64, 2.5, 0.5, 80);    // E4
+    pattern.Note(60, 0.0, 0.5, 100);         // C4
+    pattern.Note(64, 0.5, 0.5, 90);         // E4
+    pattern.Note(67, 1.0, 0.5, 100);       // G4
+    pattern.Note(72, 1.5, 0.5, 110);      // C5
+    pattern.Note(67, 2.0, 0.5, 90);      // G4
+    pattern.Note(64, 2.5, 0.5, 80);     // E4
     pattern.Note(60, 3.0, 1.0, 100);   // C4
 
     pattern.Play();
 }
-
-
 
 
 
@@ -151,8 +148,8 @@ var playTetris = false;  // Set to true to play
 
 if (playTetris)
 {
-    var tetris = CreatePattern(vital);
-    tetris.LoopLength = 16.0;
+    var tetris = CreatePattern(vital); // Create a pattern
+    tetris.LoopLength = 16.0; // 4 bars of 4/4 time (16 quarter notes)
 
 
 

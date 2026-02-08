@@ -39,6 +39,71 @@ midi.device(0).cc(1).to(value => synth.SetParameter("cutoff", value));
 midi.device(0).pitchbend().to(value => synth.PitchBend(value * 2f - 1f));
 ```
 
+## Modular Effects Example (Script)
+
+```csharp
+var fx = CreateEffect()
+    .ReverbPreset("Hall")
+    .BitCrushPreset("Lofi")
+    .NoisePreset("Light")
+    .FilterPreset("Low");
+
+var ch1 = Audio.CreateChannel(1);
+ch1.Effect(fx);
+```
+
+Preset factory:
+
+```csharp
+var ch2 = Audio.CreateChannel(2);
+ch2.Effect(Effect.Reverb);
+ch2.Effect(Effect.Drive);
+```
+
+Preset names:
+
+```csharp
+var fx2 = CreateEffect()
+    .ReverbPreset("Hall")
+    .DelayPreset("Echo")
+    .DrivePreset("Warm");
+Audio.CreateChannel(3).Effect(fx2);
+```
+
+Preset with overrides:
+
+```csharp
+var fx3 = CreateEffect()
+    .ReverbPreset("Hall", r => r.Mix = 0.4f)
+    .DelayPreset("Echo", d => d.TimeMs = 500f)
+    .FilterPreset("Low", f => f.CutoffHz = 800f);
+Audio.CreateChannel(4).Effect(fx3);
+```
+
+Standalone preset (for modulation):
+
+```csharp
+var reverbFx3 = ReverbPreset("Hall", r => r.Mix = 0.4f);
+var mix = Mod.Var(reverbFx3, "Mix");
+mix.Lfo(0.2f, 0.6f, rateHz: 0.5f);
+```
+
+## Modular Oscillators (Hybrid Synth)
+
+```csharp
+var synth = CreateSynth();
+var osc3 = synth.Oscillator();
+osc3.Waveform = WaveType.Sine;
+osc3.Level = 0.2f;
+osc3.Pan = -0.2f;
+
+var osc4 = synth.Oscillator();
+osc4.Waveform = WaveType.Sine;
+osc4.Level = 0.2f;
+osc4.Pan = 0.2f;
+osc4.ModToFilter = 0.2f;
+```
+
 ## VST3 Example (Script)
 
 ```csharp
@@ -70,8 +135,8 @@ Notes:
 
 Manual overrides still work:
 ```csharp
-vital.LoadState("States/vital.state");
-vital.SaveState("States/vital.state");
+vital.LoadState("States.vital.state");
+vital.SaveState("States.vital.state");
 ```
 
 ## Virtual Output (Discord / Virtual Mic)
@@ -132,6 +197,10 @@ pan.Random(-0.5f, 0.5f, everyMs: 400);
 
 var vol = Mod.Volume(synth, 0.7f);
 vol.Lfo(0.2f, 0.9f, rateHz: 0.5f);
+
+// Any property
+var cutoff = Mod.Var(synth, "Cutoff");
+cutoff.Random(0.2f, 0.9f, everyMs: 300);
 ```
 
 ## General Instruments Example (Script)

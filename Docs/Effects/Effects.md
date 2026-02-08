@@ -48,6 +48,43 @@ var ch = Audio.CreateChannel(1);
 ch.Effect(fx);
 ```
 
+## Preset Names
+
+```csharp
+var fx = CreateEffect()
+    .ReverbPreset("Hall")
+    .DelayPreset("Echo")
+    .DrivePreset("Warm");
+
+Audio.CreateChannel(1).Effect(fx);
+```
+
+Preset with overrides:
+
+```csharp
+var fx = CreateEffect()
+    .ReverbPreset("Hall", r => r.Mix = 0.4f)
+    .DelayPreset("Echo", d => d.TimeMs = 500f)
+    .FilterPreset("Low", f => f.CutoffHz = 800f);
+```
+
+Standalone preset (for modulation):
+
+```csharp
+var reverbFx3 = ReverbPreset("Hall", r => r.Mix = 0.4f);
+var mix = Mod.Var(reverbFx3, "Mix");
+mix.Lfo(0.2f, 0.6f, rateHz: 0.5f);
+```
+
+Available presets (by effect):
+- Reverb: `Room`, `Hall`, `Large`, `Plate`
+- Delay: `Slap`, `Echo`, `PingPong`
+- Tremolo: `Soft`, `Hard`, `Slow`
+- BitCrush: `Lofi`, `Mild`
+- Noise: `Light`, `Tape`
+- Drive: `Warm`, `Hard`
+- Filter: `Low`, `High`
+
 ## Custom DSP Callback
 
 ```csharp

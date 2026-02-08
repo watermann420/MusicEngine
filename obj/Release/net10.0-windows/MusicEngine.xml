@@ -1957,6 +1957,26 @@
         <member name="P:MusicEngine.Instruments.SimpleSynth.WaveFormat">
             <summary>Wave format for audio output</summary>
         </member>
+        <member name="M:MusicEngine.Instruments.SimpleSynth.Oscillator">
+            <summary>
+            Create a modular oscillator instance (added to the synth).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Instruments.SimpleSynth.Oscelater">
+            <summary>
+            Alias for Oscillator().
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.Oscillators">
+            <summary>
+            Current modular oscillators.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Instruments.SimpleSynth.ClearOscillators">
+            <summary>
+            Remove all modular oscillators.
+            </summary>
+        </member>
         <member name="M:MusicEngine.Instruments.SimpleSynth.#ctor(System.Nullable{System.Int32})">
             <summary>
             Creates a new SimpleSynth instance
@@ -1997,6 +2017,71 @@
         <member name="T:MusicEngine.Instruments.SimpleSynth.Voice">
             <summary>
             Internal voice class for polyphonic playback
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Instruments.SynthOscillator">
+            <summary>
+            Modular oscillator used by SimpleSynth.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SynthOscillator.Waveform">
+            <summary>
+            Oscillator waveform.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SynthOscillator.Octave">
+            <summary>
+            Octave offset.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SynthOscillator.Semi">
+            <summary>
+            Semitone offset.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SynthOscillator.Fine">
+            <summary>
+            Fine tune in cents.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SynthOscillator.Level">
+            <summary>
+            Output level.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SynthOscillator.PulseWidth">
+            <summary>
+            Pulse width (for Pulse wave).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SynthOscillator.Pan">
+            <summary>
+            Stereo pan (-1..1 typical).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SynthOscillator.Enabled">
+            <summary>
+            Enable or disable this oscillator.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SynthOscillator.ModToPitch">
+            <summary>
+            Modulate pitch (semitones, audio-rate).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SynthOscillator.ModToFilter">
+            <summary>
+            Modulate filter cutoff (audio-rate).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SynthOscillator.ModToAmp">
+            <summary>
+            Modulate amplitude (audio-rate).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SynthOscillator.ModToPulseWidth">
+            <summary>
+            Modulate pulse width (audio-rate).
             </summary>
         </member>
         <member name="T:MusicEngine.Scripting.ConsoleInterface">
@@ -3649,6 +3734,16 @@
         <member name="M:MusicEngine.Scripting.ScriptGlobals.BindSwitch(System.Func{System.Boolean},System.Action{System.Boolean})">
             <summary>
             Switch a boolean value (getter/setter) based on the current value.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.Var(System.Object,System.String,System.Nullable{System.Single})">
+            <summary>
+            Create a modulated variable from any writable property/field.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.Param(System.Object,System.String,System.Nullable{System.Single})">
+            <summary>
+            Alias for Var.
             </summary>
         </member>
         <member name="T:MusicEngine.Scripting.ScriptLibrary">

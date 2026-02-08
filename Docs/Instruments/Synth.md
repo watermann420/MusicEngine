@@ -21,6 +21,18 @@ synth.Release = 0.2f;
 synth.UnisonVoices = 3;
 synth.UnisonSpread = 0.6f;
 
+// Add extra oscillators (modular)
+var osc3 = synth.Oscillator();
+osc3.Waveform = WaveType.Sine;
+osc3.Level = 0.2f;
+osc3.Pan = -0.3f;
+
+var osc4 = synth.Oscillator();
+osc4.Waveform = WaveType.Sine;
+osc4.Level = 0.2f;
+osc4.Pan = 0.3f;
+osc4.ModToFilter = 0.2f; // audio-rate filter modulation
+
 var pattern = CreatePattern(synth);
 pattern.LoopLength = 2.0;
 pattern.Note(60, 0.0, 0.5, 110);
@@ -43,6 +55,16 @@ synth.SetParameter("cutoff", 0.4f);      // 0..1
 synth.SetParameter("resonance", 0.2f);   // 0..1
 synth.SetParameter("attack", 0.01f);     // seconds
 synth.SetParameter("release", 0.25f);    // seconds
+```
+
+## Modular Oscillators
+
+```csharp
+var osc = synth.Oscillator();
+osc.Waveform = WaveType.Pulse;
+osc.Level = 0.4f;
+osc.PulseWidth = 0.2f;
+osc.ModToPitch = 0.5f;
 ```
 
 ## Shared Effects
