@@ -111,6 +111,16 @@ public sealed class DeviceControl
     public ControlMapping Control(int controlId) => new ControlMapping(_globals, _deviceIndex, controlId);
 
     /// <summary>
+    /// Alias for Control (CC).
+    /// </summary>
+    public ControlMapping cc(int controlId) => control(controlId);
+
+    /// <summary>
+    /// Alias for Control (CC).
+    /// </summary>
+    public ControlMapping CC(int controlId) => control(controlId);
+
+    /// <summary>
     /// Map a jog wheel control to delta ticks.
     /// </summary>
     public JogControl jog(int controlId, JogMode mode = JogMode.RelativeSigned, int scale = 1)
@@ -199,6 +209,16 @@ public sealed class ChannelControl
     /// Map a control change ID to a control action.
     /// </summary>
     public ControlMapping Control(int controlId) => new ControlMapping(_globals, _deviceIndex, controlId, _channel);
+
+    /// <summary>
+    /// Alias for Control (CC).
+    /// </summary>
+    public ControlMapping cc(int controlId) => control(controlId);
+
+    /// <summary>
+    /// Alias for Control (CC).
+    /// </summary>
+    public ControlMapping CC(int controlId) => control(controlId);
 
     /// <summary>
     /// Map a jog wheel control to delta ticks.

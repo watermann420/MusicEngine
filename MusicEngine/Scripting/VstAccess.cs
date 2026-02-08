@@ -283,6 +283,54 @@ public sealed class VstAccess : DynamicObject
     }
 
     /// <summary>
+    /// Try to get an existing instrument by name.
+    /// </summary>
+    public bool TryGetInstrument(string name, out IVstInstrument instrument)
+    {
+        if (_instances.TryGetValue(name, out var existing))
+        {
+            instrument = existing;
+            return true;
+        }
+
+        foreach (var entry in _allInstances)
+        {
+            if (string.Equals(entry.Name, name, StringComparison.OrdinalIgnoreCase))
+            {
+                instrument = entry;
+                return true;
+            }
+        }
+
+        instrument = null!;
+        return false;
+    }
+
+    /// <summary>
+    /// Try to get an existing effect by name.
+    /// </summary>
+    public bool TryGetEffect(string name, out Vst3Effect effect)
+    {
+        if (_effects.TryGetValue(name, out var existing))
+        {
+            effect = existing;
+            return true;
+        }
+
+        foreach (var entry in _allEffects)
+        {
+            if (string.Equals(entry.Name, name, StringComparison.OrdinalIgnoreCase))
+            {
+                effect = entry;
+                return true;
+            }
+        }
+
+        effect = null!;
+        return false;
+    }
+
+    /// <summary>
     /// Remove saved states that no longer match active instances.
     /// </summary>
     public void PruneUnusedStates()

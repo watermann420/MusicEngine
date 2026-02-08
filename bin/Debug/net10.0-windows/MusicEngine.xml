@@ -199,6 +199,41 @@
             </summary>
             <param name="session">Specific session to stop (optional).</param>
         </member>
+        <member name="M:MusicEngine.Core.AudioEngine.ListOutputDevices">
+            <summary>
+            List available output devices for routing (render endpoints).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.StartMasterVirtualOutput(System.Int32,System.Int32)">
+            <summary>
+            Start a virtual output from the master chain to a render device (e.g. VB-CABLE).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.StartMasterVirtualOutput(System.String,System.Int32)">
+            <summary>
+            Start a virtual output from the master chain to a render device by name.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.StopMasterVirtualOutputs">
+            <summary>
+            Stop all virtual outputs on the master chain.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.StartChannelVirtualOutput(System.Int32,System.Int32,System.Int32)">
+            <summary>
+            Start a virtual output from a channel to a render device.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.StartChannelVirtualOutput(System.Int32,System.String,System.Int32)">
+            <summary>
+            Start a virtual output from a channel to a render device by name.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.StopChannelVirtualOutputs(System.Int32)">
+            <summary>
+            Stop all virtual outputs on a channel.
+            </summary>
+        </member>
         <member name="M:MusicEngine.Core.AudioEngine.AddMasterEffect(MusicEngine.Effects.Audio.IAudioEffect)">
             <summary>
             Add an effect to the master chain.
@@ -305,6 +340,26 @@
             Dispose the audio engine and release resources.
             </summary>
         </member>
+        <member name="M:MusicEngine.Core.AudioEngine.ListInputDevices">
+            <summary>
+            List available audio input devices (capture endpoints).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.CreateInput(System.Int32)">
+            <summary>
+            Create a live audio input from a capture device index.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.CreateInput(System.String)">
+            <summary>
+            Create a live audio input from a capture device name.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Core.AudioInput">
+            <summary>
+            Live audio input source (mic/line-in).
+            </summary>
+        </member>
         <member name="T:MusicEngine.Core.RecordingSession">
             <summary>
             Represents an active audio recording session.
@@ -372,6 +427,11 @@
         <member name="P:MusicEngine.Core.IInstrumentControls.Chorus">
             <summary>
             Chorus amount (0..1).
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Core.InstrumentFluentExtensions">
+            <summary>
+            Fluent helpers for instrument setup.
             </summary>
         </member>
         <member name="T:MusicEngine.Core.ISynth">
@@ -599,6 +659,11 @@
         <member name="M:MusicEngine.Core.MidiValidation.ValidateVelocity(System.Int32)">
             <summary>
             Validate a MIDI velocity value.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Core.Modulation.Mod">
+            <summary>
+            Modulation helpers for binding variables.
             </summary>
         </member>
         <member name="T:MusicEngine.Core.Pattern">
@@ -1229,6 +1294,21 @@
             Open the VST3 editor window for this effect.
             </summary>
         </member>
+        <member name="M:MusicEngine.Effects.Vst.Vst3Effect.GetState">
+            <summary>
+            Get the plugin state as a binary blob.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Effects.Vst.Vst3Effect.SetState(System.Byte[])">
+            <summary>
+            Load the plugin state from a binary blob.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Effects.Vst.Vst3Effect.State(System.String)">
+            <summary>
+            Get or set the state as base64.
+            </summary>
+        </member>
         <member name="M:MusicEngine.Effects.Vst.Vst3Effect.Dispose">
             <summary>
             Close the plugin and release native resources.
@@ -1617,7 +1697,7 @@
             <summary>Noise level (0 to 1)</summary>
         </member>
         <member name="P:MusicEngine.Instruments.SimpleSynth.Cutoff">
-            <summary>Filter cutoff frequency normalized (0 to 1, maps to 20-20000 Hz)</summary>
+            <summary>Filter cutoff frequency normalized (0 to 1, maps to 0..Nyquist)</summary>
         </member>
         <member name="P:MusicEngine.Instruments.SimpleSynth.Resonance">
             <summary>Filter resonance (0 to 1)</summary>
@@ -1656,7 +1736,7 @@
             <summary>Filter envelope release time</summary>
         </member>
         <member name="P:MusicEngine.Instruments.SimpleSynth.LfoRate">
-            <summary>LFO rate in Hz (0.01 to 50)</summary>
+            <summary>LFO rate in Hz (0..Nyquist supported)</summary>
         </member>
         <member name="P:MusicEngine.Instruments.SimpleSynth.LfoWaveform">
             <summary>LFO waveform</summary>
@@ -2189,6 +2269,26 @@
             Create or access a channel control by index.
             </summary>
         </member>
+        <member name="P:MusicEngine.Scripting.FluentApi.AudioControl.output">
+            <summary>
+            Output device utilities.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.FluentApi.AudioControl.Output">
+            <summary>
+            Output device utilities.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.FluentApi.AudioControl.input">
+            <summary>
+            Input device utilities.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.FluentApi.AudioControl.Input">
+            <summary>
+            Input device utilities.
+            </summary>
+        </member>
         <member name="T:MusicEngine.Scripting.FluentApi.AllChannelsControl">
             <summary>
             Controls that apply to all channels.
@@ -2269,6 +2369,36 @@
             Recording controls for the master output.
             </summary>
         </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MasterAudioControl.virtualout(System.Int32)">
+            <summary>
+            Route master output to a virtual device (e.g. VB-CABLE).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MasterAudioControl.VirtualOut(System.Int32)">
+            <summary>
+            Route master output to a virtual device (e.g. VB-CABLE).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MasterAudioControl.virtualout(System.String)">
+            <summary>
+            Route master output to a virtual device (e.g. VB-CABLE).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MasterAudioControl.VirtualOut(System.String)">
+            <summary>
+            Route master output to a virtual device (e.g. VB-CABLE).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MasterAudioControl.stopvirtualout">
+            <summary>
+            Stop all master virtual outputs.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MasterAudioControl.StopVirtualOut">
+            <summary>
+            Stop all master virtual outputs.
+            </summary>
+        </member>
         <member name="T:MusicEngine.Scripting.FluentApi.AudioChannelControl">
             <summary>
             Controls for a specific audio channel.
@@ -2344,6 +2474,36 @@
             Recording controls for this channel.
             </summary>
         </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AudioChannelControl.virtualout(System.Int32)">
+            <summary>
+            Route this channel to a virtual device (e.g. VB-CABLE).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AudioChannelControl.VirtualOut(System.Int32)">
+            <summary>
+            Route this channel to a virtual device (e.g. VB-CABLE).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AudioChannelControl.virtualout(System.String)">
+            <summary>
+            Route this channel to a virtual device (e.g. VB-CABLE).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AudioChannelControl.VirtualOut(System.String)">
+            <summary>
+            Route this channel to a virtual device (e.g. VB-CABLE).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AudioChannelControl.stopvirtualout">
+            <summary>
+            Stop all virtual outputs for this channel.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AudioChannelControl.StopVirtualOut">
+            <summary>
+            Stop all virtual outputs for this channel.
+            </summary>
+        </member>
         <member name="M:MusicEngine.Scripting.FluentApi.AudioChannelControl.vsteffect(System.String)">
             <summary>
             Create and add a VST3 effect to this channel.
@@ -2357,6 +2517,36 @@
         <member name="M:MusicEngine.Scripting.FluentApi.AudioChannelControl.VstEffect(System.String)">
             <summary>
             Create and add a VST3 effect to this channel.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Scripting.FluentApi.OutputDeviceControl">
+            <summary>
+            Output device helper for listing devices.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.OutputDeviceControl.list">
+            <summary>
+            List available output devices.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.OutputDeviceControl.List">
+            <summary>
+            List available output devices.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Scripting.FluentApi.InputDeviceControl">
+            <summary>
+            Input device helper for listing devices.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.InputDeviceControl.list">
+            <summary>
+            List available input devices.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.InputDeviceControl.List">
+            <summary>
+            List available input devices.
             </summary>
         </member>
         <member name="T:MusicEngine.Scripting.FluentApi.RecordingControl">
@@ -2840,6 +3030,51 @@
             Create and route a sampler instrument.
             </summary>
         </member>
+        <member name="P:MusicEngine.Scripting.ScriptGlobals.piano">
+            <summary>
+            Default General MIDI instrument (last created).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.ScriptGlobals.Piano">
+            <summary>
+            Default General MIDI instrument (last created).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.ScriptGlobals.synth">
+            <summary>
+            Default synth (last created).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.ScriptGlobals.Synth">
+            <summary>
+            Default synth (last created).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.ScriptGlobals.sampler">
+            <summary>
+            Default sampler (last created).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.ScriptGlobals.instrument">
+            <summary>
+            Default instrument (last created).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.ScriptGlobals.Instrument">
+            <summary>
+            Default instrument (last created).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.CreateMic(System.Int32)">
+            <summary>
+            Create and route a live audio input (mic/line-in) by device index.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.CreateMic(System.String)">
+            <summary>
+            Create and route a live audio input (mic/line-in) by device name.
+            </summary>
+        </member>
         <member name="M:MusicEngine.Scripting.ScriptGlobals.CreateDeck(System.String)">
             <summary>
             Create and route an audio deck.
@@ -2870,6 +3105,51 @@
             Create a new VST3 instrument by name.
             </summary>
         </member>
+        <member name="P:MusicEngine.Scripting.ScriptGlobals.vsti">
+            <summary>
+            Default VST instrument (last created).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.ScriptGlobals.Vsti">
+            <summary>
+            Default VST instrument (last created).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.Mic(System.Int32)">
+            <summary>
+            Create and route a live audio input (mic/line-in) by device index.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.Mic(System.String)">
+            <summary>
+            Create and route a live audio input (mic/line-in) by device name.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.CreateInput(System.Int32)">
+            <summary>
+            Create and route a live audio input (mic/line-in) by device index.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.CreateInput(System.String)">
+            <summary>
+            Create and route a live audio input (mic/line-in) by device name.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.Input(System.Int32)">
+            <summary>
+            Create and route a live audio input (mic/line-in) by device index.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.Input(System.String)">
+            <summary>
+            Create and route a live audio input (mic/line-in) by device name.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.ScriptGlobals.mic">
+            <summary>
+            Default audio input (last created).
+            </summary>
+        </member>
         <member name="M:MusicEngine.Scripting.ScriptGlobals.Sampler">
             <summary>
             Create and route a sampler instrument.
@@ -2878,6 +3158,11 @@
         <member name="M:MusicEngine.Scripting.ScriptGlobals.Deck(System.String)">
             <summary>
             Create and route an audio deck.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.ScriptGlobals.deck">
+            <summary>
+            Default audio deck (last created).
             </summary>
         </member>
         <member name="M:MusicEngine.Scripting.ScriptGlobals.TimeMaster">
@@ -2890,9 +3175,24 @@
             Create a new VST3 effect by name.
             </summary>
         </member>
+        <member name="P:MusicEngine.Scripting.ScriptGlobals.vstfx">
+            <summary>
+            Default VST effect (last created).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.ScriptGlobals.VstFx">
+            <summary>
+            Default VST effect (last created).
+            </summary>
+        </member>
         <member name="M:MusicEngine.Scripting.ScriptGlobals.CreateAudioClip(System.String)">
             <summary>
             Load an audio clip from disk.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.ScriptGlobals.clip">
+            <summary>
+            Default audio clip (last created).
             </summary>
         </member>
         <member name="P:MusicEngine.Scripting.ScriptGlobals.File">
@@ -3095,6 +3395,16 @@
             Persist state for all cached instruments.
             </summary>
         </member>
+        <member name="M:MusicEngine.Scripting.VstAccess.TryGetInstrument(System.String,MusicEngine.Vst.IVstInstrument@)">
+            <summary>
+            Try to get an existing instrument by name.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.VstAccess.TryGetEffect(System.String,MusicEngine.Effects.Vst.Vst3Effect@)">
+            <summary>
+            Try to get an existing effect by name.
+            </summary>
+        </member>
         <member name="M:MusicEngine.Scripting.VstAccess.PruneUnusedStates">
             <summary>
             Remove saved states that no longer match active instances.
@@ -3240,6 +3550,11 @@
             Disable automatic state save/load.
             </summary>
         </member>
+        <member name="M:MusicEngine.Vst.IVstInstrument.State(System.String)">
+            <summary>
+            Get or set the state as base64.
+            </summary>
+        </member>
         <member name="T:MusicEngine.Vst.MissingVstInstrument">
             <summary>
             Silent VST placeholder when a plugin is missing.
@@ -3383,6 +3698,11 @@
         <member name="M:MusicEngine.Vst.Vst3Instrument.NoSave">
             <summary>
             Disable automatic state save/load.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Vst.Vst3Instrument.State(System.String)">
+            <summary>
+            Get or set the state as base64.
             </summary>
         </member>
         <member name="M:MusicEngine.Vst.Vst3Instrument.GetState">

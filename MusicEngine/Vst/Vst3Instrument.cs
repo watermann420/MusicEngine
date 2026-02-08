@@ -268,6 +268,20 @@ public sealed class Vst3Instrument : IVstInstrument, IDisposable
     }
 
     /// <summary>
+    /// Get or set the state as base64.
+    /// </summary>
+    public string State(string? base64 = null)
+    {
+        if (string.IsNullOrWhiteSpace(base64))
+        {
+            return GetStateBase64();
+        }
+
+        SetStateBase64(base64);
+        return base64;
+    }
+
+    /// <summary>
     /// Get the plugin state as a binary blob.
     /// </summary>
     public byte[] GetState()
@@ -558,6 +572,25 @@ public sealed class Vst3Instrument : IVstInstrument, IDisposable
         finally
         {
             handle.Free();
+        }
+    }
+
+    private string GetStateBase64()
+    {
+        var data = GetState();
+        return data.Length == 0 ? string.Empty : Convert.ToBase64String(data);
+    }
+
+    private void SetStateBase64(string base64)
+    {
+        try
+        {
+            var data = Convert.FromBase64String(base64);
+            if (data.Length == 0) return;
+            SetState(data);
+        }
+        catch
+        {
         }
     }
 

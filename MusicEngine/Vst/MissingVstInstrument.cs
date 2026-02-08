@@ -105,6 +105,11 @@ public sealed class MissingVstInstrument : IVstInstrument, IDisposable
     {
     }
 
+    public string State(string? base64 = null)
+    {
+        return string.Empty;
+    }
+
     public void Dispose()
     {
     }

@@ -8,6 +8,7 @@
 - If no MIDI-Out is available, the instrument stays silent.
 - Parameters can be set directly or via `SetParameter`.
 - Use `Program` to switch instruments; `Name` is just a label for your setup.
+- Values are stored as-is; MIDI output is clamped to the valid MIDI ranges when sent.
 
 ## Syntax Example (Script)
 

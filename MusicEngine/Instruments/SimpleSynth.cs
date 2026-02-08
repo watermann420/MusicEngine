@@ -97,7 +97,7 @@ public class SimpleSynth : ISynth
 
     #region ========== FILTER SETTINGS ==========
 
-    /// <summary>Filter cutoff frequency normalized (0 to 1, maps to 20-20000 Hz)</summary>
+    /// <summary>Filter cutoff frequency normalized (0 to 1, maps to 0..Nyquist)</summary>
     public float Cutoff { get; set; } = 0.8f;
 
     /// <summary>Filter resonance (0 to 1)</summary>
@@ -148,7 +148,7 @@ public class SimpleSynth : ISynth
 
     #region ========== LFO SETTINGS ==========
 
-    /// <summary>LFO rate in Hz (0.01 to 50)</summary>
+    /// <summary>LFO rate in Hz (0..Nyquist supported)</summary>
     public float LfoRate { get; set; } = 5f;
 
     /// <summary>LFO waveform</summary>
@@ -351,67 +351,67 @@ public class SimpleSynth : ISynth
         {
             // Oscillator
             case "waveform": Waveform = (WaveType)(int)Math.Clamp(value, 0, 5); break;
-            case "osc1octave": Osc1Octave = (int)Math.Clamp(value, -3, 3); break;
-            case "osc1semi": Osc1Semi = (int)Math.Clamp(value, -12, 12); break;
-            case "osc1fine": Osc1Fine = Math.Clamp(value, -100, 100); break;
-            case "osc1level": Osc1Level = Math.Clamp(value, 0, 1); break;
-            case "osc1pulsewidth": Osc1PulseWidth = Math.Clamp(value, 0.1f, 0.9f); break;
+            case "osc1octave": Osc1Octave = (int)value; break;
+            case "osc1semi": Osc1Semi = (int)value; break;
+            case "osc1fine": Osc1Fine = value; break;
+            case "osc1level": Osc1Level = value; break;
+            case "osc1pulsewidth": Osc1PulseWidth = Math.Clamp(value, 0.0001f, 0.9999f); break;
 
             case "osc2waveform": Osc2Waveform = (WaveType)(int)Math.Clamp(value, 0, 5); break;
-            case "osc2octave": Osc2Octave = (int)Math.Clamp(value, -3, 3); break;
-            case "osc2semi": Osc2Semi = (int)Math.Clamp(value, -12, 12); break;
-            case "osc2fine": Osc2Fine = Math.Clamp(value, -100, 100); break;
-            case "osc2level": Osc2Level = Math.Clamp(value, 0, 1); break;
+            case "osc2octave": Osc2Octave = (int)value; break;
+            case "osc2semi": Osc2Semi = (int)value; break;
+            case "osc2fine": Osc2Fine = value; break;
+            case "osc2level": Osc2Level = value; break;
             case "osc2enabled": Osc2Enabled = value > 0.5f; break;
 
-            case "subosclevel": SubOscLevel = Math.Clamp(value, 0, 1); break;
-            case "noiselevel": NoiseLevel = Math.Clamp(value, 0, 1); break;
+            case "subosclevel": SubOscLevel = value; break;
+            case "noiselevel": NoiseLevel = value; break;
 
             // Filter
-            case "cutoff": Cutoff = Math.Clamp(value, 0, 1); break;
-            case "resonance": Resonance = Math.Clamp(value, 0, 1); break;
-            case "filterenvamount": FilterEnvAmount = Math.Clamp(value, -1, 1); break;
-            case "filterkeytrack": FilterKeyTrack = Math.Clamp(value, 0, 1); break;
-            case "filterdrive": FilterDrive = Math.Clamp(value, 0, 1); break;
+            case "cutoff": Cutoff = Math.Max(0f, value); break;
+            case "resonance": Resonance = value; break;
+            case "filterenvamount": FilterEnvAmount = value; break;
+            case "filterkeytrack": FilterKeyTrack = value; break;
+            case "filterdrive": FilterDrive = value; break;
 
             // Amp Envelope
-            case "attack": Attack = Math.Clamp(value, 0.001f, 10); break;
-            case "decay": Decay = Math.Clamp(value, 0.001f, 10); break;
-            case "sustain": Sustain = Math.Clamp(value, 0, 1); break;
-            case "release": Release = Math.Clamp(value, 0.001f, 10); break;
+            case "attack": Attack = value; break;
+            case "decay": Decay = value; break;
+            case "sustain": Sustain = value; break;
+            case "release": Release = value; break;
 
             // Filter Envelope
-            case "filterattack": FilterAttack = Math.Clamp(value, 0.001f, 10); break;
-            case "filterdecay": FilterDecay = Math.Clamp(value, 0.001f, 10); break;
-            case "filtersustain": FilterSustain = Math.Clamp(value, 0, 1); break;
-            case "filterrelease": FilterRelease = Math.Clamp(value, 0.001f, 10); break;
+            case "filterattack": FilterAttack = value; break;
+            case "filterdecay": FilterDecay = value; break;
+            case "filtersustain": FilterSustain = value; break;
+            case "filterrelease": FilterRelease = value; break;
 
             // LFO
-            case "lforate": LfoRate = Math.Clamp(value, 0.01f, 50); break;
+            case "lforate": LfoRate = value; break;
             case "lfowaveform": LfoWaveform = (WaveType)(int)Math.Clamp(value, 0, 4); break;
-            case "lfotopitch": LfoToPitch = Math.Clamp(value, 0, 12); break;
-            case "lfotofilter": LfoToFilter = Math.Clamp(value, 0, 1); break;
-            case "lfotoamp": LfoToAmp = Math.Clamp(value, 0, 1); break;
+            case "lfotopitch": LfoToPitch = value; break;
+            case "lfotofilter": LfoToFilter = value; break;
+            case "lfotoamp": LfoToAmp = value; break;
 
             // Modulation
-            case "pitchbend": PitchBend = Math.Clamp(value, -1, 1); break;
-            case "pitchbendrange": PitchBendRange = (int)Math.Clamp(value, 1, 24); break;
-            case "modwheel": ModWheel = Math.Clamp(value, 0, 1); break;
-            case "portamento": Portamento = Math.Clamp(value, 0, 2); break;
+            case "pitchbend": PitchBend = value; break;
+            case "pitchbendrange": PitchBendRange = (int)value; break;
+            case "modwheel": ModWheel = value; break;
+            case "portamento": Portamento = value; break;
 
             // Unison
             case "unisonvoices": UnisonVoices = (int)Math.Clamp(value, 1, 8); break;
-            case "unisondetune": UnisonDetune = Math.Clamp(value, 0, 50); break;
-            case "unisonspread": UnisonSpread = Math.Clamp(value, 0, 1); break;
+            case "unisondetune": UnisonDetune = value; break;
+            case "unisonspread": UnisonSpread = value; break;
 
             // Output
-            case "volume": Volume = Math.Clamp(value, 0, 1); break;
-            case "pan": Pan = Math.Clamp(value, -1, 1); break;
-            case "reverb": Reverb = Math.Clamp(value, 0, 1); break;
-            case "chorus": Chorus = Math.Clamp(value, 0, 1); break;
-            case "channel": Channel = (int)Math.Clamp(value, -1, 15); break;
-            case "maxpolyphony": MaxPolyphony = (int)Math.Clamp(value, 1, 64); break;
-            case "velocitysensitivity": VelocitySensitivity = Math.Clamp(value, 0, 1); break;
+            case "volume": Volume = value; break;
+            case "pan": Pan = value; break;
+            case "reverb": Reverb = value; break;
+            case "chorus": Chorus = value; break;
+            case "channel": Channel = (int)value; break;
+            case "maxpolyphony": MaxPolyphony = (int)Math.Max(1, value); break;
+            case "velocitysensitivity": VelocitySensitivity = value; break;
         }
     }
 
@@ -445,7 +445,8 @@ public class SimpleSynth : ISynth
         float voiceGain = 0.7f / MathF.Sqrt(Math.Max(1, voiceCount));
 
         // Process LFO
-        float lfoIncrement = LfoRate / sampleRate;
+        float lfoRate = Math.Abs(LfoRate);
+        float lfoIncrement = lfoRate <= 0f ? 0f : lfoRate / sampleRate;
 
         for (int s = 0; s < samples; s++)
         {
@@ -455,7 +456,8 @@ public class SimpleSynth : ISynth
             if (_lfoPhase >= 1f) _lfoPhase -= 1f;
 
             // Calculate vibrato (mod wheel controlled)
-            float vibratoPhase = _lfoPhase * VibratoRate / LfoRate;
+            float vibratoRate = Math.Abs(VibratoRate);
+            float vibratoPhase = lfoRate <= 0f ? 0f : _lfoPhase * vibratoRate / lfoRate;
             float vibrato = (float)Math.Sin(vibratoPhase * Math.PI * 2) * VibratoDepth * ModWheel;
 
             // Calculate modulations
@@ -663,7 +665,7 @@ public class SimpleSynth : ISynth
                 float osc1PhaseInc = freq1 * detuneRatio / sampleRate;
 
                 // Oscillator 1 with band-limiting
-                float pw1 = Math.Clamp(synth.Osc1PulseWidth + pwMod, 0.1f, 0.9f);
+                float pw1 = Math.Clamp(synth.Osc1PulseWidth + pwMod, 0.0001f, 0.9999f);
                 float osc1 = WaveformGenerator.Oscillator(synth.Waveform, _unisonPhases[u], pw1, _random, osc1PhaseInc) * synth.Osc1Level;
                 _unisonPhases[u] += osc1PhaseInc;
                 if (_unisonPhases[u] >= 1f) _unisonPhases[u] -= 1f;
@@ -681,7 +683,7 @@ public class SimpleSynth : ISynth
             if (synth.Osc2Enabled)
             {
                 float osc2PhaseInc = freq2 / sampleRate;
-                float pw2 = Math.Clamp(synth.Osc2PulseWidth + pwMod, 0.1f, 0.9f);
+                float pw2 = Math.Clamp(synth.Osc2PulseWidth + pwMod, 0.0001f, 0.9999f);
                 float osc2 = WaveformGenerator.Oscillator(synth.Osc2Waveform, _osc2Phase, pw2, _random, osc2PhaseInc) * synth.Osc2Level;
                 _osc2Phase += osc2PhaseInc;
                 if (_osc2Phase >= 1f) _osc2Phase -= 1f;
@@ -728,11 +730,12 @@ public class SimpleSynth : ISynth
             }
 
             // Calculate filter cutoff
-            float baseCutoff = synth.Cutoff * synth.Cutoff * 18000f + 20f;
+            float nyquist = sampleRate * 0.5f;
+            float baseCutoff = synth.Cutoff * synth.Cutoff * nyquist;
             float keyTrack = (Note - 60) / 60f * synth.FilterKeyTrack;
             float envMod = _filterEnv * synth.FilterEnvAmount;
             float targetCutoff = baseCutoff * (float)Math.Pow(2, keyTrack + envMod * 4 + filterMod * 2);
-            targetCutoff = Math.Clamp(targetCutoff, 20f, Math.Min(20000f, sampleRate * 0.45f));
+            targetCutoff = Math.Clamp(targetCutoff, 0.001f, Math.Max(0.001f, nyquist * 0.98f));
 
             // Smooth cutoff changes to prevent zipper noise and clicks
             // Rate of 0.02 gives ~1ms response at 44.1kHz - fast enough for musical changes, smooth enough to avoid zippering

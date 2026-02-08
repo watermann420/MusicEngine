@@ -66,4 +66,9 @@ public interface IVstInstrument : ISynth
     /// Disable automatic state save/load.
     /// </summary>
     void NoSave();
+
+    /// <summary>
+    /// Get or set the state as base64.
+    /// </summary>
+    string State(string? base64 = null);
 }

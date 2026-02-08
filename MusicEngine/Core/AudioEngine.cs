@@ -6,6 +6,7 @@
 using System;
 using System.Collections.Generic;
 using MusicEngine.Effects.Audio;
+using NAudio.CoreAudioApi;
 using NAudio.Midi;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
@@ -29,7 +30,11 @@ public sealed class AudioEngine : IDisposable
     private readonly Dictionary<ISampleProvider, ISampleProvider> _normalizedProviders = new();
     private readonly object _routingLock = new();
     private readonly Dictionary<int, MidiIn> _midiInputs = new();
+    private readonly List<AudioInput> _audioInputs = new();
     private readonly MidiRouter _midiRouter = new();
+    private readonly List<AudioVirtualOutput> _masterVirtualOutputs = new();
+    private readonly Dictionary<int, List<AudioVirtualOutput>> _channelVirtualOutputs = new();
+    private readonly object _virtualOutputLock = new();
     private IWavePlayer? _output;
     private bool _initialized;
     private bool _outputRunning;
@@ -62,10 +67,11 @@ public sealed class AudioEngine : IDisposable
         _masterEffects = new AudioEffectChain(_mixer, _waveFormat);
         _masterVolume = new VolumeSampleProvider(_masterEffects) { Volume = 1.0f };
         _transportVolume = new VolumeSampleProvider(_masterVolume) { Volume = 1.0f };
-        var dcBlock = new DcBlockingSampleProvider(_transportVolume, 20f, _waveFormat.SampleRate);
+        var dcBlock = new DcBlockingSampleProvider(_transportVolume, 1f, _waveFormat.SampleRate);
         var limiter = new LimiterSampleProvider(dcBlock, 0.95f, _waveFormat.SampleRate, attackMs: 2f, releaseMs: 60f);
         _masterChain = new SoftClipSampleProvider(limiter, 0.99f);
         _masterTap = new RecordingTap(_masterChain);
+        _masterTap.SamplesAvailable += OnMasterSamples;
         _midiRouter.EditorMidiNoteEvent += info => EditorMidiNote?.Invoke(info);
         _midiRouter.EditorMidiDeviceActive += deviceIndex => EditorMidiDeviceActive?.Invoke(deviceIndex);
     }
@@ -228,9 +234,9 @@ public sealed class AudioEngine : IDisposable
     /// <param name="path">Target file path.</param>
     /// <param name="format">Optional format override.</param>
     /// <returns>Recording session instance.</returns>
-    public RecordingSession StartMasterRecording(string path, string? format = null)
+    public RecordingSession StartMasterRecording(string path, string? format = null, RecordingOptions? options = null)
     {
-        return _masterTap.StartRecording(path, format);
+        return _masterTap.StartRecording(path, format, options);
     }
 
     /// <summary>
@@ -240,6 +246,104 @@ public sealed class AudioEngine : IDisposable
     public void StopMasterRecording(RecordingSession? session = null)
     {
         _masterTap.StopRecording(session);
+    }
+
+    /// <summary>
+    /// List available output devices for routing (render endpoints).
+    /// </summary>
+    public IReadOnlyList<AudioOutputDeviceInfo> ListOutputDevices()
+    {
+        using var enumerator = new MMDeviceEnumerator();
+        var devices = enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active);
+        var list = new List<AudioOutputDeviceInfo>();
+        for (int i = 0; i < devices.Count; i++)
+        {
+            var device = devices[i];
+            list.Add(new AudioOutputDeviceInfo(i, device.ID, device.FriendlyName));
+        }
+        return list;
+    }
+
+    /// <summary>
+    /// Start a virtual output from the master chain to a render device (e.g. VB-CABLE).
+    /// </summary>
+    public bool StartMasterVirtualOutput(int deviceIndex, int latencyMs = 80)
+    {
+        var device = TryGetOutputDevice(deviceIndex);
+        if (device == null) return false;
+        AddVirtualOutput(_masterVirtualOutputs, device, latencyMs);
+        return true;
+    }
+
+    /// <summary>
+    /// Start a virtual output from the master chain to a render device by name.
+    /// </summary>
+    public bool StartMasterVirtualOutput(string deviceName, int latencyMs = 80)
+    {
+        var device = TryGetOutputDevice(deviceName);
+        if (device == null) return false;
+        AddVirtualOutput(_masterVirtualOutputs, device, latencyMs);
+        return true;
+    }
+
+    /// <summary>
+    /// Stop all virtual outputs on the master chain.
+    /// </summary>
+    public void StopMasterVirtualOutputs()
+    {
+        lock (_virtualOutputLock)
+        {
+            foreach (var output in _masterVirtualOutputs)
+            {
+                output.Dispose();
+            }
+            _masterVirtualOutputs.Clear();
+        }
+    }
+
+    /// <summary>
+    /// Start a virtual output from a channel to a render device.
+    /// </summary>
+    public bool StartChannelVirtualOutput(int channelIndex, int deviceIndex, int latencyMs = 80)
+    {
+        if (channelIndex < 1) channelIndex = 1;
+        var device = TryGetOutputDevice(deviceIndex);
+        if (device == null) return false;
+        var outputs = GetOrCreateChannelVirtualOutputs(channelIndex);
+        AddVirtualOutput(outputs, device, latencyMs);
+        return true;
+    }
+
+    /// <summary>
+    /// Start a virtual output from a channel to a render device by name.
+    /// </summary>
+    public bool StartChannelVirtualOutput(int channelIndex, string deviceName, int latencyMs = 80)
+    {
+        if (channelIndex < 1) channelIndex = 1;
+        var device = TryGetOutputDevice(deviceName);
+        if (device == null) return false;
+        var outputs = GetOrCreateChannelVirtualOutputs(channelIndex);
+        AddVirtualOutput(outputs, device, latencyMs);
+        return true;
+    }
+
+    /// <summary>
+    /// Stop all virtual outputs on a channel.
+    /// </summary>
+    public void StopChannelVirtualOutputs(int channelIndex)
+    {
+        if (channelIndex < 1) channelIndex = 1;
+        lock (_virtualOutputLock)
+        {
+            if (_channelVirtualOutputs.TryGetValue(channelIndex, out var outputs))
+            {
+                foreach (var output in outputs)
+                {
+                    output.Dispose();
+                }
+                outputs.Clear();
+            }
+        }
     }
 
     /// <summary>
@@ -305,11 +409,11 @@ public sealed class AudioEngine : IDisposable
     /// <param name="path">Target file path.</param>
     /// <param name="format">Optional format override.</param>
     /// <returns>Recording session instance.</returns>
-    public RecordingSession StartChannelRecording(int index, string path, string? format = null)
+    public RecordingSession StartChannelRecording(int index, string path, string? format = null, RecordingOptions? options = null)
     {
         if (index < 1) index = 1;
         var channel = GetOrCreateChannel(index);
-        return channel.Tap.StartRecording(path, format);
+        return channel.Tap.StartRecording(path, format, options);
     }
 
     /// <summary>
@@ -448,6 +552,23 @@ public sealed class AudioEngine : IDisposable
         }
         _midiInputs.Clear();
 
+        foreach (var input in _audioInputs)
+        {
+            input.Dispose();
+        }
+        _audioInputs.Clear();
+
+        StopMasterVirtualOutputs();
+        foreach (var entry in _channelVirtualOutputs.Values)
+        {
+            foreach (var output in entry)
+            {
+                output.Dispose();
+            }
+            entry.Clear();
+        }
+        _channelVirtualOutputs.Clear();
+
         _output?.Stop();
         _output?.Dispose();
         _output = null;
@@ -464,6 +585,7 @@ public sealed class AudioEngine : IDisposable
         var effects = new AudioEffectChain(mixer, _waveFormat);
         var volume = new VolumeSampleProvider(effects) { Volume = 1.0f };
         var tap = new RecordingTap(volume);
+        tap.SamplesAvailable += (buffer, offset, count) => OnChannelSamples(index, buffer, offset, count);
         _mixer.AddMixerInput(tap);
 
         var channel = new AudioChannel(index, mixer, effects, volume, tap);
@@ -509,5 +631,168 @@ public sealed class AudioEngine : IDisposable
             Volume = volume;
             Tap = tap;
         }
+    }
+
+    /// <summary>
+    /// List available audio input devices (capture endpoints).
+    /// </summary>
+    public IReadOnlyList<AudioInputDeviceInfo> ListInputDevices()
+    {
+        using var enumerator = new MMDeviceEnumerator();
+        var devices = enumerator.EnumerateAudioEndPoints(DataFlow.Capture, DeviceState.Active);
+        var list = new List<AudioInputDeviceInfo>();
+        for (int i = 0; i < devices.Count; i++)
+        {
+            var device = devices[i];
+            list.Add(new AudioInputDeviceInfo(i, device.ID, device.FriendlyName));
+        }
+        return list;
+    }
+
+    /// <summary>
+    /// Create a live audio input from a capture device index.
+    /// </summary>
+    public AudioInput CreateInput(int deviceIndex)
+    {
+        var device = TryGetInputDevice(deviceIndex);
+        if (device == null)
+        {
+            throw new InvalidOperationException($"Audio input device not found: {deviceIndex}");
+        }
+
+        var input = new AudioInput(device, deviceIndex);
+        _audioInputs.Add(input);
+        return input;
+    }
+
+    /// <summary>
+    /// Create a live audio input from a capture device name.
+    /// </summary>
+    public AudioInput CreateInput(string deviceName)
+    {
+        var device = TryGetInputDevice(deviceName);
+        if (device == null)
+        {
+            throw new InvalidOperationException($"Audio input device not found: {deviceName}");
+        }
+
+        var input = new AudioInput(device, -1);
+        _audioInputs.Add(input);
+        return input;
+    }
+
+    private void OnMasterSamples(float[] buffer, int offset, int count)
+    {
+        List<AudioVirtualOutput> outputs;
+        lock (_virtualOutputLock)
+        {
+            if (_masterVirtualOutputs.Count == 0) return;
+            outputs = new List<AudioVirtualOutput>(_masterVirtualOutputs);
+        }
+
+        foreach (var output in outputs)
+        {
+            output.Push(buffer, offset, count);
+        }
+    }
+
+    private void OnChannelSamples(int channelIndex, float[] buffer, int offset, int count)
+    {
+        List<AudioVirtualOutput>? outputs;
+        lock (_virtualOutputLock)
+        {
+            if (!_channelVirtualOutputs.TryGetValue(channelIndex, out outputs) || outputs.Count == 0)
+            {
+                return;
+            }
+
+            outputs = new List<AudioVirtualOutput>(outputs);
+        }
+
+        foreach (var output in outputs)
+        {
+            output.Push(buffer, offset, count);
+        }
+    }
+
+    private List<AudioVirtualOutput> GetOrCreateChannelVirtualOutputs(int channelIndex)
+    {
+        lock (_virtualOutputLock)
+        {
+            if (_channelVirtualOutputs.TryGetValue(channelIndex, out var outputs))
+            {
+                return outputs;
+            }
+
+            outputs = new List<AudioVirtualOutput>();
+            _channelVirtualOutputs[channelIndex] = outputs;
+            return outputs;
+        }
+    }
+
+    private void AddVirtualOutput(List<AudioVirtualOutput> outputs, MMDevice device, int latencyMs)
+    {
+        lock (_virtualOutputLock)
+        {
+            foreach (var existing in outputs)
+            {
+                if (string.Equals(existing.DeviceId, device.ID, StringComparison.OrdinalIgnoreCase))
+                {
+                    device.Dispose();
+                    return;
+                }
+            }
+
+            outputs.Add(new AudioVirtualOutput(device, _waveFormat, latencyMs));
+        }
+    }
+
+    private static MMDevice? TryGetOutputDevice(int index)
+    {
+        using var enumerator = new MMDeviceEnumerator();
+        var devices = enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active);
+        if (index < 0 || index >= devices.Count) return null;
+        return devices[index];
+    }
+
+    private static MMDevice? TryGetOutputDevice(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return null;
+        using var enumerator = new MMDeviceEnumerator();
+        var devices = enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active);
+        foreach (var device in devices)
+        {
+            if (device.FriendlyName.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return device;
+            }
+        }
+        return null;
+    }
+
+    public readonly record struct AudioOutputDeviceInfo(int Index, string Id, string Name);
+    public readonly record struct AudioInputDeviceInfo(int Index, string Id, string Name);
+
+    private static MMDevice? TryGetInputDevice(int index)
+    {
+        using var enumerator = new MMDeviceEnumerator();
+        var devices = enumerator.EnumerateAudioEndPoints(DataFlow.Capture, DeviceState.Active);
+        if (index < 0 || index >= devices.Count) return null;
+        return devices[index];
+    }
+
+    private static MMDevice? TryGetInputDevice(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return null;
+        using var enumerator = new MMDeviceEnumerator();
+        var devices = enumerator.EnumerateAudioEndPoints(DataFlow.Capture, DeviceState.Active);
+        foreach (var device in devices)
+        {
+            if (device.FriendlyName.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return device;
+            }
+        }
+        return null;
     }
 }

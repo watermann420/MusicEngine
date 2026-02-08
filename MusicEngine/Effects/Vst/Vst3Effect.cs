@@ -23,6 +23,7 @@ public sealed class Vst3Effect : IAudioEffect
     private readonly IntPtr _hostHandle;
     private readonly int _inputChannels;
     private readonly int _outputChannels;
+    private readonly object _stateLock = new();
     private bool _disposed;
     private bool _attached;
     private Vst3EffectProcessor? _processor;
@@ -119,6 +120,52 @@ public sealed class Vst3Effect : IAudioEffect
     }
 
     /// <summary>
+    /// Get the plugin state as a binary blob.
+    /// </summary>
+    public byte[] GetState()
+    {
+        if (_disposed) return Array.Empty<byte>();
+        return VstUiContext.Shared.Invoke(() =>
+        {
+            lock (_stateLock)
+            {
+                return GetStateInternal();
+            }
+        });
+    }
+
+    /// <summary>
+    /// Load the plugin state from a binary blob.
+    /// </summary>
+    public void SetState(byte[] data)
+    {
+        if (_disposed) return;
+        if (data == null || data.Length == 0) return;
+        VstUiContext.Shared.Invoke(() =>
+        {
+            lock (_stateLock)
+            {
+                SetStateInternal(data);
+            }
+            return 0;
+        });
+    }
+
+    /// <summary>
+    /// Get or set the state as base64.
+    /// </summary>
+    public string State(string? base64 = null)
+    {
+        if (string.IsNullOrWhiteSpace(base64))
+        {
+            return GetStateBase64();
+        }
+
+        SetStateBase64(base64);
+        return base64;
+    }
+
+    /// <summary>
     /// Close the plugin and release native resources.
     /// </summary>
     public void Dispose()
@@ -157,6 +204,60 @@ public sealed class Vst3Effect : IAudioEffect
         }
 
         _parameterMap = map;
+    }
+
+    private byte[] GetStateInternal()
+    {
+        int size = Vst3Native.Vst3Host_GetStateSize(_hostHandle);
+        if (size <= 0) return Array.Empty<byte>();
+
+        var data = new byte[size];
+        var handle = GCHandle.Alloc(data, GCHandleType.Pinned);
+        try
+        {
+            int written = Vst3Native.Vst3Host_GetState(_hostHandle, handle.AddrOfPinnedObject(), size);
+            if (written <= 0) return Array.Empty<byte>();
+            if (written == size) return data;
+            var trimmed = new byte[written];
+            Array.Copy(data, trimmed, written);
+            return trimmed;
+        }
+        finally
+        {
+            handle.Free();
+        }
+    }
+
+    private void SetStateInternal(byte[] data)
+    {
+        var handle = GCHandle.Alloc(data, GCHandleType.Pinned);
+        try
+        {
+            Vst3Native.Vst3Host_SetState(_hostHandle, handle.AddrOfPinnedObject(), data.Length);
+        }
+        finally
+        {
+            handle.Free();
+        }
+    }
+
+    private string GetStateBase64()
+    {
+        var data = GetState();
+        return data.Length == 0 ? string.Empty : Convert.ToBase64String(data);
+    }
+
+    private void SetStateBase64(string base64)
+    {
+        try
+        {
+            var data = Convert.FromBase64String(base64);
+            if (data.Length == 0) return;
+            SetState(data);
+        }
+        catch
+        {
+        }
     }
 
     private sealed class Vst3EffectProcessor : ISampleProvider, IDisposable

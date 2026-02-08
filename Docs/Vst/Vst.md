@@ -36,11 +36,18 @@ drive(0.7f);
 
 ```csharp
 var vital = CreateVst("Vital");
-// auto-loads from States/Vital.state by default
-vital.LoadState("States/vital.state"); // optional override
+vital.State(); // on /S or exit, writes base64 into the ()
+```
 
-// tweak in editor...
-vital.SaveState("States/vital.state"); // also enables autosave (30s)
+Notes:
+- The inline `State()` call is updated on refresh or exit, so you can copy/share the script.
+- States are stored per script under `.musicengine/states/<script>/<name>.state`.
+- Missing VSTs warn and stay silent instead of crashing.
+
+Manual overrides still work:
+```csharp
+vital.LoadState("States/vital.state");
+vital.SaveState("States/vital.state");
 ```
 
 ## Disable Auto Save

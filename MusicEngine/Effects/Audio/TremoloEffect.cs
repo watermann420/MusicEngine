@@ -64,9 +64,9 @@ public sealed class TremoloEffect : IAudioEffect
             int read = _input.Read(buffer, offset, count);
             if (read <= 0) return read;
 
-            float depth = Math.Clamp(_owner.Depth, 0f, 1f);
-            float rate = Math.Max(0.01f, _owner.Rate);
-            double phaseInc = (Math.PI * 2.0) * rate / WaveFormat.SampleRate;
+            float depth = _owner.Depth;
+            float rate = Math.Abs(_owner.Rate);
+            double phaseInc = rate <= 0f ? 0.0 : (Math.PI * 2.0) * rate / WaveFormat.SampleRate;
 
             for (int i = 0; i < read; i++)
             {

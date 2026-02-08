@@ -60,9 +60,78 @@ pattern.Play();
 
 ```csharp
 var vital = CreateVst("Vital");
-// auto-loads from States/Vital.state by default
-vital.LoadState("States/vital.state"); // optional override
-vital.SaveState("States/vital.state"); // also enables autosave (30s)
+vital.State(); // on /S or exit, writes base64 into the ()
+```
+
+Notes:
+- The inline `State()` call is updated on refresh or exit, so you can copy/share the script.
+- States are stored per script under `.musicengine/states/<script>/<name>.state`.
+- Missing VSTs warn and stay silent instead of crashing.
+
+Manual overrides still work:
+```csharp
+vital.LoadState("States/vital.state");
+vital.SaveState("States/vital.state");
+```
+
+## Virtual Output (Discord / Virtual Mic)
+
+To send audio into Discord as a microphone, you need a virtual audio device (e.g. VB-CABLE or VoiceMeeter).
+MusicEngine can route the master or a channel to any Windows output device.
+
+```csharp
+Audio.Output.List(); // list render devices
+
+Audio.Master.VirtualOut("CABLE Input"); // route master to virtual mic
+
+var ch1 = Audio.CreateChannel(1);
+ch1.VirtualOut("CABLE Input"); // route channel to virtual mic
+```
+
+Notes:
+- Without a virtual audio device installed, Windows has no "virtual mic" target.
+- In Discord, set Input Device to the virtual cable.
+
+## Audio Input (Mics / Line-In)
+
+```csharp
+Audio.Input.List(); // list capture devices
+
+var mic = CreateMic(0); // or CreateInput(0)
+var ch1 = Audio.CreateChannel(1);
+ch1.Route(mic);
+ch1.Gain(0.7);
+```
+
+## Fluent Instrument Setup
+
+```csharp
+CreateGeneralMidi()
+    .Pan(0.2f)
+    .Channel(0)
+    .Name("GM_AcousticGrandPiano");
+
+CreateSynth()
+    .Volume(0.7f)
+    .Pan(-0.2f);
+
+CreateVst("Vital")
+    .Volume(0.9f)
+    .Pan(0.1f);
+
+CreateMic(0)
+    .Gain(0.8f)
+    .Mute(false);
+```
+
+## Variable Modulation
+
+```csharp
+var pan = Mod.Pan(piano, 0f);
+pan.Random(-0.5f, 0.5f, everyMs: 400);
+
+var vol = Mod.Volume(synth, 0.7f);
+vol.Lfo(0.2f, 0.9f, rateHz: 0.5f);
 ```
 
 ## General Instruments Example (Script)

@@ -174,7 +174,7 @@ public sealed class AudioDeck : ISampleProvider
                 buffer[outIndex + 1] += sampleR * Volume * panR;
             }
 
-            _positionFrames += Math.Max(0.001f, PlaySpeed);
+            _positionFrames += Math.Max(0.000001f, PlaySpeed);
         }
 
         return count;

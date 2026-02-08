@@ -32,6 +32,11 @@ pattern.Play();
 
 ## Parameter Shortlist (SetParameter)
 
+Notes:
+- Most parameters accept any float; the engine does not clamp to musical ranges.
+- Filter cutoff uses a normalized value but is only clamped at render time for stability (0 Hz .. ~Nyquist).
+- LFO/Vibrato rates can exceed audible frequencies for extreme modulation.
+
 ```csharp
 synth.SetParameter("waveform", 2);       // 0..5 -> WaveType
 synth.SetParameter("cutoff", 0.4f);      // 0..1

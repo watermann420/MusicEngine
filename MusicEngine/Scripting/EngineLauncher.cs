@@ -42,6 +42,21 @@ public static class EngineLauncher
         }
 
         Vst3Registry? registry = null;
+        var inputDevices = engine.ListInputDevices();
+        Console.WriteLine();
+        Console.WriteLine("Audio Inputs:");
+        if (inputDevices.Count == 0)
+        {
+            Console.WriteLine("  (none)");
+        }
+        else
+        {
+            foreach (var device in inputDevices)
+            {
+                Console.WriteLine($"  [{device.Index}] {device.Name}");
+            }
+        }
+
         if (VstSystem.TryScan(out var scannedRegistry, out var scanMessage))
         {
             registry = scannedRegistry;

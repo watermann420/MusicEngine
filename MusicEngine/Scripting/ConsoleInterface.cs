@@ -5,6 +5,7 @@
 
 using System;
 using System.IO;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using MusicEngine.Vst;
@@ -44,7 +45,7 @@ public sealed class ConsoleInterface
         _onExit = onExit;
         _vst3Registry = vst3Registry;
         _editorMode = editorMode;
-        _quietMode = _editorMode || Console.IsInputRedirected || Console.IsOutputRedirected;
+        _quietMode = _editorMode || Console.IsInputRedirected;
     }
 
     /// <summary>
@@ -57,11 +58,11 @@ public sealed class ConsoleInterface
         {
             if (_editorMode)
             {
-                Console.WriteLine("Commands: /S to Refresh, /play, /stop, /exit to Stop, /vst to list, /open <name>.");
+                Console.WriteLine("Commands: S to Refresh, play, stop, exit to Stop, vst to list, open <name>.");
             }
             else
             {
-                Console.WriteLine("Commands: /S to Refresh, /exit to Stop, /vst to list, /open <name>.");
+                Console.WriteLine("Commands: S to Refresh, exit to Stop, vst to list, open <name>.");
             }
         }
         _host.DisposeVstOnClear = false;
@@ -72,7 +73,17 @@ public sealed class ConsoleInterface
             {
                 Console.Write("> ");
             }
-            string? input = Console.ReadLine();
+
+            string? input;
+            if (_quietMode)
+            {
+                input = Console.ReadLine();
+            }
+            else
+            {
+                input = ReadCommandWithShortcuts();
+            }
+
             if (string.IsNullOrEmpty(input)) continue;
 
             string trimmed = input.Trim();
@@ -82,32 +93,32 @@ public sealed class ConsoleInterface
             }
 
             string[] parts = trimmed.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
-            string command = parts[0].ToUpperInvariant();
+            string command = parts[0].TrimStart('/').ToUpperInvariant();
             string args = parts.Length > 1 ? parts[1].Trim() : string.Empty;
 
-            if (command == "/S" || command == "/REFRESH")
+            if (command == "S" || command == "REFRESH")
             {
                 await RefreshScript();
             }
-            else if (_editorMode && command == "/PLAY")
+            else if (_editorMode && command == "PLAY")
             {
                 await Play();
             }
-            else if (_editorMode && command == "/STOP")
+            else if (_editorMode && command == "STOP")
             {
                 Stop();
             }
-            else if (command == "/EXIT")
+            else if (command == "EXIT")
             {
                 _host.SaveVstState();
                 _onExit();
                 break;
             }
-            else if (command == "/VST")
+            else if (command == "VST")
             {
                 PrintVstList();
             }
-            else if (command == "/OPEN")
+            else if (command == "OPEN")
             {
                 OpenVst(args);
             }
@@ -115,6 +126,72 @@ public sealed class ConsoleInterface
             {
                 Console.WriteLine($"Unknown command: {input}");
             }
+        }
+    }
+
+    private static string? ReadCommandWithShortcuts()
+    {
+        var buffer = new StringBuilder();
+        while (true)
+        {
+            ConsoleKeyInfo key;
+            try
+            {
+                key = Console.ReadKey(intercept: true);
+            }
+            catch (InvalidOperationException)
+            {
+                return Console.ReadLine();
+            }
+
+            if ((key.Modifiers & ConsoleModifiers.Control) != 0)
+            {
+                if (key.Key == ConsoleKey.Enter)
+                {
+                    Console.WriteLine();
+                    return "S";
+                }
+                if (key.Key == ConsoleKey.R)
+                {
+                    Console.WriteLine();
+                    return "S";
+                }
+                continue;
+            }
+
+            if ((key.Modifiers & ConsoleModifiers.Alt) != 0)
+            {
+                if (key.Key == ConsoleKey.Enter || key.Key == ConsoleKey.R)
+                {
+                    Console.WriteLine();
+                    return "S";
+                }
+                continue;
+            }
+
+            if (key.Key == ConsoleKey.Enter)
+            {
+                Console.WriteLine();
+                return buffer.ToString();
+            }
+
+            if (key.Key == ConsoleKey.Backspace)
+            {
+                if (buffer.Length > 0)
+                {
+                    buffer.Length--;
+                    Console.Write("\b \b");
+                }
+                continue;
+            }
+
+            if (char.IsControl(key.KeyChar))
+            {
+                continue;
+            }
+
+            buffer.Append(key.KeyChar);
+            Console.Write(key.KeyChar);
         }
     }
 

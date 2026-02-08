@@ -176,7 +176,7 @@ public sealed class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
     public GeneralMidiInstrument(GeneralMidiProgram program, int channel = 0)
     {
         _program = program;
-        _channel = Math.Clamp(channel, 0, 15);
+        _channel = channel;
         Name = $"GM_{program}";
 
         if (MidiOut.NumberOfDevices == 0)
@@ -226,7 +226,7 @@ public sealed class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
         get => _channel;
         set
         {
-            _channel = Math.Clamp(value, 0, 15);
+            _channel = value;
             SendProgramChange(_program);
         }
     }
@@ -239,10 +239,10 @@ public sealed class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
         get => _volume;
         set
         {
-            _volume = Math.Clamp(value, 0f, 1f);
+            _volume = value;
             if (!_available || _midiOut == null) return;
-            var midiVolume = (int)(_volume * 127f);
-            _midiOut.Send(new ControlChangeEvent(0, _channel + 1, MidiController.MainVolume, midiVolume).GetAsShortMessage());
+            var midiVolume = (int)(Math.Clamp(_volume, 0f, 1f) * 127f);
+            _midiOut.Send(new ControlChangeEvent(0, GetMidiChannel() + 1, MidiController.MainVolume, midiVolume).GetAsShortMessage());
         }
     }
 
@@ -254,10 +254,10 @@ public sealed class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
         get => _pan;
         set
         {
-            _pan = Math.Clamp(value, -1f, 1f);
+            _pan = value;
             if (!_available || _midiOut == null) return;
-            var panValue = (int)((_pan + 1f) * 63.5f);
-            _midiOut.Send(new ControlChangeEvent(0, _channel + 1, MidiController.Pan, panValue).GetAsShortMessage());
+            var panValue = (int)((Math.Clamp(_pan, -1f, 1f) + 1f) * 63.5f);
+            _midiOut.Send(new ControlChangeEvent(0, GetMidiChannel() + 1, MidiController.Pan, panValue).GetAsShortMessage());
         }
     }
 
@@ -269,10 +269,10 @@ public sealed class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
         get => _reverb;
         set
         {
-            _reverb = Math.Clamp(value, 0f, 1f);
+            _reverb = value;
             if (!_available || _midiOut == null) return;
-            var reverbValue = (int)(_reverb * 127f);
-            _midiOut.Send(new ControlChangeEvent(0, _channel + 1, (MidiController)91, reverbValue).GetAsShortMessage());
+            var reverbValue = (int)(Math.Clamp(_reverb, 0f, 1f) * 127f);
+            _midiOut.Send(new ControlChangeEvent(0, GetMidiChannel() + 1, (MidiController)91, reverbValue).GetAsShortMessage());
         }
     }
 
@@ -284,10 +284,10 @@ public sealed class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
         get => _chorus;
         set
         {
-            _chorus = Math.Clamp(value, 0f, 1f);
+            _chorus = value;
             if (!_available || _midiOut == null) return;
-            var chorusValue = (int)(_chorus * 127f);
-            _midiOut.Send(new ControlChangeEvent(0, _channel + 1, (MidiController)93, chorusValue).GetAsShortMessage());
+            var chorusValue = (int)(Math.Clamp(_chorus, 0f, 1f) * 127f);
+            _midiOut.Send(new ControlChangeEvent(0, GetMidiChannel() + 1, (MidiController)93, chorusValue).GetAsShortMessage());
         }
     }
 
@@ -299,10 +299,10 @@ public sealed class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
         get => _modWheel;
         set
         {
-            _modWheel = Math.Clamp(value, 0f, 1f);
+            _modWheel = value;
             if (!_available || _midiOut == null) return;
-            var modulation = (int)(_modWheel * 127f);
-            _midiOut.Send(new ControlChangeEvent(0, _channel + 1, MidiController.Modulation, modulation).GetAsShortMessage());
+            var modulation = (int)(Math.Clamp(_modWheel, 0f, 1f) * 127f);
+            _midiOut.Send(new ControlChangeEvent(0, GetMidiChannel() + 1, MidiController.Modulation, modulation).GetAsShortMessage());
         }
     }
 
@@ -312,9 +312,9 @@ public sealed class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
     public void PitchBend(float bend)
     {
         if (!_available || _midiOut == null) return;
-        bend = Math.Clamp(bend, -1f, 1f);
-        var pitchValue = (int)((bend + 1f) * 8191.5f);
-        _midiOut.Send(new PitchWheelChangeEvent(0, _channel + 1, pitchValue).GetAsShortMessage());
+        var clamped = Math.Clamp(bend, -1f, 1f);
+        var pitchValue = (int)((clamped + 1f) * 8191.5f);
+        _midiOut.Send(new PitchWheelChangeEvent(0, GetMidiChannel() + 1, pitchValue).GetAsShortMessage());
     }
 
     /// <summary>
@@ -325,7 +325,7 @@ public sealed class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
         if (!_available || _midiOut == null) return;
         note = Math.Clamp(note, 0, 127);
         velocity = Math.Clamp(velocity, 0, 127);
-        _midiOut.Send(new NoteOnEvent(0, _channel + 1, note, velocity, 0).GetAsShortMessage());
+        _midiOut.Send(new NoteOnEvent(0, GetMidiChannel() + 1, note, velocity, 0).GetAsShortMessage());
     }
 
     /// <summary>
@@ -335,7 +335,7 @@ public sealed class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
     {
         if (!_available || _midiOut == null) return;
         note = Math.Clamp(note, 0, 127);
-        _midiOut.Send(new NoteOnEvent(0, _channel + 1, note, 0, 0).GetAsShortMessage());
+        _midiOut.Send(new NoteOnEvent(0, GetMidiChannel() + 1, note, 0, 0).GetAsShortMessage());
     }
 
     /// <summary>
@@ -344,7 +344,7 @@ public sealed class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
     public void AllNotesOff()
     {
         if (!_available || _midiOut == null) return;
-        _midiOut.Send(new ControlChangeEvent(0, _channel + 1, MidiController.AllNotesOff, 0).GetAsShortMessage());
+        _midiOut.Send(new ControlChangeEvent(0, GetMidiChannel() + 1, MidiController.AllNotesOff, 0).GetAsShortMessage());
     }
 
     /// <summary>
@@ -411,6 +411,8 @@ public sealed class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
     private void SendProgramChange(GeneralMidiProgram program)
     {
         if (!_available || _midiOut == null) return;
-        _midiOut.Send(new PatchChangeEvent(0, _channel + 1, (int)program).GetAsShortMessage());
+        _midiOut.Send(new PatchChangeEvent(0, GetMidiChannel() + 1, (int)program).GetAsShortMessage());
     }
+
+    private int GetMidiChannel() => Math.Clamp(_channel, 0, 15);
 }

@@ -38,6 +38,75 @@ send.AddEffect(new VelocityHumanizeEffect { Range = 6 });
 send.AddEffect(new RandomGateEffect { Probability = 0.9f });
 ```
 
+## Preset MIDI Effects (Factory)
+
+```csharp
+var send = Midi.Device(0).To(vital);
+send.AddEffect(MidiEffect.Transpose);
+send.AddEffect(MidiEffect.Humanize);
+send.AddEffect(MidiEffect.Gate);
+```
+
+## Custom MIDI Effect Rack
+
+```csharp
+var rack = CreateMidiEffect()
+    .Transpose(12)
+    .Humanize(10)
+    .Gate(0.8f)
+    .Trigger(
+        noteOn: (note, vel) => Console.WriteLine($"ON {note} {vel}"),
+        noteOff: note => Console.WriteLine($"OFF {note}")
+    );
+
+var send = Midi.Device(0).To(vital);
+send.AddEffect(rack);
+```
+
+## Custom MIDI Logic (Callbacks)
+
+```csharp
+var rack = CreateMidiEffect()
+    .Custom(
+        noteOn: (ref int note, ref int vel) =>
+        {
+            if (note < 48) return false; // block low notes
+            vel = Math.Min(127, vel + 10);
+            return true;
+        },
+        noteOff: (ref int note) => true
+    );
+```
+
+## Map MIDI to Any Property
+
+```csharp
+var fx = Effect.Reverb;
+var send = Midi.Device(0).To(vital);
+
+Midi.Device(0).Control(1).To(Bind(fx, "Mix", 0f, 1f));
+Midi.Device(0).Control(2).To(Bind(fx, "Size", 0f, 1f));
+
+var rec = Audio.Master.Record;
+Midi.Device(0).Control(7).To(Bind(rec, "BitRateKbps", 64f, 320f));
+```
+
+## Map MIDI to Methods / Switches
+
+```csharp
+var rec = Audio.Master.Record;
+Midi.Device(0).Control(20).To(BindTrigger(rec, "Start"));
+Midi.Device(0).Control(21).To(BindTrigger(rec, "Stop"));
+Midi.Device(0).Control(22).To(BindTrigger(rec, "Render"));
+Midi.Device(0).Control(23).To(BindTrigger(rec, "Delete"));
+
+Midi.Device(0).Control(24).To(BindToggle(rec, "Loop"));   // toggle on press
+Midi.Device(0).Control(25).To(BindSwitch(rec, "Loop"));   // value -> true/false
+
+// With getter/setter (if you prefer variables):
+Midi.Device(0).cc(26).To(BindSwitch(() => rec.Loop, v => rec.Loop = v));
+```
+
 ## Manual Notes
 
 ```csharp

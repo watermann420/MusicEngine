@@ -110,7 +110,7 @@ public sealed class SamplerInstrument : ISynth
 
         var data = ReadSampleData(path);
         data.Name = name;
-        data.Settings.RootNote = Math.Clamp(rootNote, 0, 127);
+        data.Settings.RootNote = rootNote;
         _samples[name] = data;
     }
 
@@ -185,7 +185,6 @@ public sealed class SamplerInstrument : ISynth
     {
         if (!_samples.TryGetValue(sampleName, out var data)) return;
         configure?.Invoke(data.Settings);
-        data.Settings.RootNote = Math.Clamp(data.Settings.RootNote, 0, 127);
     }
 
     /// <summary>
@@ -273,34 +272,34 @@ public sealed class SamplerInstrument : ISynth
         switch (name.ToLowerInvariant())
         {
             case "volume":
-                Volume = Math.Clamp(value, 0f, 1f);
+                Volume = value;
                 break;
             case "pan":
-                Pan = Math.Clamp(value, -1f, 1f);
+                Pan = value;
                 break;
             case "reverb":
-                Reverb = Math.Clamp(value, 0f, 1f);
+                Reverb = value;
                 break;
             case "chorus":
-                Chorus = Math.Clamp(value, 0f, 1f);
+                Chorus = value;
                 break;
             case "channel":
-                Channel = (int)Math.Clamp(value, -1f, 15f);
+                Channel = (int)value;
                 break;
             case "pitch":
             case "pitchsemitones":
-                PitchSemitones = Math.Clamp(value, -24f, 24f);
+                PitchSemitones = value;
                 break;
             case "playspeed":
             case "speed":
-                PlaySpeed = Math.Clamp(value, 0.1f, 4f);
+                PlaySpeed = Math.Max(0f, value);
                 break;
             case "release":
             case "releaseseconds":
-                ReleaseSeconds = Math.Clamp(value, 0f, 10f);
+                ReleaseSeconds = value;
                 break;
             case "maxpolyphony":
-                MaxPolyphony = (int)Math.Clamp(value, 1f, 128f);
+                MaxPolyphony = (int)Math.Max(1f, value);
                 break;
         }
     }
@@ -460,7 +459,7 @@ public sealed class SamplerInstrument : ISynth
         public Voice(SampleData sample, float rate, float velocity, int note)
         {
             _sample = sample;
-            _rate = Math.Max(0.01f, rate);
+            _rate = Math.Max(0f, rate);
             _velocity = Math.Clamp(velocity, 0f, 1f);
             Note = note;
         }

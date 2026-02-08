@@ -66,6 +66,10 @@ sampler.SetSampleSettings("Kick", s =>
 
 ## Global Playback Controls
 
+Notes:
+- Most parameters accept any float; the engine does not clamp to musical ranges.
+- Play speed is kept >= 0 to avoid invalid playback direction in the current sampler.
+
 ```csharp
 sampler.Volume = 0.8f;
 sampler.Pan = 0f;
