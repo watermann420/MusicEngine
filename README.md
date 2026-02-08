@@ -25,6 +25,13 @@ pattern.LoopLength = 4.0;
 pattern.Note(60, 0.0, 0.5, 110);
 pattern.Note(64, 0.5, 0.5, 110);
 pattern.Note(67, 1.0, 1.0, 110);
+pattern.Note(60, 2.0, 1.0, 110, slideTo: 67, slideTimeMs: 500);
+pattern.NoteMs(72, 1500, 250, 110);
+// Note(...) auto-uses ms when duration > 8.0 or beat > 32.0 (still supports beats)
+pattern.Note(72, 1500, 250, 110);
+
+var seq1 = pattern.Note(60, 0.0, 0.25, 100).Siquenz("0010101001101110");
+seq1.Loop = true;
 
 pattern.Play();
 ```

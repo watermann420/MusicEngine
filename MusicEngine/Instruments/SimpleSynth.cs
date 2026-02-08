@@ -178,6 +178,7 @@ public class SimpleSynth : ISynth
     /// <summary>Pitch bend range in semitones (1 to 24)</summary>
     public int PitchBendRange { get; set; } = 2;
 
+
     /// <summary>Mod wheel value (0 to 1) - controls vibrato</summary>
     public float ModWheel { get; set; } = 0f;
 

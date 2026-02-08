@@ -66,6 +66,26 @@ public static class InstrumentFluentExtensions
     public static T modwheel<T>(this T instrument, float value) where T : IInstrumentControls
         => instrument.ModWheel(value);
 
+    public static ISynth PitchBend(this ISynth instrument, float value)
+    {
+        if (instrument is IVstInstrument vst)
+        {
+            vst.PitchBend(value);
+        }
+        else
+        {
+            instrument.SetParameter("pitchbend", value);
+        }
+
+        return instrument;
+    }
+
+    public static ISynth Pitchbend(this ISynth instrument, float value)
+        => instrument.PitchBend(value);
+
+    public static ISynth pitchbend(this ISynth instrument, float value)
+        => instrument.PitchBend(value);
+
     public static T Name<T>(this T instrument, string value) where T : ISynth
     {
         instrument.Name = value;

@@ -74,7 +74,7 @@ public static class EngineLauncher
         }
 
         string scriptFileName = "test_script.csx";
-        string scriptPath = Path.Combine(AppContext.BaseDirectory, scriptFileName);
+        string scriptPath = Path.Combine(AppContext.BaseDirectory, "Scripts", scriptFileName);
 
         string? projectDir = AppContext.BaseDirectory;
         while (projectDir != null && !File.Exists(Path.Combine(projectDir, "MusicEngine.csproj")))
@@ -84,7 +84,7 @@ public static class EngineLauncher
 
         if (projectDir != null)
         {
-            scriptPath = Path.Combine(projectDir, scriptFileName);
+            scriptPath = Path.Combine(projectDir, "Scripts", scriptFileName);
         }
 
         var host = new ScriptHost(engine, sequencer, registry, scriptPath);
@@ -98,6 +98,11 @@ public static class EngineLauncher
         string activeScript = defaultScript;
         if (!File.Exists(scriptPath))
         {
+            var directory = Path.GetDirectoryName(scriptPath);
+            if (!string.IsNullOrWhiteSpace(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
             File.WriteAllText(scriptPath, defaultScript);
         }
         else

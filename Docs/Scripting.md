@@ -43,6 +43,12 @@ File.Lead(lead); // dynamic store
 var lead = File.Lead() as SimpleSynth;
 var pattern = CreatePattern(lead);
 pattern.Note(60, 0.0, 0.5, 110);
+pattern.Note(60, 0.5, 0.5, 110, slideTo: 67, slideTimeMs: 250);
+pattern.NoteMs(72, 750, 250, 110);
+// Note(...) auto-uses ms when duration > 8.0 or beat > 32.0
+pattern.Note(72, 750, 250, 110);
+var seq1 = pattern.Note(60, 1.0, 0.25, 100).Siquenz("00101101");
+seq1.Loop = false;
 pattern.Play();
 ```
 

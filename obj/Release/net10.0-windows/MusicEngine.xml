@@ -736,6 +736,11 @@
             List of note events in the pattern.
             </summary>
         </member>
+        <member name="P:MusicEngine.Core.Pattern.Sequences">
+            <summary>
+            List of note sequences in the pattern.
+            </summary>
+        </member>
         <member name="P:MusicEngine.Core.Pattern.LoopLength">
             <summary>
             Pattern length in beats.
@@ -811,7 +816,7 @@
             <param name="synth">Primary synth.</param>
             <param name="moreSynths">Additional synth targets.</param>
         </member>
-        <member name="M:MusicEngine.Core.Pattern.Note(System.Int32,System.Double,System.Double,System.Int32)">
+        <member name="M:MusicEngine.Core.Pattern.Note(System.Int32,System.Double,System.Double,System.Int32,System.Nullable{System.Int32},System.Nullable{System.Double})">
             <summary>
             Add a note event to the pattern.
             </summary>
@@ -820,6 +825,30 @@
             <param name="duration">Duration in beats.</param>
             <param name="velocity">MIDI velocity.</param>
             <returns>This pattern for chaining.</returns>
+        </member>
+        <member name="M:MusicEngine.Core.Pattern.NoteMs(System.Int32,System.Double,System.Double,System.Int32,System.Nullable{System.Int32},System.Nullable{System.Double})">
+            <summary>
+            Add a note event using millisecond timing instead of beats.
+            </summary>
+            <param name="note">MIDI note number.</param>
+            <param name="timeMs">Start time in milliseconds.</param>
+            <param name="durationMs">Duration in milliseconds.</param>
+            <param name="velocity">MIDI velocity.</param>
+            <param name="slideTo">Optional slide target note.</param>
+            <param name="slideTimeMs">Optional slide time in milliseconds.</param>
+            <returns>This pattern for chaining.</returns>
+        </member>
+        <member name="M:MusicEngine.Core.Pattern.Siquenz(System.String)">
+            <summary>
+            Convert the last added note into a sequence using 0/1 step text.
+            </summary>
+            <param name="steps">Sequence steps, e.g. "0010101".</param>
+        </member>
+        <member name="M:MusicEngine.Core.Pattern.Sequenz(System.String)">
+            <summary>
+            Convert the last added note into a sequence using 0/1 step text.
+            </summary>
+            <param name="steps">Sequence steps, e.g. "0010101".</param>
         </member>
         <member name="M:MusicEngine.Core.Pattern.Play">
             <summary>
@@ -867,6 +896,56 @@
         <member name="P:MusicEngine.Core.NoteEvent.Duration">
             <summary>
             Duration in beats.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.NoteEvent.BeatMs">
+            <summary>
+            Optional millisecond position override.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.NoteEvent.DurationMs">
+            <summary>
+            Optional millisecond duration override.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.NoteEvent.SlideTo">
+            <summary>
+            Optional slide target note.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.NoteEvent.SlideTimeMs">
+            <summary>
+            Optional slide time in beats.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Core.NoteSequence">
+            <summary>
+            Sequence driven by a base note event.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.NoteSequence.Id">
+            <summary>
+            Sequence identifier.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.NoteSequence.Note">
+            <summary>
+            Base note settings (pitch, velocity, step duration).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.NoteSequence.Steps">
+            <summary>
+            Step string using 0/1.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.NoteSequence.Loop">
+            <summary>
+            Loop the sequence continuously after it starts.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.NoteSequence.Enabled">
+            <summary>
+            Enable or disable this sequence.
             </summary>
         </member>
         <member name="T:MusicEngine.Core.NoteActivity">
@@ -3484,6 +3563,41 @@
         <member name="M:MusicEngine.Scripting.ScriptGlobals.CreateEffect">
             <summary>
             Create a modular audio effect rack.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.ReverbPreset(System.String,System.Action{MusicEngine.Effects.Audio.SimpleReverbEffect})">
+            <summary>
+            Create a reverb preset effect.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.DelayPreset(System.String,System.Action{MusicEngine.Effects.Audio.SimpleDelayEffect})">
+            <summary>
+            Create a delay preset effect.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.TremoloPreset(System.String,System.Action{MusicEngine.Effects.Audio.TremoloEffect})">
+            <summary>
+            Create a tremolo preset effect.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.BitCrushPreset(System.String,System.Action{MusicEngine.Effects.Audio.BitCrusherEffect})">
+            <summary>
+            Create a bit crush preset effect.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.NoisePreset(System.String,System.Action{MusicEngine.Effects.Audio.NoiseEffect})">
+            <summary>
+            Create a noise preset effect.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.DrivePreset(System.String,System.Action{MusicEngine.Effects.Audio.DriveEffect})">
+            <summary>
+            Create a drive preset effect.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.FilterPreset(System.String,System.Action{MusicEngine.Effects.Audio.SimpleFilterEffect})">
+            <summary>
+            Create a filter preset effect.
             </summary>
         </member>
         <member name="M:MusicEngine.Scripting.ScriptGlobals.CreateMidiEffect">

@@ -463,9 +463,24 @@ public sealed class ScriptHost
             return File.Exists(fileName) ? fileName : null;
         }
 
-        var baseDir = !string.IsNullOrWhiteSpace(_scriptFilePath)
-            ? Path.GetDirectoryName(_scriptFilePath)
-            : AppContext.BaseDirectory;
+        string? baseDir;
+        if (!string.IsNullOrWhiteSpace(_scriptFilePath))
+        {
+            var scriptDir = Path.GetDirectoryName(_scriptFilePath);
+            if (!string.IsNullOrWhiteSpace(scriptDir) &&
+                string.Equals(Path.GetFileName(scriptDir), "Scripts", StringComparison.OrdinalIgnoreCase))
+            {
+                baseDir = Path.GetDirectoryName(scriptDir);
+            }
+            else
+            {
+                baseDir = scriptDir;
+            }
+        }
+        else
+        {
+            baseDir = AppContext.BaseDirectory;
+        }
         if (string.IsNullOrWhiteSpace(baseDir))
         {
             return null;

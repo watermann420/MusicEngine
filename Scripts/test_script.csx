@@ -30,6 +30,7 @@ piano.Name = "GM_AcousticGrandPiano"; // Set to desired GM instrument name (e.g.
 
 //midi setup
 midi.Device(0).to(synth); // MIDI channel 1 (0-based)
+Midi.Device(0).Pitchbend().to((Action<float>)(val => synth.PitchBend(val * 2f - 1f))); // map wheel to -1..1
 Midi.Device(0).Pitchbend().to((Action<float>)(val => piano.PitchBend(val * 2f - 1f))); // map wheel to -1..1
 Midi.Device(0).Pitchbend().to((Action<float>)(val => vital.PitchBend(val * 2f - 1f))); // -1..1
 //midi.device(0).log.info(true); // Log MIDI input for debugging and mapping midi controls
@@ -90,7 +91,7 @@ synth.LfoToPulseWidth = 0.0f;        // LFO to pulse width: 0 to 0.4
 synth.PitchBendRange = 2;             // Pitch bend range in semitones: 1 to 24
 // synth.PitchBend = 0.0f;           // Current pitch bend value: -1 to +1 (set by MIDI wheel)
 
-// MOD WHEEL (CC#1 is auto-routed)
+// MOD WHEEL (map CC#1 manually)
 synth.VibratoRate = 20.0f;            // Vibrato speed (mod wheel controls depth): 0.1 to 20 Hz
 synth.VibratoDepth = 2f;             // Max vibrato depth (semitones): 0 to 2
 synth.ModWheel = 0.0f;              // Current mod wheel value: 0 to 1 (set by MIDI CC#1)
