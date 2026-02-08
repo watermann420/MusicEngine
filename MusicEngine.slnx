@@ -1,4 +1,3 @@
 <Solution>
   <Project Path="MusicEngine.csproj" />
-  <Project Path="MusicEngine.Installer/MusicEngine.Installer.csproj" />
 </Solution>
