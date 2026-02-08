@@ -5,7 +5,7 @@
 
 using NAudio.Wave;
 
-namespace MusicEngine.Core;
+namespace MusicEngine.Effects.Audio;
 
 /// <summary>
 /// Base interface for effects that wrap an input and emit processed audio.

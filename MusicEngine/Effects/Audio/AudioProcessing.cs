@@ -7,7 +7,7 @@ using System.Collections.Generic;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
 
-namespace MusicEngine.Core;
+namespace MusicEngine.Effects.Audio;
 
 internal sealed class DcBlockingSampleProvider : ISampleProvider
 {

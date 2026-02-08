@@ -58,8 +58,6 @@ public static class EngineLauncher
             Console.WriteLine(scanMessage);
         }
 
-        var host = new ScriptHost(engine, sequencer, registry);
-
         string scriptFileName = "test_script.csx";
         string scriptPath = Path.Combine(AppContext.BaseDirectory, scriptFileName);
 
@@ -73,6 +71,14 @@ public static class EngineLauncher
         {
             scriptPath = Path.Combine(projectDir, scriptFileName);
         }
+
+        var host = new ScriptHost(engine, sequencer, registry, scriptPath);
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => host.SaveVstState();
+        Console.CancelKeyPress += (_, e) =>
+        {
+            host.SaveVstState();
+            e.Cancel = false;
+        };
 
         string activeScript = defaultScript;
         if (!File.Exists(scriptPath))

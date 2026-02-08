@@ -76,6 +76,35 @@ public sealed class Pattern
     public double CurrentBeat => _currentBeat;
 
     /// <summary>
+    /// Seek the pattern to an absolute beat position.
+    /// </summary>
+    /// <param name="beat">Target beat position.</param>
+    /// <param name="stopNotes">Stop any currently active notes.</param>
+    public void SeekBeat(double beat, bool stopNotes = true)
+    {
+        if (stopNotes)
+        {
+            foreach (var target in SynthTargets)
+            {
+                target.AllNotesOff();
+            }
+        }
+
+        lock (_stateLock)
+        {
+            _currentBeat = beat;
+            StartBeat = beat;
+            if (stopNotes)
+            {
+                _activeNotes.Clear();
+                LastTriggeredNote = null;
+                LastTriggeredBeat = null;
+                LastTriggeredUtc = null;
+            }
+        }
+    }
+
+    /// <summary>
     /// Last note activity triggered by this pattern.
     /// </summary>
     public NoteActivity? LastTriggeredNote { get; private set; }

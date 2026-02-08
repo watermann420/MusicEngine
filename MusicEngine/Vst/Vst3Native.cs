@@ -30,6 +30,9 @@ internal static class Vst3Native
     private const string ParamSetExport = "Vst3Host_SetParameter";
     private const string EditorSizeExport = "Vst3Host_GetEditorSize";
     private const string EditorResizeExport = "Vst3Host_ResizeEditor";
+    private const string StateSizeExport = "Vst3Host_GetStateSize";
+    private const string StateGetExport = "Vst3Host_GetState";
+    private const string StateSetExport = "Vst3Host_SetState";
 
     public static bool TryValidate(out string message)
     {
@@ -63,7 +66,10 @@ internal static class Vst3Native
                  NativeLibrary.TryGetExport(handle, ParamInfoExport, out _) &&
                  NativeLibrary.TryGetExport(handle, ParamSetExport, out _) &&
                  NativeLibrary.TryGetExport(handle, EditorSizeExport, out _) &&
-                 NativeLibrary.TryGetExport(handle, EditorResizeExport, out _);
+                 NativeLibrary.TryGetExport(handle, EditorResizeExport, out _) &&
+                 NativeLibrary.TryGetExport(handle, StateSizeExport, out _) &&
+                 NativeLibrary.TryGetExport(handle, StateGetExport, out _) &&
+                 NativeLibrary.TryGetExport(handle, StateSetExport, out _);
         NativeLibrary.Free(handle);
 
         message = ok
@@ -164,4 +170,14 @@ internal static class Vst3Native
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
     [return: MarshalAs(UnmanagedType.I1)]
     public static extern bool Vst3Host_ResizeEditor(IntPtr handle, int width, int height);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern int Vst3Host_GetStateSize(IntPtr handle);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern int Vst3Host_GetState(IntPtr handle, IntPtr buffer, int bufferSize);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    public static extern bool Vst3Host_SetState(IntPtr handle, IntPtr data, int size);
 }

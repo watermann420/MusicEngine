@@ -4,6 +4,8 @@
 // Description: Minimal audio control fluent API.
 
 using MusicEngine.Core;
+using MusicEngine.Effects.Audio;
+using MusicEngine.Effects.Vst;
 
 namespace MusicEngine.Scripting.FluentApi;
 
@@ -20,13 +22,35 @@ public sealed class AudioControl
     /// </summary>
     public MasterAudioControl master => new MasterAudioControl(_globals.Engine);
     /// <summary>
+    /// Master channel controls.
+    /// </summary>
+    public MasterAudioControl Master => new MasterAudioControl(_globals.Engine);
+    /// <summary>
     /// Controls that apply to all channels.
     /// </summary>
     public AllChannelsControl all => new AllChannelsControl(_globals.Engine);
     /// <summary>
+    /// Controls that apply to all channels.
+    /// </summary>
+    public AllChannelsControl All => new AllChannelsControl(_globals.Engine);
+    /// <summary>
     /// Access a specific channel control by index.
     /// </summary>
     public AudioChannelControl channel(int index) => new AudioChannelControl(_globals, index);
+    /// <summary>
+    /// Access a specific channel control by index.
+    /// </summary>
+    public AudioChannelControl Channel(int index) => new AudioChannelControl(_globals, index);
+
+    /// <summary>
+    /// Create or access a channel control by index.
+    /// </summary>
+    public AudioChannelControl createchannel(int index) => new AudioChannelControl(_globals, index);
+
+    /// <summary>
+    /// Create or access a channel control by index.
+    /// </summary>
+    public AudioChannelControl CreateChannel(int index) => new AudioChannelControl(_globals, index);
 }
 
 /// <summary>
@@ -42,9 +66,17 @@ public sealed class AllChannelsControl
     /// </summary>
     public void gain(float value) => _engine.SetAllChannelsGain(value);
     /// <summary>
+    /// Set gain for all channels.
+    /// </summary>
+    public void Gain(float value) => _engine.SetAllChannelsGain(value);
+    /// <summary>
     /// Set gain for all channels (double overload).
     /// </summary>
     public void gain(double value) => gain((float)value);
+    /// <summary>
+    /// Set gain for all channels (double overload).
+    /// </summary>
+    public void Gain(double value) => gain(value);
 }
 
 /// <summary>
@@ -61,23 +93,46 @@ public sealed class MasterAudioControl
     /// </summary>
     public void gain(float value) => _engine.SetAllChannelsGain(value);
     /// <summary>
+    /// Set master gain.
+    /// </summary>
+    public void Gain(float value) => _engine.SetAllChannelsGain(value);
+    /// <summary>
     /// Set master gain (double overload).
     /// </summary>
     public void gain(double value) => gain((float)value);
+    /// <summary>
+    /// Set master gain (double overload).
+    /// </summary>
+    public void Gain(double value) => gain(value);
 
     /// <summary>
     /// Add an effect to the master chain.
     /// </summary>
     public void effect(IAudioEffect effect) => _engine.AddMasterEffect(effect);
     /// <summary>
+    /// Add an effect to the master chain.
+    /// </summary>
+    public void Effect(IAudioEffect effect) => _engine.AddMasterEffect(effect);
+    /// <summary>
     /// Clear all master effects.
     /// </summary>
     public void clearEffects() => _engine.ClearMasterEffects();
+    /// <summary>
+    /// Clear all master effects.
+    /// </summary>
+    public void ClearEffects() => _engine.ClearMasterEffects();
 
     /// <summary>
     /// Recording controls for the master output.
     /// </summary>
     public RecordingControl record => new RecordingControl(
+        start: (path, format) => _lastRecording = _engine.StartMasterRecording(path, format),
+        stop: session => _engine.StopMasterRecording(session ?? _lastRecording)
+    );
+    /// <summary>
+    /// Recording controls for the master output.
+    /// </summary>
+    public RecordingControl Record => new RecordingControl(
         start: (path, format) => _lastRecording = _engine.StartMasterRecording(path, format),
         stop: session => _engine.StopMasterRecording(session ?? _lastRecording)
     );
@@ -103,14 +158,26 @@ public sealed class AudioChannelControl
     /// </summary>
     public void gain(float value) => _globals.Engine.SetChannelGain(_index, value);
     /// <summary>
+    /// Set gain for the channel.
+    /// </summary>
+    public void Gain(float value) => _globals.Engine.SetChannelGain(_index, value);
+    /// <summary>
     /// Set gain for the channel (double overload).
     /// </summary>
     public void gain(double value) => gain((float)value);
+    /// <summary>
+    /// Set gain for the channel (double overload).
+    /// </summary>
+    public void Gain(double value) => gain(value);
 
     /// <summary>
     /// Route a synth to this channel.
     /// </summary>
     public void route(ISynth synth) => _globals.Engine.RouteToChannel(synth, _index);
+    /// <summary>
+    /// Route a synth to this channel.
+    /// </summary>
+    public void Route(ISynth synth) => _globals.Engine.RouteToChannel(synth, _index);
     /// <summary>
     /// Route all synth targets from a pattern to this channel.
     /// </summary>
@@ -122,15 +189,27 @@ public sealed class AudioChannelControl
             _globals.Engine.RouteToChannel(target, _index);
         }
     }
+    /// <summary>
+    /// Route all synth targets from a pattern to this channel.
+    /// </summary>
+    public void Route(Pattern pattern) => route(pattern);
 
     /// <summary>
     /// Add an effect to this channel.
     /// </summary>
     public void effect(IAudioEffect effect) => _globals.Engine.AddChannelEffect(_index, effect);
     /// <summary>
+    /// Add an effect to this channel.
+    /// </summary>
+    public void Effect(IAudioEffect effect) => _globals.Engine.AddChannelEffect(_index, effect);
+    /// <summary>
     /// Clear all effects on this channel.
     /// </summary>
     public void clearEffects() => _globals.Engine.ClearChannelEffects(_index);
+    /// <summary>
+    /// Clear all effects on this channel.
+    /// </summary>
+    public void ClearEffects() => _globals.Engine.ClearChannelEffects(_index);
 
     /// <summary>
     /// Recording controls for this channel.
@@ -139,6 +218,33 @@ public sealed class AudioChannelControl
         start: (path, format) => _lastRecording = _globals.Engine.StartChannelRecording(_index, path, format),
         stop: session => _globals.Engine.StopChannelRecording(_index, session ?? _lastRecording)
     );
+    /// <summary>
+    /// Recording controls for this channel.
+    /// </summary>
+    public RecordingControl Record => new RecordingControl(
+        start: (path, format) => _lastRecording = _globals.Engine.StartChannelRecording(_index, path, format),
+        stop: session => _globals.Engine.StopChannelRecording(_index, session ?? _lastRecording)
+    );
+
+    /// <summary>
+    /// Create and add a VST3 effect to this channel.
+    /// </summary>
+    public Vst3Effect vsteffect(string name)
+    {
+        var effect = _globals.CreateVstEffect(name);
+        _globals.Engine.AddChannelEffect(_index, effect);
+        return effect;
+    }
+
+    /// <summary>
+    /// Create and add a VST3 effect to this channel.
+    /// </summary>
+    public Vst3Effect vsteffekt(string name) => vsteffect(name);
+
+    /// <summary>
+    /// Create and add a VST3 effect to this channel.
+    /// </summary>
+    public Vst3Effect VstEffect(string name) => vsteffect(name);
 }
 
 /// <summary>

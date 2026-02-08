@@ -6,8 +6,12 @@ audio.all.gain(0.1); // Master volume //0 to 1.0 // Adjust as needed // Default 
 // Create the synthesizer instance
 var synth = CreateSynth();
 
+
 // Create a VST instrument instance (replace "Vital" with your desired plugin name)
 var vital = CreateVst("Vital");
+var ch1 = Audio.CreateChannel(1);
+ch1.Route(vital);
+
 
 // --- Windows GM instrument ---
 var piano = CreateGeneralMidi();
@@ -25,9 +29,9 @@ piano.Name = "GM_AcousticGrandPiano"; // Set to desired GM instrument name (e.g.
 
 
 //midi setup
-midi.device(0).to(vital);
-midi.device(0).pitchbend().to(val => piano.PitchBend(val * 2f - 1f)); // map wheel to -1..1
-midi.device(0).pitchbend().to(val => vital.PitchBend(val * 2f - 1f)); // -1..1
+Midi.Device(0).to(vital); // MIDI channel 1 (0-based)
+Midi.Device(0).Pitchbend().to((Action<float>)(val => piano.PitchBend(val * 2f - 1f))); // map wheel to -1..1
+Midi.Device(0).Pitchbend().to((Action<float>)(val => vital.PitchBend(val * 2f - 1f))); // -1..1
 //midi.device(0).log.info(true); // Log MIDI input for debugging and mapping midi controls
 
 
@@ -99,17 +103,14 @@ synth.UnisonVoices = 5;               // Number of unison voices: 1 to 8
 synth.UnisonDetune = 15f;            // Detune amount in cents: 0 to 50
 synth.UnisonSpread = 1f;            // Stereo spread: 0 to 1
 
-// EFFECTS
+// EFFECTS (shared audio effects)
+var synthChannel = Audio.CreateChannel(2);
+synthChannel.Route(synth);
 
-// Delay
-synth.DelayMix = 0.0f;                 // Delay wet/dry mix: 0 to 1
-synth.DelayTime = 1f;                 // Delay time in ms: 1 to 2000
-synth.DelayFeedback = 0.4f;          // Delay feedback: 0 to 0.95
-
-// Reverb
-synth.ReverbMix = 0f;                  // Reverb wet/dry mix: 0 to 1
-synth.ReverbSize = 0.1f;              // Room size: 0 to 1
-synth.ReverbDamping = 0.5f;          // High frequency damping: 0 to 1
+var synthDelay = new SimpleDelayEffect { Mix = 0.0f, TimeMs = 300f, Feedback = 0.4f };
+var synthReverb = new SimpleReverbEffect { Mix = 0.0f, Size = 0.1f, Damping = 0.5f };
+synthChannel.Effect(synthDelay);
+synthChannel.Effect(synthReverb);
 
 // OUTPUT SETTINGS
 synth.Volume = 0.7f;                    // Synth master volume: 0 to 1

@@ -6,7 +6,10 @@
 using System;
 using System.Buffers;
 using System.Collections.Generic;
+using System.IO;
 using System.Runtime.InteropServices;
+using System.Threading;
+using ThreadingTimer = System.Threading.Timer;
 using MusicEngine.Core;
 using NAudio.Wave;
 
@@ -15,7 +18,7 @@ namespace MusicEngine.Vst;
 /// <summary>
 /// VST3-backed instrument wrapper for MIDI routing and audio output.
 /// </summary>
-public sealed class Vst3Instrument : ISynth, IDisposable
+public sealed class Vst3Instrument : IVstInstrument, IDisposable
 {
     private readonly string _pluginPath;
     private readonly IntPtr _hostHandle;
@@ -26,13 +29,18 @@ public sealed class Vst3Instrument : ISynth, IDisposable
     private float[]? _tempBuffer;
     private bool _tempBufferFromPool;
     private Dictionary<string, int>? _parameterMap;
+    private readonly object _stateLock = new();
+    private ThreadingTimer? _autoSaveTimer;
+    private bool _autoSaveEnabled = true;
+    private string? _autoStatePath;
+    private double _autoSaveIntervalSeconds = 2.0;
 
     /// <summary>
     /// Create a VST3 instrument from a plugin path.
     /// </summary>
     /// <param name="pluginPath">Path to the VST3 plugin.</param>
     /// <param name="name">Display name for the instance.</param>
-    public Vst3Instrument(string pluginPath, string name)
+    public Vst3Instrument(string pluginPath, string name, string? statePath = null)
     {
         if (string.IsNullOrWhiteSpace(pluginPath))
         {
@@ -49,12 +57,49 @@ public sealed class Vst3Instrument : ISynth, IDisposable
         _outputChannels = Math.Max(1, Vst3Native.Vst3Host_GetOutputChannels(_hostHandle));
         _waveFormat = WaveFormat.CreateIeeeFloatWaveFormat(Settings.SampleRate, _outputChannels);
         Name = name;
+
+        _autoStatePath = !string.IsNullOrWhiteSpace(statePath) ? statePath : GetDefaultStatePath(name);
+        if (!string.IsNullOrWhiteSpace(_autoStatePath) && File.Exists(_autoStatePath))
+        {
+            LoadState(_autoStatePath);
+        }
+        EnsureAutoSaveTimer();
     }
 
     /// <summary>
     /// Display name for the instance.
     /// </summary>
     public string Name { get; set; }
+
+    /// <summary>
+    /// Master volume (0..1).
+    /// </summary>
+    public float Volume { get; set; } = 1f;
+
+    /// <summary>
+    /// Pan position (-1..1).
+    /// </summary>
+    public float Pan { get; set; } = 0f;
+
+    /// <summary>
+    /// Mod wheel value (0..1).
+    /// </summary>
+    public float ModWheel { get; set; } = 0f;
+
+    /// <summary>
+    /// MIDI channel (0..15), or -1 for all.
+    /// </summary>
+    public int Channel { get; set; } = -1;
+
+    /// <summary>
+    /// Reverb amount (0..1).
+    /// </summary>
+    public float Reverb { get; set; } = 0f;
+
+    /// <summary>
+    /// Chorus amount (0..1).
+    /// </summary>
+    public float Chorus { get; set; } = 0f;
 
     /// <summary>
     /// Output format for this instrument.
@@ -86,6 +131,7 @@ public sealed class Vst3Instrument : ISynth, IDisposable
             {
                 Array.Clear(buffer, 0, count);
             }
+            ApplyVolumePan(buffer, 0, count);
             return count;
         }
 
@@ -94,6 +140,7 @@ public sealed class Vst3Instrument : ISynth, IDisposable
         {
             Array.Clear(temp, 0, count);
         }
+        ApplyVolumePan(temp, 0, count);
         Array.Copy(temp, 0, buffer, offset, count);
         return count;
     }
@@ -155,6 +202,42 @@ public sealed class Vst3Instrument : ISynth, IDisposable
         Vst3Native.Vst3Host_SetParameter(_hostHandle, id, normalized);
     }
 
+    private void ApplyVolumePan(float[] buffer, int offset, int count)
+    {
+        float volume = Math.Clamp(Volume, 0f, 1f);
+        if (volume <= 0f)
+        {
+            Array.Clear(buffer, offset, count);
+            return;
+        }
+
+        float pan = Math.Clamp(Pan, -1f, 1f);
+        float panL = Math.Min(1f, 1f - pan);
+        float panR = Math.Min(1f, 1f + pan);
+
+        int channels = _waveFormat.Channels;
+        if (channels <= 1)
+        {
+            for (int i = 0; i < count; i++)
+            {
+                buffer[offset + i] *= volume;
+            }
+            return;
+        }
+
+        int frames = count / channels;
+        for (int i = 0; i < frames; i++)
+        {
+            int idx = offset + i * channels;
+            buffer[idx] *= volume * panL;
+            buffer[idx + 1] *= volume * panR;
+            for (int ch = 2; ch < channels; ch++)
+            {
+                buffer[idx + ch] *= volume;
+            }
+        }
+    }
+
     /// <summary>
     /// Create a setter for automation.
     /// </summary>
@@ -176,12 +259,91 @@ public sealed class Vst3Instrument : ISynth, IDisposable
     }
 
     /// <summary>
+    /// Disable automatic state save/load.
+    /// </summary>
+    public void NoSave()
+    {
+        _autoSaveEnabled = false;
+        _autoSaveTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+    }
+
+    /// <summary>
+    /// Get the plugin state as a binary blob.
+    /// </summary>
+    public byte[] GetState()
+    {
+        if (_disposed) return Array.Empty<byte>();
+        return VstUiContext.Shared.Invoke(() =>
+        {
+            lock (_stateLock)
+            {
+                return GetStateInternal();
+            }
+        });
+    }
+
+    /// <summary>
+    /// Load the plugin state from a binary blob.
+    /// </summary>
+    public void SetState(byte[] data)
+    {
+        if (data == null || data.Length == 0 || _disposed) return;
+        VstUiContext.Shared.Invoke(() =>
+        {
+            lock (_stateLock)
+            {
+                SetStateInternal(data);
+            }
+            return 0;
+        });
+    }
+
+    /// <summary>
+    /// Save the plugin state to a file.
+    /// </summary>
+    public void SaveState(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return;
+        _autoStatePath = path;
+        _autoSaveEnabled = true;
+        EnsureAutoSaveTimer();
+        SaveStateOnce(path);
+    }
+
+    /// <summary>
+    /// Load the plugin state from a file.
+    /// </summary>
+    public void LoadState(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return;
+        _autoStatePath = path;
+        _autoSaveEnabled = true;
+        EnsureAutoSaveTimer();
+        LoadStateOnce(path);
+    }
+
+    /// <summary>
+    /// Save the current state using the active auto-save path.
+    /// </summary>
+    public void SaveStateNow()
+    {
+        if (string.IsNullOrWhiteSpace(_autoStatePath)) return;
+        SaveStateOnce(_autoStatePath);
+    }
+
+    /// <summary>
     /// Close the plugin and release native resources.
     /// </summary>
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
+        if (_autoSaveEnabled && !string.IsNullOrWhiteSpace(_autoStatePath))
+        {
+            SaveStateOnce(_autoStatePath);
+        }
+        _autoSaveTimer?.Dispose();
+        _autoSaveTimer = null;
         VstUiContext.Shared.Invoke(() =>
         {
             Vst3Native.Vst3Host_Close(_hostHandle);
@@ -250,5 +412,161 @@ public sealed class Vst3Instrument : ISynth, IDisposable
         }
 
         _parameterMap = map;
+    }
+
+    private void EnsureAutoSaveTimer()
+    {
+        if (!_autoSaveEnabled) return;
+        if (string.IsNullOrWhiteSpace(_autoStatePath)) return;
+
+        var due = TimeSpan.FromSeconds(Math.Max(1.0, _autoSaveIntervalSeconds));
+        if (_autoSaveTimer == null)
+        {
+            _autoSaveTimer = new ThreadingTimer(_ => SaveStateOnce(_autoStatePath), null, due, due);
+        }
+        else
+        {
+            _autoSaveTimer.Change(due, due);
+        }
+    }
+
+    private void SaveStateOnce(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return;
+        var data = GetState();
+        if (data.Length == 0) return;
+        var dir = Path.GetDirectoryName(path);
+        if (!string.IsNullOrWhiteSpace(dir))
+        {
+            Directory.CreateDirectory(dir);
+        }
+        try
+        {
+            File.WriteAllBytes(path, data);
+        }
+        catch
+        {
+        }
+    }
+
+    private void LoadStateOnce(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return;
+        if (!File.Exists(path)) return;
+        try
+        {
+            var data = File.ReadAllBytes(path);
+            SetState(data);
+        }
+        catch
+        {
+        }
+    }
+
+    private static string GetDefaultStatePath(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return string.Empty;
+        var safe = SanitizeFileName(name);
+        if (string.IsNullOrWhiteSpace(safe)) return string.Empty;
+        var root = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (string.IsNullOrWhiteSpace(root))
+        {
+            root = AppContext.BaseDirectory;
+        }
+        return Path.Combine(root, "MusicEngine", "States", $"{safe}.state");
+    }
+
+    public static string? GetScriptStatePath(string instanceName, string? scriptFilePath)
+    {
+        if (string.IsNullOrWhiteSpace(instanceName)) return null;
+        var safeName = SanitizeFileName(instanceName);
+        if (string.IsNullOrWhiteSpace(safeName)) return null;
+
+        string baseDir;
+        string scriptName;
+        if (!string.IsNullOrWhiteSpace(scriptFilePath))
+        {
+            baseDir = Path.GetDirectoryName(scriptFilePath) ?? AppContext.BaseDirectory;
+            scriptName = Path.GetFileNameWithoutExtension(scriptFilePath);
+        }
+        else
+        {
+            baseDir = AppContext.BaseDirectory;
+            scriptName = "Global";
+        }
+
+        var safeScript = SanitizeFileName(scriptName);
+        if (string.IsNullOrWhiteSpace(safeScript))
+        {
+            safeScript = "Global";
+        }
+        return Path.Combine(baseDir, ".musicengine", "states", safeScript, $"{safeName}.state");
+    }
+
+    public static string? GetScriptStateDirectory(string? scriptFilePath)
+    {
+        string baseDir;
+        string scriptName;
+        if (!string.IsNullOrWhiteSpace(scriptFilePath))
+        {
+            baseDir = Path.GetDirectoryName(scriptFilePath) ?? AppContext.BaseDirectory;
+            scriptName = Path.GetFileNameWithoutExtension(scriptFilePath);
+        }
+        else
+        {
+            baseDir = AppContext.BaseDirectory;
+            scriptName = "Global";
+        }
+
+        var safeScript = SanitizeFileName(scriptName);
+        if (string.IsNullOrWhiteSpace(safeScript))
+        {
+            safeScript = "Global";
+        }
+        return Path.Combine(baseDir, ".musicengine", "states", safeScript);
+    }
+
+    private byte[] GetStateInternal()
+    {
+        int size = Vst3Native.Vst3Host_GetStateSize(_hostHandle);
+        if (size <= 0) return Array.Empty<byte>();
+
+        var data = new byte[size];
+        var handle = GCHandle.Alloc(data, GCHandleType.Pinned);
+        try
+        {
+            int written = Vst3Native.Vst3Host_GetState(_hostHandle, handle.AddrOfPinnedObject(), size);
+            if (written <= 0) return Array.Empty<byte>();
+            if (written == size) return data;
+            var trimmed = new byte[written];
+            Array.Copy(data, trimmed, written);
+            return trimmed;
+        }
+        finally
+        {
+            handle.Free();
+        }
+    }
+
+    private void SetStateInternal(byte[] data)
+    {
+        var handle = GCHandle.Alloc(data, GCHandleType.Pinned);
+        try
+        {
+            Vst3Native.Vst3Host_SetState(_hostHandle, handle.AddrOfPinnedObject(), data.Length);
+        }
+        finally
+        {
+            handle.Free();
+        }
+    }
+
+    private static string SanitizeFileName(string name)
+    {
+        foreach (var c in Path.GetInvalidFileNameChars())
+        {
+            name = name.Replace(c, '_');
+        }
+        return name.Trim();
     }
 }

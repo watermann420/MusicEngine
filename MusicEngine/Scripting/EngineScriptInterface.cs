@@ -53,6 +53,21 @@ public interface IEngineScriptInterface : IDisposable
     ScriptHost Host { get; }
 
     /// <summary>
+    /// Raised when a pattern note is triggered in editor mode.
+    /// </summary>
+    event Action<PatternNoteEventInfo>? EditorPatternNote;
+
+    /// <summary>
+    /// Raised when a MIDI note is received in editor mode.
+    /// </summary>
+    event Action<MidiNoteEventInfo>? EditorMidiNote;
+
+    /// <summary>
+    /// Raised when a MIDI device becomes active in editor mode.
+    /// </summary>
+    event Action<int>? EditorMidiDeviceActive;
+
+    /// <summary>
     /// VST3 registry populated during scanning (if enabled).
     /// </summary>
     Vst3Registry? VstRegistry { get; }
@@ -61,6 +76,18 @@ public interface IEngineScriptInterface : IDisposable
     /// Whether the engine is currently sleeping.
     /// </summary>
     bool IsSleeping { get; }
+
+    /// <summary>
+    /// Enable or disable editor mode hooks.
+    /// </summary>
+    /// <param name="enabled">True to enable editor mode.</param>
+    void SetEditorMode(bool enabled);
+
+    /// <summary>
+    /// Register a pattern so its editor note events are forwarded by the engine.
+    /// </summary>
+    /// <param name="pattern">Pattern to register for editor events.</param>
+    void RegisterPatternForEditor(Pattern pattern);
 
     /// <summary>
     /// Initialize the engine and optional startup script.
@@ -118,6 +145,33 @@ public sealed class EngineScriptInterface : IEngineScriptInterface
     public ScriptHost Host => _host ?? throw new InvalidOperationException("Call StartupAsync before using the host.");
 
     /// <summary>
+    /// Raised when a pattern note is triggered in editor mode.
+    /// </summary>
+    public event Action<PatternNoteEventInfo>? EditorPatternNote
+    {
+        add => Engine.EditorPatternNote += value;
+        remove => Engine.EditorPatternNote -= value;
+    }
+
+    /// <summary>
+    /// Raised when a MIDI note is received in editor mode.
+    /// </summary>
+    public event Action<MidiNoteEventInfo>? EditorMidiNote
+    {
+        add => Engine.EditorMidiNote += value;
+        remove => Engine.EditorMidiNote -= value;
+    }
+
+    /// <summary>
+    /// Raised when a MIDI device becomes active in editor mode.
+    /// </summary>
+    public event Action<int>? EditorMidiDeviceActive
+    {
+        add => Engine.EditorMidiDeviceActive += value;
+        remove => Engine.EditorMidiDeviceActive -= value;
+    }
+
+    /// <summary>
     /// VST3 registry populated during scanning (if enabled).
     /// </summary>
     public Vst3Registry? VstRegistry { get; private set; }
@@ -126,6 +180,24 @@ public sealed class EngineScriptInterface : IEngineScriptInterface
     /// Whether the engine is currently sleeping.
     /// </summary>
     public bool IsSleeping => _sleeping;
+
+    /// <summary>
+    /// Enable or disable editor mode hooks.
+    /// </summary>
+    /// <param name="enabled">True to enable editor mode.</param>
+    public void SetEditorMode(bool enabled)
+    {
+        Engine.SetEditorMode(enabled);
+    }
+
+    /// <summary>
+    /// Register a pattern so its editor note events are forwarded by the engine.
+    /// </summary>
+    /// <param name="pattern">Pattern to register for editor events.</param>
+    public void RegisterPatternForEditor(Pattern pattern)
+    {
+        Engine.RegisterPatternForEditor(pattern);
+    }
 
     /// <summary>
     /// Create a new interface with optional configuration.

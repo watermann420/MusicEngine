@@ -19,6 +19,7 @@
 #include "pluginterfaces/vst/ivstmidicontrollers.h"
 #include "pluginterfaces/vst/vsttypes.h"
 #include "public.sdk/source/vst/utility/stringconvert.h"
+#include "public.sdk/source/vst/utility/memoryibstream.h"
 
 #include <algorithm>
 #include <atomic>
@@ -500,6 +501,86 @@ struct Vst3HostInstance
 	int32 getOutputChannels () const { return outputChannelCount > 0 ? outputChannelCount : 2; }
 	int32 getInputChannels () const { return inputChannelCount > 0 ? inputChannelCount : 0; }
 
+	bool getStateBlob (std::vector<uint8>& outData)
+	{
+		std::lock_guard<std::mutex> lock (processMutex);
+		if (!component)
+			return false;
+
+		ResizableMemoryIBStream componentStream;
+		tresult compResult = component->getState (&componentStream);
+		if (compResult != kResultTrue)
+			return false;
+
+		std::vector<uint8> componentData = componentStream.take ();
+		std::vector<uint8> controllerData;
+
+		if (controller)
+		{
+			ResizableMemoryIBStream controllerStream;
+			if (controller->getState (&controllerStream) == kResultTrue)
+				controllerData = controllerStream.take ();
+		}
+
+		uint32 compSize = static_cast<uint32> (componentData.size ());
+		uint32 ctrlSize = static_cast<uint32> (controllerData.size ());
+
+		outData.clear ();
+		outData.reserve (sizeof (uint32) * 2 + componentData.size () + controllerData.size ());
+
+		auto appendBytes = [&outData] (const void* data, size_t size) {
+			const uint8* bytes = static_cast<const uint8*> (data);
+			outData.insert (outData.end (), bytes, bytes + size);
+		};
+
+		appendBytes (&compSize, sizeof (uint32));
+		appendBytes (&ctrlSize, sizeof (uint32));
+		if (!componentData.empty ())
+			appendBytes (componentData.data (), componentData.size ());
+		if (!controllerData.empty ())
+			appendBytes (controllerData.data (), controllerData.size ());
+
+		return true;
+	}
+
+	bool setStateBlob (const uint8* data, size_t size)
+	{
+		std::lock_guard<std::mutex> lock (processMutex);
+		if (!component || !data || size < sizeof (uint32) * 2)
+			return false;
+
+		uint32 compSize = 0;
+		uint32 ctrlSize = 0;
+		memcpy (&compSize, data, sizeof (uint32));
+		memcpy (&ctrlSize, data + sizeof (uint32), sizeof (uint32));
+
+		size_t offset = sizeof (uint32) * 2;
+		if (offset + compSize > size)
+			return false;
+
+		ResizableMemoryIBStream componentStream;
+		if (compSize > 0)
+		{
+			componentStream.write (const_cast<uint8*> (data + offset), static_cast<int32> (compSize), nullptr);
+			componentStream.rewind ();
+			component->setState (&componentStream);
+		}
+
+		offset += compSize;
+		if (offset + ctrlSize > size)
+			return false;
+
+		if (controller && ctrlSize > 0)
+		{
+			ResizableMemoryIBStream controllerStream;
+			controllerStream.write (const_cast<uint8*> (data + offset), static_cast<int32> (ctrlSize), nullptr);
+			controllerStream.rewind ();
+			controller->setState (&controllerStream);
+		}
+
+		return true;
+	}
+
 private:
 	void activateBusses ()
 	{
@@ -841,5 +922,38 @@ __declspec (dllexport) bool __cdecl Vst3Host_ResizeEditor (void* handle, int wid
 		return false;
 	auto instance = reinterpret_cast<Vst3HostInstance*> (handle);
 	return instance->resizeEditor (width, height);
+}
+
+__declspec (dllexport) int __cdecl Vst3Host_GetStateSize (void* handle)
+{
+	if (!handle)
+		return 0;
+	auto instance = reinterpret_cast<Vst3HostInstance*> (handle);
+	std::vector<uint8> data;
+	if (!instance->getStateBlob (data))
+		return 0;
+	return static_cast<int> (data.size ());
+}
+
+__declspec (dllexport) int __cdecl Vst3Host_GetState (void* handle, uint8_t* buffer, int bufferSize)
+{
+	if (!handle || !buffer || bufferSize <= 0)
+		return 0;
+	auto instance = reinterpret_cast<Vst3HostInstance*> (handle);
+	std::vector<uint8> data;
+	if (!instance->getStateBlob (data))
+		return 0;
+	if (static_cast<int> (data.size ()) > bufferSize)
+		return 0;
+	memcpy (buffer, data.data (), data.size ());
+	return static_cast<int> (data.size ());
+}
+
+__declspec (dllexport) bool __cdecl Vst3Host_SetState (void* handle, const uint8_t* data, int size)
+{
+	if (!handle || !data || size <= 0)
+		return false;
+	auto instance = reinterpret_cast<Vst3HostInstance*> (handle);
+	return instance->setStateBlob (data, static_cast<size_t> (size));
 }
 }

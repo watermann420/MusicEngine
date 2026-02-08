@@ -30,13 +30,7 @@ public class SimpleSynth : ISynth
     // LFO state
     private float _lfoPhase;
 
-    // Effect buffers
-    private readonly float[] _delayBuffer;
-    private int _delayWritePos;
-    private readonly float[] _reverbBuffer;
-    private int _reverbWritePos;
-    private const int MaxDelaySamples = 96000;
-    private const int ReverbBufferSize = 44100;
+    // Effect buffers removed: use shared audio effects instead.
     private readonly float _outputSmoothing;
     private float _lastOutL;
     private float _lastOutR;
@@ -209,28 +203,6 @@ public class SimpleSynth : ISynth
 
     #endregion
 
-    #region ========== EFFECTS ==========
-
-    /// <summary>Delay mix (0 to 1)</summary>
-    public float DelayMix { get; set; } = 0f;
-
-    /// <summary>Delay time in milliseconds (1 to 2000)</summary>
-    public float DelayTime { get; set; } = 300f;
-
-    /// <summary>Delay feedback (0 to 0.95)</summary>
-    public float DelayFeedback { get; set; } = 0.4f;
-
-    /// <summary>Reverb mix (0 to 1)</summary>
-    public float ReverbMix { get; set; } = 0.15f;
-
-    /// <summary>Reverb size (0 to 1)</summary>
-    public float ReverbSize { get; set; } = 0.5f;
-
-    /// <summary>Reverb damping (0 to 1)</summary>
-    public float ReverbDamping { get; set; } = 0.5f;
-
-    #endregion
-
     #region ========== OUTPUT ==========
 
     /// <summary>Master volume (0 to 1)</summary>
@@ -238,6 +210,15 @@ public class SimpleSynth : ISynth
 
     /// <summary>Pan position (-1 left, 0 center, 1 right)</summary>
     public float Pan { get; set; } = 0f;
+
+    /// <summary>Channel (0..15) or -1 for all</summary>
+    public int Channel { get; set; } = -1;
+
+    /// <summary>Reverb amount (0 to 1)</summary>
+    public float Reverb { get; set; } = 0f;
+
+    /// <summary>Chorus amount (0 to 1)</summary>
+    public float Chorus { get; set; } = 0f;
 
     /// <summary>Maximum polyphony (1 to 64)</summary>
     public int MaxPolyphony { get; set; } = 16;
@@ -266,9 +247,6 @@ public class SimpleSynth : ISynth
         int rate = sampleRate ?? Settings.SampleRate;
         _waveFormat = WaveFormat.CreateIeeeFloatWaveFormat(rate, Settings.Channels);
 
-        // Initialize effect buffers
-        _delayBuffer = new float[MaxDelaySamples];
-        _reverbBuffer = new float[ReverbBufferSize];
         _outputSmoothing = 1f - MathF.Exp(-1f / (rate * 0.001f)); // ~1ms de-zipper
     }
 
@@ -426,16 +404,12 @@ public class SimpleSynth : ISynth
             case "unisondetune": UnisonDetune = Math.Clamp(value, 0, 50); break;
             case "unisonspread": UnisonSpread = Math.Clamp(value, 0, 1); break;
 
-            // Effects
-            case "delaymix": DelayMix = Math.Clamp(value, 0, 1); break;
-            case "delaytime": DelayTime = Math.Clamp(value, 1, 2000); break;
-            case "delayfeedback": DelayFeedback = Math.Clamp(value, 0, 0.95f); break;
-            case "reverbmix": ReverbMix = Math.Clamp(value, 0, 1); break;
-            case "reverbsize": ReverbSize = Math.Clamp(value, 0, 1); break;
-
             // Output
             case "volume": Volume = Math.Clamp(value, 0, 1); break;
             case "pan": Pan = Math.Clamp(value, -1, 1); break;
+            case "reverb": Reverb = Math.Clamp(value, 0, 1); break;
+            case "chorus": Chorus = Math.Clamp(value, 0, 1); break;
+            case "channel": Channel = (int)Math.Clamp(value, -1, 15); break;
             case "maxpolyphony": MaxPolyphony = (int)Math.Clamp(value, 1, 64); break;
             case "velocitysensitivity": VelocitySensitivity = Math.Clamp(value, 0, 1); break;
         }
@@ -521,35 +495,6 @@ public class SimpleSynth : ISynth
             // Normalize for high polyphony headroom
             mixL *= voiceGain;
             mixR *= voiceGain;
-
-            // Apply effects
-            float mono = (mixL + mixR) * 0.5f;
-
-            // Delay
-            if (DelayMix > 0.001f)
-            {
-                int delaySamples = Math.Min((int)(DelayTime * sampleRate / 1000f), MaxDelaySamples - 1);
-                int readPos = (_delayWritePos - delaySamples + MaxDelaySamples) % MaxDelaySamples;
-                float delayed = _delayBuffer[readPos];
-                _delayBuffer[_delayWritePos] = mono + delayed * DelayFeedback;
-                _delayWritePos = (_delayWritePos + 1) % MaxDelaySamples;
-
-                mixL += delayed * DelayMix;
-                mixR += delayed * DelayMix;
-            }
-
-            // Simple reverb
-            if (ReverbMix > 0.001f)
-            {
-                int reverbDelay = (int)(ReverbSize * 15000 + 1000);
-                int readPos = (_reverbWritePos - reverbDelay + ReverbBufferSize) % ReverbBufferSize;
-                float reverbed = _reverbBuffer[readPos];
-                _reverbBuffer[_reverbWritePos] = mono + reverbed * (1f - ReverbDamping) * 0.6f;
-                _reverbWritePos = (_reverbWritePos + 1) % ReverbBufferSize;
-
-                mixL += reverbed * ReverbMix;
-                mixR += reverbed * ReverbMix;
-            }
 
             // Apply pan
             float panL = Math.Min(1f, 1f - Pan);

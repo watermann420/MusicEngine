@@ -5,6 +5,7 @@
 
 using System;
 using System.Collections.Generic;
+using MusicEngine.Effects.Audio;
 using NAudio.Midi;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
@@ -332,7 +333,18 @@ public sealed class AudioEngine : IDisposable
     /// <param name="synth">Target synth.</param>
     public void RouteMidiInput(int deviceIndex, ISynth synth)
     {
-        _midiRouter.Route(deviceIndex, synth);
+        RouteMidiInput(deviceIndex, -1, synth);
+    }
+
+    /// <summary>
+    /// Route a MIDI input device channel to a synth.
+    /// </summary>
+    /// <param name="deviceIndex">MIDI device index.</param>
+    /// <param name="channel">MIDI channel (0-15) or -1 for all.</param>
+    /// <param name="synth">Target synth.</param>
+    public void RouteMidiInput(int deviceIndex, int channel, ISynth synth)
+    {
+        _midiRouter.Route(deviceIndex, channel, synth);
         EnsureMidiInput(deviceIndex);
     }
 
@@ -344,7 +356,19 @@ public sealed class AudioEngine : IDisposable
     /// <param name="action">Action invoked with normalized value.</param>
     public void MapControlAction(int deviceIndex, int controlId, Action<float> action)
     {
-        _midiRouter.MapControlAction(deviceIndex, controlId, action);
+        MapControlAction(deviceIndex, -1, controlId, action);
+    }
+
+    /// <summary>
+    /// Map a MIDI controller to a custom action for a specific channel.
+    /// </summary>
+    /// <param name="deviceIndex">MIDI device index.</param>
+    /// <param name="channel">MIDI channel (0-15) or -1 for all.</param>
+    /// <param name="controlId">Control change ID.</param>
+    /// <param name="action">Action invoked with normalized value.</param>
+    public void MapControlAction(int deviceIndex, int channel, int controlId, Action<float> action)
+    {
+        _midiRouter.MapControlAction(deviceIndex, channel, controlId, action);
         EnsureMidiInput(deviceIndex);
     }
 
@@ -378,7 +402,11 @@ public sealed class AudioEngine : IDisposable
         _masterTap.StopAll();
     }
 
-    internal void RegisterPatternForEditor(Pattern pattern)
+    /// <summary>
+    /// Register a pattern so its editor note events are forwarded by the engine.
+    /// </summary>
+    /// <param name="pattern">Pattern to register for editor events.</param>
+    public void RegisterPatternForEditor(Pattern pattern)
     {
         if (pattern == null) return;
         pattern.EditorNoteEvent += OnPatternNoteEvent;

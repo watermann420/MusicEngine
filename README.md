@@ -56,6 +56,15 @@ pattern.Note(67, 1.0, 1.0, 110);
 pattern.Play();
 ```
 
+## VST State Save/Load
+
+```csharp
+var vital = CreateVst("Vital");
+// auto-loads from States/Vital.state by default
+vital.LoadState("States/vital.state"); // optional override
+vital.SaveState("States/vital.state"); // also enables autosave (30s)
+```
+
 ## General Instruments Example (Script)
 
 ```csharp

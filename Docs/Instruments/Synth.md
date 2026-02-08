@@ -1,6 +1,6 @@
 # SimpleSynth (Synth)
 
-Polyphonic synth with two oscillators, ADSR, filter, LFO, and effects. Ideal for direct sound design via properties or `SetParameter`.
+Polyphonic synth with two oscillators, ADSR, filter, and LFO. Effects are handled through shared audio effects.
 
 ## Concept
 
@@ -38,7 +38,15 @@ synth.SetParameter("cutoff", 0.4f);      // 0..1
 synth.SetParameter("resonance", 0.2f);   // 0..1
 synth.SetParameter("attack", 0.01f);     // seconds
 synth.SetParameter("release", 0.25f);    // seconds
-synth.SetParameter("delaymix", 0.2f);    // 0..1
+```
+
+## Shared Effects
+
+```csharp
+var ch = Audio.CreateChannel(1);
+ch.Route(synth);
+ch.Effect(new SimpleDelayEffect { Mix = 0.2f, TimeMs = 250f });
+ch.Effect(new SimpleReverbEffect { Mix = 0.1f, Size = 0.4f });
 ```
 
 Copyright 2026 watermann429 and contributers.

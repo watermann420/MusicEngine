@@ -10,7 +10,7 @@ namespace MusicEngine.Core;
 /// <summary>
 /// Minimal synth interface for note playback and parameter control.
 /// </summary>
-public interface ISynth : ISampleProvider
+public interface ISynth : ISampleProvider, IInstrumentControls
 {
     /// <summary>
     /// Display name for the synth instance.

@@ -99,6 +99,7 @@ public sealed class ConsoleInterface
             }
             else if (command == "/EXIT")
             {
+                _host.SaveVstState();
                 _onExit();
                 break;
             }

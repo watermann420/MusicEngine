@@ -15,11 +15,12 @@ namespace MusicEngine.Core;
 /// </summary>
 public sealed class MidiRouter
 {
+    private const int AllChannels = -1;
     /// <summary>
     /// Whether MIDI routing is currently enabled.
     /// </summary>
     public bool Enabled { get; private set; } = true;
-    private readonly Dictionary<int, ISynth> _routing = new();
+    private readonly Dictionary<int, Dictionary<int, HashSet<ISynth>>> _routing = new();
     private readonly List<MidiMapping> _mappings = new();
     private readonly object _activityLock = new();
     private readonly Dictionary<int, MidiDeviceActivitySnapshot> _activity = new();
@@ -41,6 +42,7 @@ public sealed class MidiRouter
     private sealed class MidiMapping
     {
         public int DeviceIndex { get; init; }
+        public int Channel { get; init; }
         public int ControlId { get; init; }
         public Action<float> Action { get; init; } = null!;
     }
@@ -50,7 +52,32 @@ public sealed class MidiRouter
     /// </summary>
     /// <param name="deviceIndex">MIDI device index.</param>
     /// <param name="synth">Target synth.</param>
-    public void Route(int deviceIndex, ISynth synth) => _routing[deviceIndex] = synth;
+    public void Route(int deviceIndex, ISynth synth) => Route(deviceIndex, AllChannels, synth);
+
+    /// <summary>
+    /// Route a MIDI device channel to a synth.
+    /// </summary>
+    /// <param name="deviceIndex">MIDI device index.</param>
+    /// <param name="channel">MIDI channel (0-15) or -1 for all.</param>
+    /// <param name="synth">Target synth.</param>
+    public void Route(int deviceIndex, int channel, ISynth synth)
+    {
+        if (synth == null) return;
+        channel = NormalizeChannel(channel);
+        if (!_routing.TryGetValue(deviceIndex, out var perChannel))
+        {
+            perChannel = new Dictionary<int, HashSet<ISynth>>();
+            _routing[deviceIndex] = perChannel;
+        }
+
+        if (!perChannel.TryGetValue(channel, out var targets))
+        {
+            targets = new HashSet<ISynth>();
+            perChannel[channel] = targets;
+        }
+
+        targets.Add(synth);
+    }
 
     /// <summary>
     /// Map a control change to a custom action.
@@ -60,9 +87,22 @@ public sealed class MidiRouter
     /// <param name="action">Action invoked with normalized value.</param>
     public void MapControlAction(int deviceIndex, int controlId, Action<float> action)
     {
+        MapControlAction(deviceIndex, AllChannels, controlId, action);
+    }
+
+    /// <summary>
+    /// Map a control change to a custom action for a specific channel.
+    /// </summary>
+    /// <param name="deviceIndex">MIDI device index.</param>
+    /// <param name="channel">MIDI channel (0-15) or -1 for all.</param>
+    /// <param name="controlId">Control change ID.</param>
+    /// <param name="action">Action invoked with normalized value.</param>
+    public void MapControlAction(int deviceIndex, int channel, int controlId, Action<float> action)
+    {
         _mappings.Add(new MidiMapping
         {
             DeviceIndex = deviceIndex,
+            Channel = NormalizeChannel(channel),
             ControlId = controlId,
             Action = action
         });
@@ -88,7 +128,7 @@ public sealed class MidiRouter
         Enabled = enabled;
         if (!Enabled && sendAllNotesOff)
         {
-            foreach (var synth in _routing.Values)
+            foreach (var synth in GetRoutedSynths())
             {
                 synth.AllNotesOff();
             }
@@ -121,9 +161,10 @@ public sealed class MidiRouter
             return;
         }
 
-        if (_routing.TryGetValue(deviceIndex, out var synth))
+        if (args.MidiEvent is NAudio.Midi.NoteEvent noteEvent)
         {
-            if (args.MidiEvent is NAudio.Midi.NoteEvent noteEvent)
+            var channel = Math.Clamp(noteEvent.Channel, 0, 15);
+            foreach (var synth in GetTargets(deviceIndex, channel))
             {
                 if (noteEvent.CommandCode == MidiCommandCode.NoteOn)
                 {
@@ -146,23 +187,25 @@ public sealed class MidiRouter
         if (args.MidiEvent is PitchWheelChangeEvent bend)
         {
             float normalized = bend.Pitch / 16383f;
-            DispatchControl(deviceIndex, -1, normalized);
+            DispatchControl(deviceIndex, Math.Clamp(bend.Channel, 0, 15), -1, normalized);
         }
         else if (args.MidiEvent is ControlChangeEvent cc)
         {
             float normalized = cc.ControllerValue / 127f;
-            DispatchControl(deviceIndex, (int)cc.Controller, normalized);
+            DispatchControl(deviceIndex, Math.Clamp(cc.Channel, 0, 15), (int)cc.Controller, normalized);
         }
     }
 
-    private void DispatchControl(int deviceIndex, int controlId, float value)
+    private void DispatchControl(int deviceIndex, int channel, int controlId, float value)
     {
         UpdateControlActivity(deviceIndex, controlId, value);
 
         for (int i = 0; i < _mappings.Count; i++)
         {
             var mapping = _mappings[i];
-            if (mapping.DeviceIndex == deviceIndex && mapping.ControlId == controlId)
+            if (mapping.DeviceIndex == deviceIndex &&
+                (mapping.Channel == AllChannels || mapping.Channel == channel) &&
+                mapping.ControlId == controlId)
             {
                 mapping.Action(value);
             }
@@ -294,6 +337,54 @@ public sealed class MidiRouter
                 LastControlId = controlId,
                 LastControlValue = value
             };
+        }
+    }
+
+    private static int NormalizeChannel(int channel)
+    {
+        if (channel < 0) return AllChannels;
+        return Math.Clamp(channel, 0, 15);
+    }
+
+    private IEnumerable<ISynth> GetTargets(int deviceIndex, int channel)
+    {
+        if (!_routing.TryGetValue(deviceIndex, out var perChannel)) yield break;
+
+        HashSet<ISynth>? any = null;
+        if (perChannel.TryGetValue(AllChannels, out var anyTargets))
+        {
+            any = anyTargets;
+            foreach (var synth in anyTargets)
+            {
+                yield return synth;
+            }
+        }
+
+        if (!perChannel.TryGetValue(channel, out var channelTargets)) yield break;
+        foreach (var synth in channelTargets)
+        {
+            if (any == null || !any.Contains(synth))
+            {
+                yield return synth;
+            }
+        }
+    }
+
+    private IEnumerable<ISynth> GetRoutedSynths()
+    {
+        var seen = new HashSet<ISynth>();
+        foreach (var perChannel in _routing.Values)
+        {
+            foreach (var targets in perChannel.Values)
+            {
+                foreach (var synth in targets)
+                {
+                    if (seen.Add(synth))
+                    {
+                        yield return synth;
+                    }
+                }
+            }
         }
     }
 }

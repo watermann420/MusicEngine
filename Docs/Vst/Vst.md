@@ -32,4 +32,22 @@ var drive = vst.Param("Drive", 0f, 1f);
 drive(0.7f);
 ```
 
+## Save / Load State
+
+```csharp
+var vital = CreateVst("Vital");
+// auto-loads from States/Vital.state by default
+vital.LoadState("States/vital.state"); // optional override
+
+// tweak in editor...
+vital.SaveState("States/vital.state"); // also enables autosave (30s)
+```
+
+## Disable Auto Save
+
+```csharp
+var vital = CreateVst("Vital");
+vital.NoSave();
+```
+
 Copyright 2026 watermann429 and contributers.

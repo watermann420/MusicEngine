@@ -8,9 +8,11 @@ using System.Buffers;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using MusicEngine.Core;
+using MusicEngine.Effects.Audio;
+using MusicEngine.Vst;
 using NAudio.Wave;
 
-namespace MusicEngine.Vst;
+namespace MusicEngine.Effects.Vst;
 
 /// <summary>
 /// VST3 effect wrapper for audio routing chains.
