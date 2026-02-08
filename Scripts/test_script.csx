@@ -1,4 +1,6 @@
+File.Main().Name(MainScript);
 audio.all.gain(0.1); // Master volume //0 to 1.0 // Adjust as needed // Default is 0.1 is 10% volume
+
 
 
 
@@ -88,16 +90,14 @@ synth.LfoToAmp = 0.0f;                // LFO to amplitude (tremolo): 0 to 1
 synth.LfoToPulseWidth = 0.0f;        // LFO to pulse width: 0 to 0.4
 
 // PITCH BEND & MODULATION
-synth.PitchBendRange = 2;             // Pitch bend range in semitones: 1 to 24
-// synth.PitchBend = 0.0f;           // Current pitch bend value: -1 to +1 (set by MIDI wheel)
-
-// MOD WHEEL (map CC#1 manually)
-synth.VibratoRate = 20.0f;            // Vibrato speed (mod wheel controls depth): 0.1 to 20 Hz
+synth.PitchBendRange = 2;                // Pitch bend range in semitones: 1 to 24
+synth.VibratoRate = 20.0f;             // Vibrato speed (mod wheel controls depth): 0.1 to 20 Hz
 synth.VibratoDepth = 2f;             // Max vibrato depth (semitones): 0 to 2
-synth.ModWheel = 0.0f;              // Current mod wheel value: 0 to 1 (set by MIDI CC#1)
+synth.ModWheel = 0.0f; 
 
+         
 // PERFORMANCE
-synth.Portamento = 0.0f;             // Glide time in seconds: 0 to 2 (0 = off)
+synth.Portamento = 0.0f;               // Glide time in seconds: 0 to 2 (0 = off)
 
 // UNISON SETTINGS
 synth.UnisonVoices = 5;               // Number of unison voices: 1 to 8

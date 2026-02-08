@@ -73,6 +73,15 @@ public sealed class AudioControl
     /// Input device utilities.
     /// </summary>
     public InputDeviceControl Input => new InputDeviceControl(_globals.Engine);
+
+    /// <summary>
+    /// DJ cue helper (A/B monitor switch).
+    /// </summary>
+    public DjCueControl cue => new DjCueControl(_globals.Engine);
+    /// <summary>
+    /// DJ cue helper (A/B monitor switch).
+    /// </summary>
+    public DjCueControl Cue => new DjCueControl(_globals.Engine);
 }
 
 /// <summary>
@@ -170,6 +179,16 @@ public sealed class MasterAudioControl
     /// </summary>
     public bool VirtualOut(int deviceIndex) => _engine.StartMasterVirtualOutput(deviceIndex);
     /// <summary>
+    /// Route master output to a virtual device with channel offset.
+    /// </summary>
+    public bool virtualout(int deviceIndex, int outputChannelOffset)
+        => _engine.StartMasterVirtualOutput(deviceIndex, outputChannelOffset);
+    /// <summary>
+    /// Route master output to a virtual device with channel offset.
+    /// </summary>
+    public bool VirtualOut(int deviceIndex, int outputChannelOffset)
+        => _engine.StartMasterVirtualOutput(deviceIndex, outputChannelOffset);
+    /// <summary>
     /// Route master output to a virtual device (e.g. VB-CABLE).
     /// </summary>
     public bool virtualout(string deviceName) => _engine.StartMasterVirtualOutput(deviceName);
@@ -177,6 +196,16 @@ public sealed class MasterAudioControl
     /// Route master output to a virtual device (e.g. VB-CABLE).
     /// </summary>
     public bool VirtualOut(string deviceName) => _engine.StartMasterVirtualOutput(deviceName);
+    /// <summary>
+    /// Route master output to a virtual device by name with channel offset.
+    /// </summary>
+    public bool virtualout(string deviceName, int outputChannelOffset)
+        => _engine.StartMasterVirtualOutput(deviceName, outputChannelOffset);
+    /// <summary>
+    /// Route master output to a virtual device by name with channel offset.
+    /// </summary>
+    public bool VirtualOut(string deviceName, int outputChannelOffset)
+        => _engine.StartMasterVirtualOutput(deviceName, outputChannelOffset);
 
     /// <summary>
     /// Stop all master virtual outputs.
@@ -245,6 +274,37 @@ public sealed class AudioChannelControl
     public void Route(Pattern pattern) => route(pattern);
 
     /// <summary>
+    /// Route this channel into another channel (send).
+    /// </summary>
+    public void route(int targetIndex) => _globals.Engine.RouteChannelToChannel(_index, targetIndex);
+    /// <summary>
+    /// Route this channel into another channel (send).
+    /// </summary>
+    public void Route(int targetIndex) => route(targetIndex);
+
+    /// <summary>
+    /// Create a send to another channel with gain control.
+    /// </summary>
+    public ChannelSendControl send(int targetIndex, float gain = 1f)
+        => new ChannelSendControl(_globals.Engine, _index, targetIndex, gain);
+    /// <summary>
+    /// Create a send to another channel with gain control.
+    /// </summary>
+    public ChannelSendControl Send(int targetIndex, float gain = 1f)
+        => send(targetIndex, gain);
+
+    /// <summary>
+    /// Create a sidechain-style send to another channel.
+    /// </summary>
+    public ChannelSendControl sidechain(int targetIndex, float gain = 1f)
+        => send(targetIndex, gain);
+    /// <summary>
+    /// Create a sidechain-style send to another channel.
+    /// </summary>
+    public ChannelSendControl SideChain(int targetIndex, float gain = 1f)
+        => send(targetIndex, gain);
+
+    /// <summary>
     /// Add an effect to this channel.
     /// </summary>
     public void effect(IAudioEffect effect) => _globals.Engine.AddChannelEffect(_index, effect);
@@ -287,6 +347,16 @@ public sealed class AudioChannelControl
     /// </summary>
     public bool VirtualOut(int deviceIndex) => _globals.Engine.StartChannelVirtualOutput(_index, deviceIndex);
     /// <summary>
+    /// Route this channel to a virtual device with channel offset.
+    /// </summary>
+    public bool virtualout(int deviceIndex, int outputChannelOffset)
+        => _globals.Engine.StartChannelVirtualOutput(_index, deviceIndex, outputChannelOffset);
+    /// <summary>
+    /// Route this channel to a virtual device with channel offset.
+    /// </summary>
+    public bool VirtualOut(int deviceIndex, int outputChannelOffset)
+        => _globals.Engine.StartChannelVirtualOutput(_index, deviceIndex, outputChannelOffset);
+    /// <summary>
     /// Route this channel to a virtual device (e.g. VB-CABLE).
     /// </summary>
     public bool virtualout(string deviceName) => _globals.Engine.StartChannelVirtualOutput(_index, deviceName);
@@ -294,6 +364,16 @@ public sealed class AudioChannelControl
     /// Route this channel to a virtual device (e.g. VB-CABLE).
     /// </summary>
     public bool VirtualOut(string deviceName) => _globals.Engine.StartChannelVirtualOutput(_index, deviceName);
+    /// <summary>
+    /// Route this channel to a virtual device by name with channel offset.
+    /// </summary>
+    public bool virtualout(string deviceName, int outputChannelOffset)
+        => _globals.Engine.StartChannelVirtualOutput(_index, deviceName, outputChannelOffset);
+    /// <summary>
+    /// Route this channel to a virtual device by name with channel offset.
+    /// </summary>
+    public bool VirtualOut(string deviceName, int outputChannelOffset)
+        => _globals.Engine.StartChannelVirtualOutput(_index, deviceName, outputChannelOffset);
 
     /// <summary>
     /// Stop all virtual outputs for this channel.
@@ -326,6 +406,37 @@ public sealed class AudioChannelControl
 }
 
 /// <summary>
+/// Handle for a channel send.
+/// </summary>
+public sealed class ChannelSendControl
+{
+    private readonly AudioEngine _engine;
+    private readonly int _sourceIndex;
+    private readonly int _targetIndex;
+
+    public ChannelSendControl(AudioEngine engine, int sourceIndex, int targetIndex, float gain)
+    {
+        _engine = engine;
+        _sourceIndex = sourceIndex;
+        _targetIndex = targetIndex;
+        _engine.RouteChannelToChannel(_sourceIndex, _targetIndex, gain);
+    }
+
+    /// <summary>
+    /// Send gain in [0, 1].
+    /// </summary>
+    public float Gain
+    {
+        set => _engine.SetChannelSendGain(_sourceIndex, _targetIndex, value);
+    }
+
+    /// <summary>
+    /// Remove this send.
+    /// </summary>
+    public void Remove() => _engine.UnrouteChannelFromChannel(_sourceIndex, _targetIndex);
+}
+
+/// <summary>
 /// Output device helper for listing devices.
 /// </summary>
 public sealed class OutputDeviceControl
@@ -342,7 +453,7 @@ public sealed class OutputDeviceControl
         var list = new string[devices.Count];
         for (int i = 0; i < devices.Count; i++)
         {
-            list[i] = $"{devices[i].Index}: {devices[i].Name}";
+            list[i] = $"{devices[i].Index}: {devices[i].Name} ({devices[i].Channels}ch @ {devices[i].SampleRate}Hz)";
         }
         return list;
     }
@@ -351,6 +462,48 @@ public sealed class OutputDeviceControl
     /// List available output devices.
     /// </summary>
     public string[] List() => list();
+
+    /// <summary>
+    /// Route a channel to an output device index (virtual output).
+    /// </summary>
+    public bool route(int channelIndex, int deviceIndex)
+        => _engine.StartChannelVirtualOutput(channelIndex, deviceIndex);
+    /// <summary>
+    /// Route a channel to an output device index (virtual output).
+    /// </summary>
+    public bool Route(int channelIndex, int deviceIndex) => route(channelIndex, deviceIndex);
+
+    /// <summary>
+    /// Route a channel to an output device index with channel offset.
+    /// </summary>
+    public bool route(int channelIndex, int deviceIndex, int outputChannelOffset)
+        => _engine.StartChannelVirtualOutput(channelIndex, deviceIndex, outputChannelOffset);
+    /// <summary>
+    /// Route a channel to an output device index with channel offset.
+    /// </summary>
+    public bool Route(int channelIndex, int deviceIndex, int outputChannelOffset)
+        => route(channelIndex, deviceIndex, outputChannelOffset);
+
+    /// <summary>
+    /// Route a channel to an output device by name (virtual output).
+    /// </summary>
+    public bool route(int channelIndex, string deviceName)
+        => _engine.StartChannelVirtualOutput(channelIndex, deviceName);
+    /// <summary>
+    /// Route a channel to an output device by name (virtual output).
+    /// </summary>
+    public bool Route(int channelIndex, string deviceName) => route(channelIndex, deviceName);
+
+    /// <summary>
+    /// Route a channel to an output device by name with channel offset.
+    /// </summary>
+    public bool route(int channelIndex, string deviceName, int outputChannelOffset)
+        => _engine.StartChannelVirtualOutput(channelIndex, deviceName, outputChannelOffset);
+    /// <summary>
+    /// Route a channel to an output device by name with channel offset.
+    /// </summary>
+    public bool Route(int channelIndex, string deviceName, int outputChannelOffset)
+        => route(channelIndex, deviceName, outputChannelOffset);
 }
 
 /// <summary>
@@ -379,6 +532,91 @@ public sealed class InputDeviceControl
     /// List available input devices.
     /// </summary>
     public string[] List() => list();
+}
+
+/// <summary>
+/// DJ cue helper for A/B monitoring.
+/// </summary>
+public sealed class DjCueControl
+{
+    private readonly AudioEngine _engine;
+    public DjCueControl(AudioEngine engine) => _engine = engine;
+
+    /// <summary>
+    /// Create a DJ cue switch (A/B monitor).
+    /// </summary>
+    public DjCueSwitch Create(int audienceChannel, int headphonesChannel, float cueGain = 0.3f)
+        => new DjCueSwitch(_engine, audienceChannel, headphonesChannel, cueGain);
+}
+
+/// <summary>
+/// DJ cue switch for A/B monitoring.
+/// </summary>
+public sealed class DjCueSwitch
+{
+    private readonly AudioEngine _engine;
+    private readonly int _audienceChannel;
+    private readonly int _headphonesChannel;
+    private ChannelSendControl? _cueSend;
+    private bool _cueEnabled;
+    private float _cueGain;
+
+    public DjCueSwitch(AudioEngine engine, int audienceChannel, int headphonesChannel, float cueGain)
+    {
+        _engine = engine;
+        _audienceChannel = Math.Max(1, audienceChannel);
+        _headphonesChannel = Math.Max(1, headphonesChannel);
+        CueGain = cueGain;
+    }
+
+    /// <summary>
+    /// Enable or disable cue (audience mix into headphones).
+    /// </summary>
+    public bool Cue
+    {
+        get => _cueEnabled;
+        set
+        {
+            if (_cueEnabled == value) return;
+            _cueEnabled = value;
+            if (_cueEnabled)
+            {
+                _cueSend ??= new ChannelSendControl(_engine, _audienceChannel, _headphonesChannel, _cueGain);
+                _cueSend.Gain = _cueGain;
+            }
+            else
+            {
+                _cueSend?.Remove();
+                _cueSend = null;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Cue gain (audience mix in headphones).
+    /// </summary>
+    public float CueGain
+    {
+        get => _cueGain;
+        set
+        {
+            _cueGain = Math.Clamp(value, 0f, 1f);
+            if (_cueEnabled && _cueSend != null)
+            {
+                _cueSend.Gain = _cueGain;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Explicitly enable cue.
+    /// </summary>
+    public void CueOn() => Cue = true;
+
+    /// <summary>
+    /// Explicitly disable cue.
+    /// </summary>
+    public void CueOff() => Cue = false;
 }
 
 /// <summary>

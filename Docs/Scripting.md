@@ -59,6 +59,19 @@ Library.Set("Bass", CreateSynth());
 var bass = Library.Get<SimpleSynth>("Bass");
 ```
 
+## Multi-File Scripts (File / Master)
+
+```csharp
+// MainScript.csx
+File.Main().Name(MainScript); // register main script
+File.Name(Instruments);       // load Instruments.csx (not main)
+midi.Device(0).to(File.Instruments.Synth1);
+
+// Instruments.csx
+var file = File(); // uses file name (Instruments) and exposes File.Instruments
+file.Synth1 = CreateSynth();
+```
+
 ## Notes
 
 - Shared objects live until you clear state or restart the engine.

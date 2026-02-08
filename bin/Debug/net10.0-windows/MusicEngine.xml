@@ -185,7 +185,7 @@
             </summary>
             <param name="enabled">True to enable editor mode.</param>
         </member>
-        <member name="M:MusicEngine.Core.AudioEngine.StartMasterRecording(System.String,System.String)">
+        <member name="M:MusicEngine.Core.AudioEngine.StartMasterRecording(System.String,System.String,MusicEngine.Core.RecordingOptions)">
             <summary>
             Start recording the master output.
             </summary>
@@ -209,9 +209,19 @@
             Start a virtual output from the master chain to a render device (e.g. VB-CABLE).
             </summary>
         </member>
+        <member name="M:MusicEngine.Core.AudioEngine.StartMasterVirtualOutput(System.Int32,System.Int32,System.Int32)">
+            <summary>
+            Start a virtual output from the master chain to a render device with channel offset.
+            </summary>
+        </member>
         <member name="M:MusicEngine.Core.AudioEngine.StartMasterVirtualOutput(System.String,System.Int32)">
             <summary>
             Start a virtual output from the master chain to a render device by name.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.StartMasterVirtualOutput(System.String,System.Int32,System.Int32)">
+            <summary>
+            Start a virtual output from the master chain to a render device by name with channel offset.
             </summary>
         </member>
         <member name="M:MusicEngine.Core.AudioEngine.StopMasterVirtualOutputs">
@@ -219,14 +229,47 @@
             Stop all virtual outputs on the master chain.
             </summary>
         </member>
+        <member name="M:MusicEngine.Core.AudioEngine.RouteChannelToChannel(System.Int32,System.Int32,System.Single)">
+            <summary>
+            Route a channel output into another channel (send).
+            </summary>
+            <param name="sourceIndex">Source channel (1-based).</param>
+            <param name="targetIndex">Target channel (1-based).</param>
+            <param name="gain">Send gain in [0, 1].</param>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.SetChannelSendGain(System.Int32,System.Int32,System.Single)">
+            <summary>
+            Update gain for an existing channel send.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.UnrouteChannelFromChannel(System.Int32,System.Int32)">
+            <summary>
+            Remove a channel send.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.ClearChannelSends(System.Int32)">
+            <summary>
+            Clear all sends for a source channel.
+            </summary>
+        </member>
         <member name="M:MusicEngine.Core.AudioEngine.StartChannelVirtualOutput(System.Int32,System.Int32,System.Int32)">
             <summary>
             Start a virtual output from a channel to a render device.
             </summary>
         </member>
+        <member name="M:MusicEngine.Core.AudioEngine.StartChannelVirtualOutput(System.Int32,System.Int32,System.Int32,System.Int32)">
+            <summary>
+            Start a virtual output from a channel to a render device with channel offset.
+            </summary>
+        </member>
         <member name="M:MusicEngine.Core.AudioEngine.StartChannelVirtualOutput(System.Int32,System.String,System.Int32)">
             <summary>
             Start a virtual output from a channel to a render device by name.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.StartChannelVirtualOutput(System.Int32,System.String,System.Int32,System.Int32)">
+            <summary>
+            Start a virtual output from a channel to a render device by name with channel offset.
             </summary>
         </member>
         <member name="M:MusicEngine.Core.AudioEngine.StopChannelVirtualOutputs(System.Int32)">
@@ -265,7 +308,7 @@
             </summary>
             <param name="index">1-based channel index.</param>
         </member>
-        <member name="M:MusicEngine.Core.AudioEngine.StartChannelRecording(System.Int32,System.String,System.String)">
+        <member name="M:MusicEngine.Core.AudioEngine.StartChannelRecording(System.Int32,System.String,System.String,MusicEngine.Core.RecordingOptions)">
             <summary>
             Start recording a specific channel.
             </summary>
@@ -360,9 +403,49 @@
             Live audio input source (mic/line-in).
             </summary>
         </member>
+        <member name="T:MusicEngine.Core.RecordingOptions">
+            <summary>
+            Optional render settings for recording sessions.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.RecordingOptions.SampleRate">
+            <summary>
+            Target sample rate in Hz (optional).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.RecordingOptions.Channels">
+            <summary>
+            Target channel count (optional).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.RecordingOptions.WavBitDepth">
+            <summary>
+            Target WAV bit depth (16, 24, or 32). Only applies to WAV output.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.RecordingOptions.BitRateKbps">
+            <summary>
+            Target bitrate in kbps for compressed formats (mp3/aac/wma).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.RecordingOptions.ResamplerQuality">
+            <summary>
+            Resampler quality (1..60) when resampling is used.
+            </summary>
+        </member>
         <member name="T:MusicEngine.Core.RecordingSession">
             <summary>
             Represents an active audio recording session.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.RecordingSession.TargetPath">
+            <summary>
+            Final output path for this recording.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.RecordingSession.Format">
+            <summary>
+            Render format (e.g. wav, mp3, m4a).
             </summary>
         </member>
         <member name="M:MusicEngine.Core.RecordingSession.Dispose">
@@ -696,6 +779,11 @@
             List of note events in the pattern.
             </summary>
         </member>
+        <member name="P:MusicEngine.Core.Pattern.Sequences">
+            <summary>
+            List of note sequences in the pattern.
+            </summary>
+        </member>
         <member name="P:MusicEngine.Core.Pattern.LoopLength">
             <summary>
             Pattern length in beats.
@@ -771,7 +859,7 @@
             <param name="synth">Primary synth.</param>
             <param name="moreSynths">Additional synth targets.</param>
         </member>
-        <member name="M:MusicEngine.Core.Pattern.Note(System.Int32,System.Double,System.Double,System.Int32)">
+        <member name="M:MusicEngine.Core.Pattern.Note(System.Int32,System.Double,System.Double,System.Int32,System.Nullable{System.Int32},System.Nullable{System.Double})">
             <summary>
             Add a note event to the pattern.
             </summary>
@@ -780,6 +868,30 @@
             <param name="duration">Duration in beats.</param>
             <param name="velocity">MIDI velocity.</param>
             <returns>This pattern for chaining.</returns>
+        </member>
+        <member name="M:MusicEngine.Core.Pattern.NoteMs(System.Int32,System.Double,System.Double,System.Int32,System.Nullable{System.Int32},System.Nullable{System.Double})">
+            <summary>
+            Add a note event using millisecond timing instead of beats.
+            </summary>
+            <param name="note">MIDI note number.</param>
+            <param name="timeMs">Start time in milliseconds.</param>
+            <param name="durationMs">Duration in milliseconds.</param>
+            <param name="velocity">MIDI velocity.</param>
+            <param name="slideTo">Optional slide target note.</param>
+            <param name="slideTimeMs">Optional slide time in milliseconds.</param>
+            <returns>This pattern for chaining.</returns>
+        </member>
+        <member name="M:MusicEngine.Core.Pattern.Siquenz(System.String)">
+            <summary>
+            Convert the last added note into a sequence using 0/1 step text.
+            </summary>
+            <param name="steps">Sequence steps, e.g. "0010101".</param>
+        </member>
+        <member name="M:MusicEngine.Core.Pattern.Sequenz(System.String)">
+            <summary>
+            Convert the last added note into a sequence using 0/1 step text.
+            </summary>
+            <param name="steps">Sequence steps, e.g. "0010101".</param>
         </member>
         <member name="M:MusicEngine.Core.Pattern.Play">
             <summary>
@@ -827,6 +939,56 @@
         <member name="P:MusicEngine.Core.NoteEvent.Duration">
             <summary>
             Duration in beats.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.NoteEvent.BeatMs">
+            <summary>
+            Optional millisecond position override.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.NoteEvent.DurationMs">
+            <summary>
+            Optional millisecond duration override.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.NoteEvent.SlideTo">
+            <summary>
+            Optional slide target note.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.NoteEvent.SlideTimeMs">
+            <summary>
+            Optional slide time in beats.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Core.NoteSequence">
+            <summary>
+            Sequence driven by a base note event.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.NoteSequence.Id">
+            <summary>
+            Sequence identifier.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.NoteSequence.Note">
+            <summary>
+            Base note settings (pitch, velocity, step duration).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.NoteSequence.Steps">
+            <summary>
+            Step string using 0/1.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.NoteSequence.Loop">
+            <summary>
+            Loop the sequence continuously after it starts.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.NoteSequence.Enabled">
+            <summary>
+            Enable or disable this sequence.
             </summary>
         </member>
         <member name="T:MusicEngine.Core.NoteActivity">
@@ -959,9 +1121,24 @@
             Global sample rate in Hz for playback and processing.
             </summary>
         </member>
+        <member name="P:MusicEngine.Core.Settings.WavBitDepth">
+            <summary>
+            Default WAV bit depth for recordings.
+            </summary>
+        </member>
         <member name="P:MusicEngine.Core.Settings.Channels">
             <summary>
             Global output channel count (typically 1 for mono or 2 for stereo).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Settings.BitRateKbps">
+            <summary>
+            Default bitrate in kbps for compressed formats (mp3/aac/wma).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Settings.OutputBitDepth">
+            <summary>
+            Output bit depth for engine audio (set to 32 to disable quantization).
             </summary>
         </member>
         <member name="T:MusicEngine.Core.TimeMasterController">
@@ -1079,6 +1256,66 @@
             Set a deterministic random seed for time randomization.
             </summary>
         </member>
+        <member name="T:MusicEngine.Effects.Audio.BitCrusherEffect">
+            <summary>
+            Bit crusher with bit depth and downsampling controls.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Effects.Audio.BitCrusherEffect.BitDepth">
+            <summary>
+            Bit depth (1..24 typical).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Effects.Audio.BitCrusherEffect.Downsample">
+            <summary>
+            Downsample factor (1 = no downsample).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Effects.Audio.BitCrusherEffect.Mix">
+            <summary>
+            Dry/Wet mix (0..1 typical).
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Effects.Audio.CustomEffect">
+            <summary>
+            Custom effect that calls a user-provided processor on each buffer.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Effects.Audio.DriveEffect">
+            <summary>
+            Simple drive/saturation effect using tanh.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Effects.Audio.DriveEffect.Drive">
+            <summary>
+            Drive amount (0..inf).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Effects.Audio.DriveEffect.Mix">
+            <summary>
+            Dry/Wet mix (0..1 typical).
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Effects.Audio.Effect">
+            <summary>
+            Preset effect factory for quick use in scripts.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Effects.Audio.EffectRack">
+            <summary>
+            Modular effect rack for building custom chains.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Effects.Audio.GainEffect">
+            <summary>
+            Simple gain (volume) effect.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Effects.Audio.GainEffect.Gain">
+            <summary>
+            Gain multiplier (1 = unity).
+            </summary>
+        </member>
         <member name="T:MusicEngine.Effects.Audio.IAudioEffect">
             <summary>
             Base interface for effects that wrap an input and emit processed audio.
@@ -1102,6 +1339,21 @@
             Detach and release any processing state.
             </summary>
         </member>
+        <member name="T:MusicEngine.Effects.Audio.NoiseEffect">
+            <summary>
+            Adds white noise to the signal.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Effects.Audio.NoiseEffect.Amount">
+            <summary>
+            Noise amount (0..1 typical).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Effects.Audio.NoiseEffect.Mix">
+            <summary>
+            Dry/Wet mix (0..1 typical).
+            </summary>
+        </member>
         <member name="T:MusicEngine.Effects.Audio.SimpleDelayEffect">
             <summary>
             Simple delay effect for audio chains.
@@ -1120,6 +1372,21 @@
         <member name="P:MusicEngine.Effects.Audio.SimpleDelayEffect.Feedback">
             <summary>
             Delay feedback (0..0.95).
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Effects.Audio.SimpleFilterEffect">
+            <summary>
+            One-pole low/high-pass filter.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Effects.Audio.SimpleFilterEffect.Type">
+            <summary>
+            Filter type.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Effects.Audio.SimpleFilterEffect.CutoffHz">
+            <summary>
+            Cutoff frequency in Hz.
             </summary>
         </member>
         <member name="T:MusicEngine.Effects.Audio.SimpleReverbEffect">
@@ -1155,6 +1422,21 @@
         <member name="P:MusicEngine.Effects.Audio.TremoloEffect.Rate">
             <summary>
             LFO rate in Hz.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Effects.Midi.CustomMidiEffect">
+            <summary>
+            MIDI effect backed by custom callbacks.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Effects.Midi.MidiEffect">
+            <summary>
+            Preset MIDI effect factory for quick use in scripts.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Effects.Midi.MidiEffectRack">
+            <summary>
+            Modular MIDI effect rack.
             </summary>
         </member>
         <member name="T:MusicEngine.Effects.Midi.IMidiEffect">
@@ -1240,6 +1522,11 @@
         <member name="M:MusicEngine.Effects.Midi.MidiSend.LfoAsync(System.String,System.Single,System.Single,System.Double,System.Double)">
             <summary>
             Apply a simple LFO to a named parameter (awaitable).
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Effects.Midi.MidiTriggerEffect">
+            <summary>
+            MIDI trigger effect that calls callbacks for note events.
             </summary>
         </member>
         <member name="T:MusicEngine.Effects.Modulation.LfoModulator">
@@ -1807,6 +2094,26 @@
         <member name="P:MusicEngine.Instruments.SimpleSynth.WaveFormat">
             <summary>Wave format for audio output</summary>
         </member>
+        <member name="M:MusicEngine.Instruments.SimpleSynth.Oscillator">
+            <summary>
+            Create a modular oscillator instance (added to the synth).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Instruments.SimpleSynth.Oscelater">
+            <summary>
+            Alias for Oscillator().
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.Oscillators">
+            <summary>
+            Current modular oscillators.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Instruments.SimpleSynth.ClearOscillators">
+            <summary>
+            Remove all modular oscillators.
+            </summary>
+        </member>
         <member name="M:MusicEngine.Instruments.SimpleSynth.#ctor(System.Nullable{System.Int32})">
             <summary>
             Creates a new SimpleSynth instance
@@ -1849,12 +2156,77 @@
             Internal voice class for polyphonic playback
             </summary>
         </member>
+        <member name="T:MusicEngine.Instruments.SynthOscillator">
+            <summary>
+            Modular oscillator used by SimpleSynth.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SynthOscillator.Waveform">
+            <summary>
+            Oscillator waveform.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SynthOscillator.Octave">
+            <summary>
+            Octave offset.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SynthOscillator.Semi">
+            <summary>
+            Semitone offset.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SynthOscillator.Fine">
+            <summary>
+            Fine tune in cents.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SynthOscillator.Level">
+            <summary>
+            Output level.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SynthOscillator.PulseWidth">
+            <summary>
+            Pulse width (for Pulse wave).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SynthOscillator.Pan">
+            <summary>
+            Stereo pan (-1..1 typical).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SynthOscillator.Enabled">
+            <summary>
+            Enable or disable this oscillator.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SynthOscillator.ModToPitch">
+            <summary>
+            Modulate pitch (semitones, audio-rate).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SynthOscillator.ModToFilter">
+            <summary>
+            Modulate filter cutoff (audio-rate).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SynthOscillator.ModToAmp">
+            <summary>
+            Modulate amplitude (audio-rate).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SynthOscillator.ModToPulseWidth">
+            <summary>
+            Modulate pulse width (audio-rate).
+            </summary>
+        </member>
         <member name="T:MusicEngine.Scripting.ConsoleInterface">
             <summary>
             Minimal interactive console interface for script execution.
             </summary>
         </member>
-        <member name="M:MusicEngine.Scripting.ConsoleInterface.#ctor(MusicEngine.Scripting.ScriptHost,System.String,System.Action,System.String,MusicEngine.Vst.Vst3Registry,System.Boolean)">
+        <member name="M:MusicEngine.Scripting.ConsoleInterface.#ctor(MusicEngine.Scripting.ScriptHost,System.String,System.Action,System.String,MusicEngine.Vst.Vst3Registry,System.Boolean,System.Boolean)">
             <summary>
             Create a console interface bound to a script host.
             </summary>
@@ -2289,6 +2661,16 @@
             Input device utilities.
             </summary>
         </member>
+        <member name="P:MusicEngine.Scripting.FluentApi.AudioControl.cue">
+            <summary>
+            DJ cue helper (A/B monitor switch).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.FluentApi.AudioControl.Cue">
+            <summary>
+            DJ cue helper (A/B monitor switch).
+            </summary>
+        </member>
         <member name="T:MusicEngine.Scripting.FluentApi.AllChannelsControl">
             <summary>
             Controls that apply to all channels.
@@ -2379,6 +2761,16 @@
             Route master output to a virtual device (e.g. VB-CABLE).
             </summary>
         </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MasterAudioControl.virtualout(System.Int32,System.Int32)">
+            <summary>
+            Route master output to a virtual device with channel offset.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MasterAudioControl.VirtualOut(System.Int32,System.Int32)">
+            <summary>
+            Route master output to a virtual device with channel offset.
+            </summary>
+        </member>
         <member name="M:MusicEngine.Scripting.FluentApi.MasterAudioControl.virtualout(System.String)">
             <summary>
             Route master output to a virtual device (e.g. VB-CABLE).
@@ -2387,6 +2779,16 @@
         <member name="M:MusicEngine.Scripting.FluentApi.MasterAudioControl.VirtualOut(System.String)">
             <summary>
             Route master output to a virtual device (e.g. VB-CABLE).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MasterAudioControl.virtualout(System.String,System.Int32)">
+            <summary>
+            Route master output to a virtual device by name with channel offset.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MasterAudioControl.VirtualOut(System.String,System.Int32)">
+            <summary>
+            Route master output to a virtual device by name with channel offset.
             </summary>
         </member>
         <member name="M:MusicEngine.Scripting.FluentApi.MasterAudioControl.stopvirtualout">
@@ -2444,6 +2846,36 @@
             Route all synth targets from a pattern to this channel.
             </summary>
         </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AudioChannelControl.route(System.Int32)">
+            <summary>
+            Route this channel into another channel (send).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AudioChannelControl.Route(System.Int32)">
+            <summary>
+            Route this channel into another channel (send).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AudioChannelControl.send(System.Int32,System.Single)">
+            <summary>
+            Create a send to another channel with gain control.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AudioChannelControl.Send(System.Int32,System.Single)">
+            <summary>
+            Create a send to another channel with gain control.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AudioChannelControl.sidechain(System.Int32,System.Single)">
+            <summary>
+            Create a sidechain-style send to another channel.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AudioChannelControl.SideChain(System.Int32,System.Single)">
+            <summary>
+            Create a sidechain-style send to another channel.
+            </summary>
+        </member>
         <member name="M:MusicEngine.Scripting.FluentApi.AudioChannelControl.effect(MusicEngine.Effects.Audio.IAudioEffect)">
             <summary>
             Add an effect to this channel.
@@ -2484,6 +2916,16 @@
             Route this channel to a virtual device (e.g. VB-CABLE).
             </summary>
         </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AudioChannelControl.virtualout(System.Int32,System.Int32)">
+            <summary>
+            Route this channel to a virtual device with channel offset.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AudioChannelControl.VirtualOut(System.Int32,System.Int32)">
+            <summary>
+            Route this channel to a virtual device with channel offset.
+            </summary>
+        </member>
         <member name="M:MusicEngine.Scripting.FluentApi.AudioChannelControl.virtualout(System.String)">
             <summary>
             Route this channel to a virtual device (e.g. VB-CABLE).
@@ -2492,6 +2934,16 @@
         <member name="M:MusicEngine.Scripting.FluentApi.AudioChannelControl.VirtualOut(System.String)">
             <summary>
             Route this channel to a virtual device (e.g. VB-CABLE).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AudioChannelControl.virtualout(System.String,System.Int32)">
+            <summary>
+            Route this channel to a virtual device by name with channel offset.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AudioChannelControl.VirtualOut(System.String,System.Int32)">
+            <summary>
+            Route this channel to a virtual device by name with channel offset.
             </summary>
         </member>
         <member name="M:MusicEngine.Scripting.FluentApi.AudioChannelControl.stopvirtualout">
@@ -2519,6 +2971,21 @@
             Create and add a VST3 effect to this channel.
             </summary>
         </member>
+        <member name="T:MusicEngine.Scripting.FluentApi.ChannelSendControl">
+            <summary>
+            Handle for a channel send.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.FluentApi.ChannelSendControl.Gain">
+            <summary>
+            Send gain in [0, 1].
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.ChannelSendControl.Remove">
+            <summary>
+            Remove this send.
+            </summary>
+        </member>
         <member name="T:MusicEngine.Scripting.FluentApi.OutputDeviceControl">
             <summary>
             Output device helper for listing devices.
@@ -2532,6 +2999,46 @@
         <member name="M:MusicEngine.Scripting.FluentApi.OutputDeviceControl.List">
             <summary>
             List available output devices.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.OutputDeviceControl.route(System.Int32,System.Int32)">
+            <summary>
+            Route a channel to an output device index (virtual output).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.OutputDeviceControl.Route(System.Int32,System.Int32)">
+            <summary>
+            Route a channel to an output device index (virtual output).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.OutputDeviceControl.route(System.Int32,System.Int32,System.Int32)">
+            <summary>
+            Route a channel to an output device index with channel offset.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.OutputDeviceControl.Route(System.Int32,System.Int32,System.Int32)">
+            <summary>
+            Route a channel to an output device index with channel offset.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.OutputDeviceControl.route(System.Int32,System.String)">
+            <summary>
+            Route a channel to an output device by name (virtual output).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.OutputDeviceControl.Route(System.Int32,System.String)">
+            <summary>
+            Route a channel to an output device by name (virtual output).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.OutputDeviceControl.route(System.Int32,System.String,System.Int32)">
+            <summary>
+            Route a channel to an output device by name with channel offset.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.OutputDeviceControl.Route(System.Int32,System.String,System.Int32)">
+            <summary>
+            Route a channel to an output device by name with channel offset.
             </summary>
         </member>
         <member name="T:MusicEngine.Scripting.FluentApi.InputDeviceControl">
@@ -2549,12 +3056,62 @@
             List available input devices.
             </summary>
         </member>
+        <member name="T:MusicEngine.Scripting.FluentApi.DjCueControl">
+            <summary>
+            DJ cue helper for A/B monitoring.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.DjCueControl.Create(System.Int32,System.Int32,System.Single)">
+            <summary>
+            Create a DJ cue switch (A/B monitor).
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Scripting.FluentApi.DjCueSwitch">
+            <summary>
+            DJ cue switch for A/B monitoring.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.FluentApi.DjCueSwitch.Cue">
+            <summary>
+            Enable or disable cue (audience mix into headphones).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.FluentApi.DjCueSwitch.CueGain">
+            <summary>
+            Cue gain (audience mix in headphones).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.DjCueSwitch.CueOn">
+            <summary>
+            Explicitly enable cue.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.DjCueSwitch.CueOff">
+            <summary>
+            Explicitly disable cue.
+            </summary>
+        </member>
         <member name="T:MusicEngine.Scripting.FluentApi.RecordingControl">
             <summary>
             Recording controls used by fluent API.
             </summary>
         </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.RecordingControl.start">
+            <summary>
+            Start a new recording session.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.RecordingControl.Start">
+            <summary>
+            Start a new recording session.
+            </summary>
+        </member>
         <member name="M:MusicEngine.Scripting.FluentApi.RecordingControl.start(System.String,System.String)">
+            <summary>
+            Start a new recording session.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.RecordingControl.Start(System.String,System.String)">
             <summary>
             Start a new recording session.
             </summary>
@@ -2567,6 +3124,132 @@
         <member name="M:MusicEngine.Scripting.FluentApi.RecordingControl.stop(MusicEngine.Core.RecordingSession)">
             <summary>
             Stop a specific recording session.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.RecordingControl.Stop">
+            <summary>
+            Stop the last recording session.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.RecordingControl.Stop(MusicEngine.Core.RecordingSession)">
+            <summary>
+            Stop a specific recording session.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.RecordingControl.render">
+            <summary>
+            Finalize the last recording session (alias for Stop).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.RecordingControl.Render">
+            <summary>
+            Finalize the last recording session (alias for Stop).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.RecordingControl.render(System.String,System.Nullable{System.Double},System.String)">
+            <summary>
+            Render a one-shot recording to a specific path.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.RecordingControl.Render(System.String,System.Nullable{System.Double},System.String)">
+            <summary>
+            Render a one-shot recording to a specific path.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.RecordingControl.render(System.Double)">
+            <summary>
+            Render a one-shot recording using the default path.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.RecordingControl.Render(System.Double)">
+            <summary>
+            Render a one-shot recording using the default path.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.RecordingControl.delete">
+            <summary>
+            Delete the last rendered file (stops if active).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.RecordingControl.Delete">
+            <summary>
+            Delete the last rendered file (stops if active).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.RecordingControl.del">
+            <summary>
+            Delete the last rendered file (stops if active).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.RecordingControl.Del">
+            <summary>
+            Delete the last rendered file (stops if active).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.FluentApi.RecordingControl.Overwrite">
+            <summary>
+            If true, overwrite existing files on Start.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.FluentApi.RecordingControl.Override">
+            <summary>
+            Alias for Overwrite.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.FluentApi.RecordingControl.Loop">
+            <summary>
+            If true, automatically restart recording after Stop.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.FluentApi.RecordingControl.OneShot">
+            <summary>
+            If true, Stop happens automatically after DurationSeconds.
+            </summary>
+        </member>
+        <!-- Badly formed XML comment ignored for member "P:MusicEngine.Scripting.FluentApi.RecordingControl.DurationSeconds" -->
+        <member name="P:MusicEngine.Scripting.FluentApi.RecordingControl.DefaultFormat">
+            <summary>
+            Default format used when no format/extension is supplied.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.FluentApi.RecordingControl.SampleRate">
+            <summary>
+            Target sample rate in Hz (optional).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.FluentApi.RecordingControl.Channels">
+            <summary>
+            Target channel count (optional).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.FluentApi.RecordingControl.WavBitDepth">
+            <summary>
+            Target WAV bit depth (16, 24, 32).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.FluentApi.RecordingControl.BitRateKbps">
+            <summary>
+            Target bitrate in kbps for compressed formats (mp3/aac/wma).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.FluentApi.RecordingControl.ResamplerQuality">
+            <summary>
+            Resampler quality (1..60) when resampling is used.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.RecordingControl.OverwriteMode(System.Boolean)">
+            <summary>
+            Enable or disable overwrite behavior.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.RecordingControl.LoopMode(System.Boolean)">
+            <summary>
+            Enable or disable loop behavior.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.FluentApi.RecordingControl.LastPath">
+            <summary>
+            Last rendered path (if any).
             </summary>
         </member>
         <member name="T:MusicEngine.Scripting.FluentApi.MidiControl">
@@ -2654,6 +3337,16 @@
             Map a control change ID to a control action.
             </summary>
         </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.DeviceControl.cc(System.Int32)">
+            <summary>
+            Alias for Control (CC).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.DeviceControl.CC(System.Int32)">
+            <summary>
+            Alias for Control (CC).
+            </summary>
+        </member>
         <member name="M:MusicEngine.Scripting.FluentApi.DeviceControl.jog(System.Int32,MusicEngine.Scripting.FluentApi.JogMode,System.Int32)">
             <summary>
             Map a jog wheel control to delta ticks.
@@ -2717,6 +3410,16 @@
         <member name="M:MusicEngine.Scripting.FluentApi.ChannelControl.Control(System.Int32)">
             <summary>
             Map a control change ID to a control action.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.ChannelControl.cc(System.Int32)">
+            <summary>
+            Alias for Control (CC).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.ChannelControl.CC(System.Int32)">
+            <summary>
+            Alias for Control (CC).
             </summary>
         </member>
         <member name="M:MusicEngine.Scripting.FluentApi.ChannelControl.jog(System.Int32,MusicEngine.Scripting.FluentApi.JogMode,System.Int32)">
@@ -3085,6 +3788,51 @@
             Create a time master controller.
             </summary>
         </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.CreateEffect">
+            <summary>
+            Create a modular audio effect rack.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.ReverbPreset(System.String,System.Action{MusicEngine.Effects.Audio.SimpleReverbEffect})">
+            <summary>
+            Create a reverb preset effect.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.DelayPreset(System.String,System.Action{MusicEngine.Effects.Audio.SimpleDelayEffect})">
+            <summary>
+            Create a delay preset effect.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.TremoloPreset(System.String,System.Action{MusicEngine.Effects.Audio.TremoloEffect})">
+            <summary>
+            Create a tremolo preset effect.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.BitCrushPreset(System.String,System.Action{MusicEngine.Effects.Audio.BitCrusherEffect})">
+            <summary>
+            Create a bit crush preset effect.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.NoisePreset(System.String,System.Action{MusicEngine.Effects.Audio.NoiseEffect})">
+            <summary>
+            Create a noise preset effect.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.DrivePreset(System.String,System.Action{MusicEngine.Effects.Audio.DriveEffect})">
+            <summary>
+            Create a drive preset effect.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.FilterPreset(System.String,System.Action{MusicEngine.Effects.Audio.SimpleFilterEffect})">
+            <summary>
+            Create a filter preset effect.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.CreateMidiEffect">
+            <summary>
+            Create a modular MIDI effect rack.
+            </summary>
+        </member>
         <member name="M:MusicEngine.Scripting.ScriptGlobals.CreatePattern">
             <summary>
             Create a pattern using the last created synth.
@@ -3195,6 +3943,16 @@
             Default audio clip (last created).
             </summary>
         </member>
+        <member name="P:MusicEngine.Scripting.ScriptGlobals.effect">
+            <summary>
+            Default effect rack (last created).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.ScriptGlobals.midiefx">
+            <summary>
+            Default MIDI effect rack (last created).
+            </summary>
+        </member>
         <member name="P:MusicEngine.Scripting.ScriptGlobals.File">
             <summary>
             Shared script library (dynamic).
@@ -3275,6 +4033,61 @@
             Shared MIDI mapping helper for scripts.
             </summary>
         </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.Bind(System.Object,System.String,System.Single,System.Single)">
+            <summary>
+            Bind a normalized MIDI value (0..1) to a property/field.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.Bind(System.Object,System.String,System.Func{System.Single,System.Single})">
+            <summary>
+            Bind a normalized MIDI value (0..1) to a property/field with a custom mapper.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.BindTrigger(System.Object,System.String)">
+            <summary>
+            Bind a normalized MIDI value (0..1) to a method call on rising edge.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.BindCall(System.Object,System.String,System.Single,System.Single)">
+            <summary>
+            Bind a normalized MIDI value (0..1) to a method with a single parameter.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.BindCall(System.Object,System.String,System.Func{System.Single,System.Single})">
+            <summary>
+            Bind a normalized MIDI value (0..1) to a method with a custom mapper.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.BindToggle(System.Object,System.String)">
+            <summary>
+            Toggle a boolean property/field on rising edge.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.BindSwitch(System.Object,System.String)">
+            <summary>
+            Switch a boolean property/field based on the current value.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.BindToggle(System.Func{System.Boolean},System.Action{System.Boolean})">
+            <summary>
+            Toggle a boolean value (getter/setter) on rising edge.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.BindSwitch(System.Func{System.Boolean},System.Action{System.Boolean})">
+            <summary>
+            Switch a boolean value (getter/setter) based on the current value.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.Var(System.Object,System.String,System.Nullable{System.Single})">
+            <summary>
+            Create a modulated variable from any writable property/field.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.Param(System.Object,System.String,System.Nullable{System.Single})">
+            <summary>
+            Alias for Var.
+            </summary>
+        </member>
         <member name="T:MusicEngine.Scripting.ScriptLibrary">
             <summary>
             Script library for sharing objects and loading modules across scripts.
@@ -3305,9 +4118,79 @@
             List all shared keys.
             </summary>
         </member>
+        <member name="M:MusicEngine.Scripting.ScriptLibrary.Scope(System.String)">
+            <summary>
+            Create or access a named namespace scope.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptLibrary.File(System.String,System.String)">
+            <summary>
+            Register a script alias and run it immediately.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptLibrary.File(System.String,System.String,System.Boolean)">
+            <summary>
+            Register a script alias and optionally mark it as master.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptLibrary.File(System.String)">
+            <summary>
+            Run a script by name and bind it to a same-named scope.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptLibrary.File">
+            <summary>
+            Get the scope for the current script file name.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptLibrary.Main">
+            <summary>
+            Register the current script or an alias as main.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptLibrary.main">
+            <summary>
+            Register the current script or an alias as main.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptLibrary.Name(System.String)">
+            <summary>
+            Register a script for this scope.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptLibrary.name(System.String)">
+            <summary>
+            Register a script for this scope.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptLibrary.NameSpace(System.String)">
+            <summary>
+            Create or access a named namespace.
+            </summary>
+        </member>
         <member name="M:MusicEngine.Scripting.ScriptLibrary.Use(System.String)">
             <summary>
             Load and run a module script by name.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Scripting.ScriptFileBuilder">
+            <summary>
+            Builder for script registration.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptFileBuilder.Name(System.String)">
+            <summary>
+            Register a script name for this alias.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptFileBuilder.name(System.String)">
+            <summary>
+            Register a script name for this alias.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptFileBuilder.NameSpace(System.String)">
+            <summary>
+            Access a namespace scope.
             </summary>
         </member>
         <member name="T:MusicEngine.Scripting.VstAccess">

@@ -27,6 +27,20 @@ mic.Mute = false;
 mic.Pan = 0f;
 ```
 
+## Channel Sends (Routing Between Channels)
+
+```csharp
+var ch1 = Audio.CreateChannel(1);
+var ch2 = Audio.CreateChannel(2);
+
+// simple send (ch1 -> ch2)
+ch1.Route(2);
+
+// sidechain-style send with gain control
+var side = ch1.SideChain(2, gain: 0.5f);
+side.Gain = 0.7f;
+```
+
 Notes:
 - Inputs are routed as normal `ISampleProvider` sources.
 - Effects are applied via channel or master effects.

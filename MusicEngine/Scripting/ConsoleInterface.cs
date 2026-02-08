@@ -24,6 +24,7 @@ public sealed class ConsoleInterface
     private readonly Vst3Registry? _vst3Registry;
     private readonly bool _editorMode;
     private readonly bool _quietMode;
+    private readonly bool _useMainScripts;
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
     private bool _hasExecutedScript;
 
@@ -37,7 +38,7 @@ public sealed class ConsoleInterface
     /// <param name="vst3Registry">Optional VST3 registry for listing/opening plugins.</param>
     /// <param name="editorMode">Enable editor mode commands.</param>
     public ConsoleInterface(ScriptHost host, string scriptContent, Action onExit, string? scriptFilePath = null,
-        Vst3Registry? vst3Registry = null, bool editorMode = false)
+        Vst3Registry? vst3Registry = null, bool editorMode = false, bool useMainScripts = false)
     {
         _host = host;
         _scriptContent = scriptContent;
@@ -45,6 +46,7 @@ public sealed class ConsoleInterface
         _onExit = onExit;
         _vst3Registry = vst3Registry;
         _editorMode = editorMode;
+        _useMainScripts = useMainScripts;
         _quietMode = _editorMode || Console.IsInputRedirected;
     }
 
@@ -233,12 +235,19 @@ public sealed class ConsoleInterface
 
         try
         {
-            if (!string.IsNullOrEmpty(_scriptFilePath) && File.Exists(_scriptFilePath))
+            bool executed;
+            if (_useMainScripts)
             {
-                _scriptContent = await File.ReadAllTextAsync(_scriptFilePath);
+                executed = await _host.RefreshMainScriptsAsync();
             }
-
-            bool executed = await _host.RefreshScriptAsync(_scriptContent, skipIfUnchanged: !_quietMode);
+            else
+            {
+                if (!string.IsNullOrEmpty(_scriptFilePath) && File.Exists(_scriptFilePath))
+                {
+                    _scriptContent = await File.ReadAllTextAsync(_scriptFilePath);
+                }
+                executed = await _host.RefreshScriptAsync(_scriptContent, skipIfUnchanged: !_quietMode);
+            }
             Console.WriteLine(executed ? "Refresh Complete." : "No changes detected.");
             if (executed)
             {

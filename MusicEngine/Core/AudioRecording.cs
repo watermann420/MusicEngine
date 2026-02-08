@@ -131,7 +131,8 @@ public sealed class RecordingSession : IDisposable
         if (options == null) return false;
         if (options.SampleRate.HasValue) return true;
         if (options.Channels.HasValue) return true;
-        if (options.WavBitDepth.HasValue && options.WavBitDepth.Value != 32) return true;
+        int bitDepth = options.WavBitDepth ?? Settings.WavBitDepth;
+        if (bitDepth != 32) return true;
         return false;
     }
 
@@ -139,7 +140,7 @@ public sealed class RecordingSession : IDisposable
     {
         using var reader = new AudioFileReader(sourcePath);
         var provider = ApplySampleOptions(reader, options);
-        int bitDepth = options?.WavBitDepth ?? 32;
+        int bitDepth = options?.WavBitDepth ?? Settings.WavBitDepth;
         WriteWaveFile(targetPath, provider, bitDepth);
     }
 
@@ -161,7 +162,7 @@ public sealed class RecordingSession : IDisposable
             waveProvider = resampler;
         }
 
-        int bitrate = (options?.BitRateKbps ?? DefaultBitrateKbps(format)) * 1000;
+        int bitrate = (options?.BitRateKbps ?? Settings.BitRateKbps) * 1000;
         switch (format)
         {
             case "mp3":
@@ -259,13 +260,7 @@ public sealed class RecordingSession : IDisposable
 
     private static int DefaultBitrateKbps(string format)
     {
-        return format switch
-        {
-            "aac" => 192,
-            "m4a" => 192,
-            "wma" => 192,
-            _ => 192
-        };
+        return Settings.BitRateKbps;
     }
 }
 

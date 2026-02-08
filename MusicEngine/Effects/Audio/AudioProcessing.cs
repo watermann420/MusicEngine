@@ -125,6 +125,34 @@ internal sealed class LimiterSampleProvider : ISampleProvider
     }
 }
 
+internal sealed class BitDepthSampleProvider : ISampleProvider
+{
+    private readonly ISampleProvider _source;
+    private readonly int _bits;
+    private readonly float _scale;
+
+    public BitDepthSampleProvider(ISampleProvider source, int bits)
+    {
+        _source = source;
+        _bits = Math.Clamp(bits, 4, 31);
+        _scale = (float)((1 << (_bits - 1)) - 1);
+        WaveFormat = source.WaveFormat;
+    }
+
+    public WaveFormat WaveFormat { get; }
+
+    public int Read(float[] buffer, int offset, int count)
+    {
+        int read = _source.Read(buffer, offset, count);
+        for (int i = offset; i < offset + read; i++)
+        {
+            float sample = Math.Clamp(buffer[i], -1f, 1f);
+            buffer[i] = (float)(Math.Round(sample * _scale) / _scale);
+        }
+        return read;
+    }
+}
+
 internal sealed class AudioEffectChain : ISampleProvider
 {
     private readonly ISampleProvider _input;

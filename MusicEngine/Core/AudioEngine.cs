@@ -4,6 +4,7 @@
 // Description: Minimal audio engine for script-driven playback.
 
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using MusicEngine.Effects.Audio;
 using NAudio.CoreAudioApi;
@@ -28,6 +29,7 @@ public sealed class AudioEngine : IDisposable
     private readonly Dictionary<int, AudioChannel> _channels = new();
     private readonly Dictionary<ISampleProvider, AudioChannel> _routing = new();
     private readonly Dictionary<ISampleProvider, ISampleProvider> _normalizedProviders = new();
+    private readonly Dictionary<(int Source, int Target), ChannelSend> _channelSends = new();
     private readonly object _routingLock = new();
     private readonly Dictionary<int, MidiIn> _midiInputs = new();
     private readonly List<AudioInput> _audioInputs = new();
@@ -69,7 +71,12 @@ public sealed class AudioEngine : IDisposable
         _transportVolume = new VolumeSampleProvider(_masterVolume) { Volume = 1.0f };
         var dcBlock = new DcBlockingSampleProvider(_transportVolume, 1f, _waveFormat.SampleRate);
         var limiter = new LimiterSampleProvider(dcBlock, 0.95f, _waveFormat.SampleRate, attackMs: 2f, releaseMs: 60f);
-        _masterChain = new SoftClipSampleProvider(limiter, 0.99f);
+        ISampleProvider master = new SoftClipSampleProvider(limiter, 0.99f);
+        if (Settings.OutputBitDepth > 0 && Settings.OutputBitDepth < 32)
+        {
+            master = new BitDepthSampleProvider(master, Settings.OutputBitDepth);
+        }
+        _masterChain = master;
         _masterTap = new RecordingTap(_masterChain);
         _masterTap.SamplesAvailable += OnMasterSamples;
         _midiRouter.EditorMidiNoteEvent += info => EditorMidiNote?.Invoke(info);
@@ -259,7 +266,8 @@ public sealed class AudioEngine : IDisposable
         for (int i = 0; i < devices.Count; i++)
         {
             var device = devices[i];
-            list.Add(new AudioOutputDeviceInfo(i, device.ID, device.FriendlyName));
+            var format = device.AudioClient.MixFormat;
+            list.Add(new AudioOutputDeviceInfo(i, device.ID, device.FriendlyName, format.Channels, format.SampleRate));
         }
         return list;
     }
@@ -271,7 +279,18 @@ public sealed class AudioEngine : IDisposable
     {
         var device = TryGetOutputDevice(deviceIndex);
         if (device == null) return false;
-        AddVirtualOutput(_masterVirtualOutputs, device, latencyMs);
+        AddVirtualOutput(_masterVirtualOutputs, device, latencyMs, 0);
+        return true;
+    }
+
+    /// <summary>
+    /// Start a virtual output from the master chain to a render device with channel offset.
+    /// </summary>
+    public bool StartMasterVirtualOutput(int deviceIndex, int outputChannelOffset, int latencyMs = 80)
+    {
+        var device = TryGetOutputDevice(deviceIndex);
+        if (device == null) return false;
+        AddVirtualOutput(_masterVirtualOutputs, device, latencyMs, outputChannelOffset);
         return true;
     }
 
@@ -282,7 +301,18 @@ public sealed class AudioEngine : IDisposable
     {
         var device = TryGetOutputDevice(deviceName);
         if (device == null) return false;
-        AddVirtualOutput(_masterVirtualOutputs, device, latencyMs);
+        AddVirtualOutput(_masterVirtualOutputs, device, latencyMs, 0);
+        return true;
+    }
+
+    /// <summary>
+    /// Start a virtual output from the master chain to a render device by name with channel offset.
+    /// </summary>
+    public bool StartMasterVirtualOutput(string deviceName, int outputChannelOffset, int latencyMs = 80)
+    {
+        var device = TryGetOutputDevice(deviceName);
+        if (device == null) return false;
+        AddVirtualOutput(_masterVirtualOutputs, device, latencyMs, outputChannelOffset);
         return true;
     }
 
@@ -302,6 +332,114 @@ public sealed class AudioEngine : IDisposable
     }
 
     /// <summary>
+    /// Route a channel output into another channel (send).
+    /// </summary>
+    /// <param name="sourceIndex">Source channel (1-based).</param>
+    /// <param name="targetIndex">Target channel (1-based).</param>
+    /// <param name="gain">Send gain in [0, 1].</param>
+    public void RouteChannelToChannel(int sourceIndex, int targetIndex, float gain = 1f)
+    {
+        if (sourceIndex < 1) sourceIndex = 1;
+        if (targetIndex < 1) targetIndex = 1;
+        if (sourceIndex == targetIndex) return;
+
+        var source = GetOrCreateChannel(sourceIndex);
+        var target = GetOrCreateChannel(targetIndex);
+
+        var key = (sourceIndex, targetIndex);
+        lock (_routingLock)
+        {
+            if (_channelSends.TryGetValue(key, out var existing))
+            {
+                target.Mixer.RemoveMixerInput(existing.Volume);
+                source.Tap.SamplesAvailable -= existing.Handler;
+                _channelSends.Remove(key);
+            }
+
+            var buffer = new BufferedWaveProvider(_waveFormat)
+            {
+                DiscardOnBufferOverflow = true,
+                BufferDuration = TimeSpan.FromSeconds(2)
+            };
+            var sampleProvider = buffer.ToSampleProvider();
+            var volume = new VolumeSampleProvider(sampleProvider)
+            {
+                Volume = Math.Clamp(gain, 0f, 1f)
+            };
+
+            Action<float[], int, int> handler = (data, offset, count) =>
+            {
+                WriteToBuffer(buffer, data, offset, count);
+            };
+
+            source.Tap.SamplesAvailable += handler;
+            target.Mixer.AddMixerInput(volume);
+
+            _channelSends[key] = new ChannelSend(sourceIndex, targetIndex, buffer, volume, handler);
+        }
+    }
+
+    /// <summary>
+    /// Update gain for an existing channel send.
+    /// </summary>
+    public void SetChannelSendGain(int sourceIndex, int targetIndex, float gain)
+    {
+        var key = (sourceIndex, targetIndex);
+        lock (_routingLock)
+        {
+            if (_channelSends.TryGetValue(key, out var send))
+            {
+                send.Volume.Volume = Math.Clamp(gain, 0f, 1f);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Remove a channel send.
+    /// </summary>
+    public void UnrouteChannelFromChannel(int sourceIndex, int targetIndex)
+    {
+        var key = (sourceIndex, targetIndex);
+        lock (_routingLock)
+        {
+            if (!_channelSends.TryGetValue(key, out var send)) return;
+            if (_channels.TryGetValue(targetIndex, out var target))
+            {
+                target.Mixer.RemoveMixerInput(send.Volume);
+            }
+            if (_channels.TryGetValue(sourceIndex, out var source))
+            {
+                source.Tap.SamplesAvailable -= send.Handler;
+            }
+            _channelSends.Remove(key);
+        }
+    }
+
+    /// <summary>
+    /// Clear all sends for a source channel.
+    /// </summary>
+    public void ClearChannelSends(int sourceIndex)
+    {
+        if (sourceIndex < 1) sourceIndex = 1;
+        List<(int Source, int Target)> keys = new();
+        lock (_routingLock)
+        {
+            foreach (var key in _channelSends.Keys)
+            {
+                if (key.Source == sourceIndex)
+                {
+                    keys.Add(key);
+                }
+            }
+        }
+
+        foreach (var key in keys)
+        {
+            UnrouteChannelFromChannel(key.Source, key.Target);
+        }
+    }
+
+    /// <summary>
     /// Start a virtual output from a channel to a render device.
     /// </summary>
     public bool StartChannelVirtualOutput(int channelIndex, int deviceIndex, int latencyMs = 80)
@@ -310,7 +448,20 @@ public sealed class AudioEngine : IDisposable
         var device = TryGetOutputDevice(deviceIndex);
         if (device == null) return false;
         var outputs = GetOrCreateChannelVirtualOutputs(channelIndex);
-        AddVirtualOutput(outputs, device, latencyMs);
+        AddVirtualOutput(outputs, device, latencyMs, 0);
+        return true;
+    }
+
+    /// <summary>
+    /// Start a virtual output from a channel to a render device with channel offset.
+    /// </summary>
+    public bool StartChannelVirtualOutput(int channelIndex, int deviceIndex, int outputChannelOffset, int latencyMs = 80)
+    {
+        if (channelIndex < 1) channelIndex = 1;
+        var device = TryGetOutputDevice(deviceIndex);
+        if (device == null) return false;
+        var outputs = GetOrCreateChannelVirtualOutputs(channelIndex);
+        AddVirtualOutput(outputs, device, latencyMs, outputChannelOffset);
         return true;
     }
 
@@ -323,7 +474,20 @@ public sealed class AudioEngine : IDisposable
         var device = TryGetOutputDevice(deviceName);
         if (device == null) return false;
         var outputs = GetOrCreateChannelVirtualOutputs(channelIndex);
-        AddVirtualOutput(outputs, device, latencyMs);
+        AddVirtualOutput(outputs, device, latencyMs, 0);
+        return true;
+    }
+
+    /// <summary>
+    /// Start a virtual output from a channel to a render device by name with channel offset.
+    /// </summary>
+    public bool StartChannelVirtualOutput(int channelIndex, string deviceName, int outputChannelOffset, int latencyMs = 80)
+    {
+        if (channelIndex < 1) channelIndex = 1;
+        var device = TryGetOutputDevice(deviceName);
+        if (device == null) return false;
+        var outputs = GetOrCreateChannelVirtualOutputs(channelIndex);
+        AddVirtualOutput(outputs, device, latencyMs, outputChannelOffset);
         return true;
     }
 
@@ -545,6 +709,7 @@ public sealed class AudioEngine : IDisposable
     public void Dispose()
     {
         SetEditorMode(false);
+        ClearAllChannelSends();
         foreach (var midiIn in _midiInputs.Values)
         {
             midiIn.Stop();
@@ -593,6 +758,35 @@ public sealed class AudioEngine : IDisposable
         return channel;
     }
 
+    private static void WriteToBuffer(BufferedWaveProvider buffer, float[] samples, int offset, int count)
+    {
+        int byteCount = count * sizeof(float);
+        var rented = ArrayPool<byte>.Shared.Rent(byteCount);
+        try
+        {
+            Buffer.BlockCopy(samples, offset * sizeof(float), rented, 0, byteCount);
+            buffer.AddSamples(rented, 0, byteCount);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(rented);
+        }
+    }
+
+    private void ClearAllChannelSends()
+    {
+        List<(int Source, int Target)> keys;
+        lock (_routingLock)
+        {
+            keys = new List<(int, int)>(_channelSends.Keys);
+        }
+
+        foreach (var key in keys)
+        {
+            UnrouteChannelFromChannel(key.Source, key.Target);
+        }
+    }
+
     private ISampleProvider GetOrCreateNormalized(ISampleProvider provider)
     {
         if (_normalizedProviders.TryGetValue(provider, out var normalized)) return normalized;
@@ -630,6 +824,25 @@ public sealed class AudioEngine : IDisposable
             Effects = effects;
             Volume = volume;
             Tap = tap;
+        }
+    }
+
+    private sealed class ChannelSend
+    {
+        public int Source { get; }
+        public int Target { get; }
+        public BufferedWaveProvider Buffer { get; }
+        public VolumeSampleProvider Volume { get; }
+        public Action<float[], int, int> Handler { get; }
+
+        public ChannelSend(int source, int target, BufferedWaveProvider buffer, VolumeSampleProvider volume,
+            Action<float[], int, int> handler)
+        {
+            Source = source;
+            Target = target;
+            Buffer = buffer;
+            Volume = volume;
+            Handler = handler;
         }
     }
 
@@ -730,20 +943,21 @@ public sealed class AudioEngine : IDisposable
         }
     }
 
-    private void AddVirtualOutput(List<AudioVirtualOutput> outputs, MMDevice device, int latencyMs)
+    private void AddVirtualOutput(List<AudioVirtualOutput> outputs, MMDevice device, int latencyMs, int outputChannelOffset)
     {
         lock (_virtualOutputLock)
         {
             foreach (var existing in outputs)
             {
-                if (string.Equals(existing.DeviceId, device.ID, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(existing.DeviceId, device.ID, StringComparison.OrdinalIgnoreCase) &&
+                    existing.OutputChannelOffset == outputChannelOffset)
                 {
                     device.Dispose();
                     return;
                 }
             }
 
-            outputs.Add(new AudioVirtualOutput(device, _waveFormat, latencyMs));
+            outputs.Add(new AudioVirtualOutput(device, _waveFormat, latencyMs, outputChannelOffset));
         }
     }
 
@@ -770,7 +984,7 @@ public sealed class AudioEngine : IDisposable
         return null;
     }
 
-    public readonly record struct AudioOutputDeviceInfo(int Index, string Id, string Name);
+    public readonly record struct AudioOutputDeviceInfo(int Index, string Id, string Name, int Channels, int SampleRate);
     public readonly record struct AudioInputDeviceInfo(int Index, string Id, string Name);
 
     private static MMDevice? TryGetInputDevice(int index)

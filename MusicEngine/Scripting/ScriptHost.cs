@@ -46,6 +46,11 @@ public sealed class ScriptHost
     private readonly string? _scriptFilePath;
     private readonly Dictionary<string, string> _moduleCodeCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly ScriptLibrary _library;
+    private readonly HashSet<string> _masterScripts = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<string> _masterScriptOrder = new();
+    private readonly Dictionary<string, string> _scriptAliases = new(StringComparer.OrdinalIgnoreCase);
+    private HashSet<string>? _modulesExecutedThisRun;
+    private string? _currentScriptFilePath;
 
     /// <summary>
     /// Create a script host bound to an engine and sequencer.
@@ -97,15 +102,56 @@ public sealed class ScriptHost
     /// </summary>
     public async Task<bool> RefreshScriptAsync(string code, bool skipIfUnchanged = true)
     {
-        return await RunScriptAsync(code, skipIfUnchanged, clearState: true, filePath: _scriptFilePath,
-            cacheKey: null);
+        ClearState();
+        _modulesExecutedThisRun = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            await RunMasterScriptsAsync();
+            return await RunScriptAsync(code, skipIfUnchanged, clearState: false, filePath: _scriptFilePath,
+                cacheKey: null);
+        }
+        finally
+        {
+            _modulesExecutedThisRun = null;
+        }
     }
+
+    public async Task<bool> RefreshMainScriptsAsync()
+    {
+        ClearState();
+        _modulesExecutedThisRun = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            var mainScripts = FindMainScripts();
+            if (mainScripts.Count == 0)
+            {
+                Console.WriteLine("No main file active.");
+                return false;
+            }
+
+            foreach (var script in mainScripts)
+            {
+                await ExecuteModuleAsync(script, skipIfUnchanged: false);
+            }
+            return true;
+        }
+        finally
+        {
+            _modulesExecutedThisRun = null;
+        }
+    }
+
 
     internal async Task<bool> ExecuteModuleAsync(string scriptName, bool skipIfUnchanged = true)
     {
         if (string.IsNullOrWhiteSpace(scriptName))
         {
             Console.WriteLine("Script Error: module name is empty.");
+            return false;
+        }
+
+        if (_modulesExecutedThisRun != null && _modulesExecutedThisRun.Contains(scriptName))
+        {
             return false;
         }
 
@@ -117,12 +163,18 @@ public sealed class ScriptHost
         }
 
         var code = File.ReadAllText(path);
-        return await RunScriptAsync(code, skipIfUnchanged, clearState: false, filePath: path, cacheKey: path);
+        var executed = await RunScriptAsync(code, skipIfUnchanged, clearState: false, filePath: path, cacheKey: path);
+        if (_modulesExecutedThisRun != null && executed)
+        {
+            _modulesExecutedThisRun.Add(scriptName);
+        }
+        return executed;
     }
 
     private async Task<bool> RunScriptAsync(string code, bool skipIfUnchanged, bool clearState, string? filePath,
         string? cacheKey)
     {
+        code = PreprocessCode(code);
         if (skipIfUnchanged)
         {
             if (cacheKey == null && string.Equals(_lastExecutedCode, code, StringComparison.Ordinal))
@@ -143,6 +195,10 @@ public sealed class ScriptHost
         }
 
         var globals = GetOrCreateGlobals();
+        var previousFilePath = _currentScriptFilePath;
+        var previousGlobalsPath = globals.ScriptFilePath;
+        _currentScriptFilePath = filePath;
+        globals.ScriptFilePath = filePath;
         var script = GetOrCompile(code, filePath);
 
         try
@@ -172,6 +228,11 @@ public sealed class ScriptHost
                 LogRuntimeError(ex);
             }
             return false;
+        }
+        finally
+        {
+            _currentScriptFilePath = previousFilePath;
+            globals.ScriptFilePath = previousGlobalsPath;
         }
     }
 
@@ -217,6 +278,147 @@ public sealed class ScriptHost
             _compiledFilePath = filePath;
             return _compiledScript;
         }
+    }
+
+    internal string? CurrentScriptFilePath => _currentScriptFilePath;
+
+    internal string? GetAliasForScript(string scriptName)
+    {
+        if (string.IsNullOrWhiteSpace(scriptName)) return null;
+        return _scriptAliases.TryGetValue(scriptName, out var alias) ? alias : null;
+    }
+
+    internal void RegisterScriptAlias(string alias, string scriptName)
+    {
+        if (string.IsNullOrWhiteSpace(alias) || string.IsNullOrWhiteSpace(scriptName)) return;
+        _scriptAliases[scriptName] = alias;
+    }
+
+    internal void RegisterMasterScript(string scriptName)
+    {
+        if (string.IsNullOrWhiteSpace(scriptName)) return;
+        if (_masterScripts.Add(scriptName))
+        {
+            _masterScriptOrder.Add(scriptName);
+        }
+    }
+
+    private async Task RunMasterScriptsAsync()
+    {
+        if (_masterScriptOrder.Count == 0) return;
+        var mainName = string.IsNullOrWhiteSpace(_scriptFilePath)
+            ? null
+            : Path.GetFileNameWithoutExtension(_scriptFilePath);
+        foreach (var script in _masterScriptOrder)
+        {
+            if (!string.IsNullOrWhiteSpace(mainName) &&
+                string.Equals(mainName, script, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+            await ExecuteModuleAsync(script, skipIfUnchanged: false);
+        }
+    }
+
+    private string? ResolveScriptsDirectory()
+    {
+        var baseDir = !string.IsNullOrWhiteSpace(_scriptFilePath)
+            ? Path.GetDirectoryName(_scriptFilePath)
+            : AppContext.BaseDirectory;
+        return string.IsNullOrWhiteSpace(baseDir) ? null : baseDir;
+    }
+
+    private List<string> FindMainScripts()
+    {
+        var scriptsDir = ResolveScriptsDirectory();
+        if (string.IsNullOrWhiteSpace(scriptsDir) || !Directory.Exists(scriptsDir))
+        {
+            return new List<string>();
+        }
+
+        var results = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var files = Directory.GetFiles(scriptsDir, "*.csx", SearchOption.TopDirectoryOnly);
+        foreach (var file in files)
+        {
+            var code = File.ReadAllText(file);
+            foreach (Match match in MainFileRegex.Matches(code))
+            {
+                if (match.Groups.Count < 2) continue;
+                var name = match.Groups[1].Value.Trim();
+                if (string.IsNullOrWhiteSpace(name) && match.Groups.Count > 2)
+                {
+                    name = match.Groups[2].Value.Trim();
+                }
+                if (!string.IsNullOrWhiteSpace(name))
+                {
+                    results.Add(name);
+                }
+            }
+
+            if (MainFileBuilderRegex.IsMatch(code))
+            {
+                results.Add(Path.GetFileNameWithoutExtension(file));
+            }
+        }
+
+        return results.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+
+    private static readonly Regex FileTwoArgsRegex =
+        new(@"\bFile\s*\(\s*([A-Za-z_]\w*)\s*,\s*([A-Za-z_]\w*)\s*\)", RegexOptions.Compiled);
+    private static readonly Regex FileOneArgRegex =
+        new(@"\bFile\s*\(\s*([A-Za-z_]\w*)\s*\)", RegexOptions.Compiled);
+    private static readonly Regex MainFileRegex =
+        new(@"\bFile\s*\(\s*(?:Main|\""Main\"")\s*,\s*(?:\""([^\""]+)\""|([A-Za-z_]\w*))\s*\)",
+            RegexOptions.Compiled);
+    private static readonly Regex MainFileBuilderRegex =
+        new(@"\bFile\s*\.Main\s*\(\s*\)\s*\.Name\s*\(\s*(?:\""([^\""]+)\""|([A-Za-z_]\w*))\s*\)",
+            RegexOptions.Compiled);
+
+    private string PreprocessCode(string code)
+    {
+        if (string.IsNullOrEmpty(code)) return code;
+        code = FileTwoArgsRegex.Replace(code, "File(\"$1\", \"$2\")");
+        code = FileOneArgRegex.Replace(code, "File(\"$1\")");
+        code = PreprocessFileNameCalls(code);
+        return code;
+    }
+
+    private string PreprocessFileNameCalls(string code)
+    {
+        var scriptsDir = ResolveScriptsDirectory();
+        if (!string.IsNullOrWhiteSpace(scriptsDir) && Directory.Exists(scriptsDir))
+        {
+            foreach (var path in Directory.GetFiles(scriptsDir, "*.csx", SearchOption.TopDirectoryOnly))
+            {
+                var name = Path.GetFileNameWithoutExtension(path);
+                if (string.IsNullOrWhiteSpace(name)) continue;
+                code = Regex.Replace(code, $@"\bFile\.Main\s*\(\s*\.Name\(\s*{Regex.Escape(name)}\s*\)\s*\)",
+                    $"File.Main().Name(\"{name}\")");
+                code = Regex.Replace(code, $@"\bFile\s*\(\s*\.Name\(\s*{Regex.Escape(name)}\s*\)\s*\)",
+                    $"File.Name(\"{name}\")");
+                code = Regex.Replace(code, $@"\bFile\.Main\s*\(\s*\)\s*\.Name\(\s*{Regex.Escape(name)}\s*\)",
+                    $"File.Main().Name(\"{name}\")");
+                code = Regex.Replace(code, $@"\bFile\s*\.Name\(\s*{Regex.Escape(name)}\s*\)",
+                    $"File.Name(\"{name}\")");
+                code = Regex.Replace(code, $@"\bfile\s*\.Name\(\s*{Regex.Escape(name)}\s*\)",
+                    $"file.Name(\"{name}\")");
+                code = Regex.Replace(code, $@"\bfile\s*\.NameSpace\(\s*{Regex.Escape(name)}\s*\)",
+                    $"file.NameSpace(\"{name}\")");
+                code = Regex.Replace(code, $@"\bFile\s*\.NameSpace\(\s*{Regex.Escape(name)}\s*\)",
+                    $"File.NameSpace(\"{name}\")");
+            }
+        }
+
+        code = Regex.Replace(code, @"\bFile\s*\.Main\s*\(\s*\)\s*\.Name\(\s*([A-Za-z_]\w*)\s*\)",
+            "File.Main().Name(\"$1\")");
+        code = Regex.Replace(code, @"\bFile\s*\.Name\(\s*([A-Za-z_]\w*)\s*\)",
+            "File.Name(\"$1\")");
+        code = Regex.Replace(code, @"\bfile\s*\.Name\(\s*([A-Za-z_]\w*)\s*\)",
+            "file.Name(\"$1\")");
+
+        return code;
     }
 
     /// <summary>

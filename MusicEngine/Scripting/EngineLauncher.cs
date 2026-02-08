@@ -42,6 +42,23 @@ public static class EngineLauncher
         }
 
         Vst3Registry? registry = null;
+        var outputDevices = engine.ListOutputDevices();
+        Console.WriteLine();
+        Console.WriteLine("Audio Outputs:");
+        if (outputDevices.Count == 0)
+        {
+            Console.WriteLine("  (none)");
+        }
+        else
+        {
+            foreach (var device in outputDevices)
+            {
+                Console.WriteLine(
+                    $"  [{device.Index}] {device.Name} ({device.Channels}ch @ {device.SampleRate}Hz) " +
+                    $"(use Audio.Channel(n).VirtualOut({device.Index}) or Audio.Channel(n).VirtualOut({device.Index}, offset))");
+            }
+        }
+
         var inputDevices = engine.ListInputDevices();
         Console.WriteLine();
         Console.WriteLine("Audio Inputs:");
@@ -95,24 +112,17 @@ public static class EngineLauncher
             e.Cancel = false;
         };
 
-        string activeScript = defaultScript;
-        if (!File.Exists(scriptPath))
+        var directory = Path.GetDirectoryName(scriptPath);
+        if (!string.IsNullOrWhiteSpace(directory))
         {
-            var directory = Path.GetDirectoryName(scriptPath);
-            if (!string.IsNullOrWhiteSpace(directory))
-            {
-                Directory.CreateDirectory(directory);
-            }
-            File.WriteAllText(scriptPath, defaultScript);
+            Directory.CreateDirectory(directory);
         }
-        else
-        {
-            activeScript = File.ReadAllText(scriptPath);
-        }
+
+        string activeScript = string.Empty;
 
         if (executeScriptOnStartup)
         {
-            await host.ExecuteScriptAsync(activeScript);
+            await host.RefreshMainScriptsAsync();
         }
 
         if (editorMode)
@@ -142,7 +152,7 @@ public static class EngineLauncher
         }
 
         var ui = new ConsoleInterface(host, activeScript, () => sequencer.Stop(), scriptPath, registry,
-            editorMode: editorMode);
+            editorMode: editorMode, useMainScripts: true);
         await ui.RunAsync();
     }
 }
