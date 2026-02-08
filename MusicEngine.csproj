@@ -21,6 +21,10 @@
       <Folder Include="Docs\" />
     </ItemGroup>
 
+    <ItemGroup>
+      <Compile Remove="MusicEngine.Installer\**\*.cs" />
+    </ItemGroup>
+
     <Target Name="CopyNativeVstHost" AfterTargets="Build">
       <PropertyGroup>
         <NativeVstHostDll>$(MSBuildProjectDirectory)\MusicEngine.CppLayer\native\x64\$(Configuration)\MusicEngine.CppLayer.Native.dll</NativeVstHostDll>
