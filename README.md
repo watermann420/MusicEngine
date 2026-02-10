@@ -11,9 +11,9 @@
 
 Scriptable C# music engine for realtime playback, instruments, and VST3 hosting.
 
-## What is MusicEngine?
+## What makes MusicEngine different?
 
-MusicEngine is a lightweight C# audio engine for scripting and realtime playback. It provides built-in instruments, routing, and VST3 hosting so you can play notes, shape sound, and build small music tools quickly.
+MusicEngine is a C# scripting language for music. It supports VSTs, sequencers, and patterns but does not force any workflow. You keep full control over time and timing. Everything is a tool, nothing is forced, and there are no hidden mathematical clamps. Almost anything can be turned into a variable and be modulated.
 
 ## Pattern Example (Script)
 
@@ -44,6 +44,23 @@ var synth = CreateSynth();
 midi.device(0).to(synth);
 midi.device(0).cc(1).to(value => synth.SetParameter("cutoff", value));
 midi.device(0).pitchbend().to(value => synth.PitchBend(value * 2f - 1f));
+```
+
+More MIDI details: `Docs/Midi.md`
+
+Device/channel/route toggles:
+
+```csharp
+var synth = CreateSynth();
+
+var midi1 = midi.Device(0);          // device handle
+var route1 = midi.Device(0).to(synth); // device -> synth route
+
+midi1.Active(false);                 // disable device input
+midi1.Active(true);                  // enable device input
+
+midi.Device(0).Channel(1).Active(false); // disable channel 2 on device 0
+route1.Active(false);                    // disable only this route
 ```
 
 ## Modular Effects Example (Script)

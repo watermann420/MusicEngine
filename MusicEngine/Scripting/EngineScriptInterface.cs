@@ -30,6 +30,11 @@ public sealed class EngineScriptInterfaceOptions
     /// Optional sample rate override for the audio engine.
     /// </summary>
     public int? SampleRate { get; set; }
+
+    /// <summary>
+    /// Optional script file path for refresh and error mapping.
+    /// </summary>
+    public string? ScriptFilePath { get; set; }
 }
 
 /// <summary>
@@ -224,7 +229,7 @@ public sealed class EngineScriptInterface : IEngineScriptInterface
             VstRegistry = scannedRegistry;
         }
 
-        _host = new ScriptHost(Engine, Sequencer, VstRegistry);
+        _host = new ScriptHost(Engine, Sequencer, VstRegistry, _options.ScriptFilePath);
 
         if (_options.StartSequencerOnStartup)
         {

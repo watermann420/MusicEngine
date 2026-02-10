@@ -20,12 +20,14 @@ public sealed class MidiRouter
     /// Whether MIDI routing is currently enabled.
     /// </summary>
     public bool Enabled { get; private set; } = true;
-    private readonly Dictionary<int, Dictionary<int, HashSet<ISynth>>> _routing = new();
+    private readonly Dictionary<int, Dictionary<int, Dictionary<ISynth, MidiRoute>>> _routing = new();
     private readonly List<MidiMapping> _mappings = new();
     private readonly object _activityLock = new();
     private readonly Dictionary<int, MidiDeviceActivitySnapshot> _activity = new();
     private readonly object _deviceActiveLock = new();
     private readonly Dictionary<int, long> _deviceActiveTicks = new();
+    private readonly HashSet<int> _disabledDevices = new();
+    private readonly HashSet<(int Device, int Channel)> _disabledChannels = new();
     private bool _editorModeEnabled;
     private const int DeviceActiveDebounceMs = 100;
 
@@ -47,6 +49,17 @@ public sealed class MidiRouter
         public Action<float> Action { get; init; } = null!;
     }
 
+    private sealed class MidiRoute
+    {
+        public ISynth Synth { get; }
+        public bool Enabled { get; set; } = true;
+
+        public MidiRoute(ISynth synth)
+        {
+            Synth = synth;
+        }
+    }
+
     /// <summary>
     /// Route a MIDI device to a synth.
     /// </summary>
@@ -66,17 +79,24 @@ public sealed class MidiRouter
         channel = NormalizeChannel(channel);
         if (!_routing.TryGetValue(deviceIndex, out var perChannel))
         {
-            perChannel = new Dictionary<int, HashSet<ISynth>>();
+            perChannel = new Dictionary<int, Dictionary<ISynth, MidiRoute>>();
             _routing[deviceIndex] = perChannel;
         }
 
         if (!perChannel.TryGetValue(channel, out var targets))
         {
-            targets = new HashSet<ISynth>();
+            targets = new Dictionary<ISynth, MidiRoute>();
             perChannel[channel] = targets;
         }
 
-        targets.Add(synth);
+        if (targets.TryGetValue(synth, out var route))
+        {
+            route.Enabled = true;
+        }
+        else
+        {
+            targets[synth] = new MidiRoute(synth);
+        }
     }
 
     /// <summary>
@@ -136,6 +156,70 @@ public sealed class MidiRouter
     }
 
     /// <summary>
+    /// Enable or disable a specific MIDI device.
+    /// </summary>
+    public void SetDeviceEnabled(int deviceIndex, bool enabled, bool sendAllNotesOff = true)
+    {
+        if (enabled)
+        {
+            _disabledDevices.Remove(deviceIndex);
+            return;
+        }
+
+        _disabledDevices.Add(deviceIndex);
+        if (!sendAllNotesOff) return;
+        foreach (var synth in GetRoutedSynths(deviceIndex))
+        {
+            synth.AllNotesOff();
+        }
+    }
+
+    /// <summary>
+    /// Enable or disable a specific MIDI device channel.
+    /// </summary>
+    public void SetChannelEnabled(int deviceIndex, int channel, bool enabled, bool sendAllNotesOff = true)
+    {
+        channel = NormalizeChannel(channel);
+        if (channel == AllChannels)
+        {
+            SetDeviceEnabled(deviceIndex, enabled, sendAllNotesOff);
+            return;
+        }
+
+        var key = (deviceIndex, channel);
+        if (enabled)
+        {
+            _disabledChannels.Remove(key);
+            return;
+        }
+
+        _disabledChannels.Add(key);
+        if (!sendAllNotesOff) return;
+        foreach (var synth in GetTargets(deviceIndex, channel, includeDisabledRoutes: true))
+        {
+            synth.AllNotesOff();
+        }
+    }
+
+    /// <summary>
+    /// Enable or disable a specific routed synth on a device/channel.
+    /// </summary>
+    public void SetRouteEnabled(int deviceIndex, int channel, ISynth synth, bool enabled, bool sendAllNotesOff = true)
+    {
+        if (synth == null) return;
+        channel = NormalizeChannel(channel);
+        if (!_routing.TryGetValue(deviceIndex, out var perChannel)) return;
+        if (!perChannel.TryGetValue(channel, out var routes)) return;
+        if (!routes.TryGetValue(synth, out var route)) return;
+
+        route.Enabled = enabled;
+        if (!enabled && sendAllNotesOff)
+        {
+            synth.AllNotesOff();
+        }
+    }
+
+    /// <summary>
     /// Enable or disable editor mode events.
     /// </summary>
     public void SetEditorMode(bool enabled)
@@ -151,6 +235,17 @@ public sealed class MidiRouter
     public void HandleMidiMessage(int deviceIndex, MidiInMessageEventArgs args)
     {
         UpdateActivity(deviceIndex, args);
+        if (_disabledDevices.Contains(deviceIndex))
+        {
+            return;
+        }
+
+        var channel = TryGetChannel(args);
+        if (channel.HasValue && _disabledChannels.Contains((deviceIndex, channel.Value)))
+        {
+            return;
+        }
+
         if (_editorModeEnabled)
         {
             TryEmitDeviceActive(deviceIndex);
@@ -163,8 +258,8 @@ public sealed class MidiRouter
 
         if (args.MidiEvent is NAudio.Midi.NoteEvent noteEvent)
         {
-            var channel = Math.Clamp(noteEvent.Channel, 0, 15);
-            foreach (var synth in GetTargets(deviceIndex, channel))
+            var normalizedChannel = Math.Clamp(noteEvent.Channel, 0, 15);
+            foreach (var synth in GetTargets(deviceIndex, normalizedChannel))
             {
                 if (noteEvent.CommandCode == MidiCommandCode.NoteOn)
                 {
@@ -347,25 +442,32 @@ public sealed class MidiRouter
     }
 
     private IEnumerable<ISynth> GetTargets(int deviceIndex, int channel)
+        => GetTargets(deviceIndex, channel, includeDisabledRoutes: false);
+
+    private IEnumerable<ISynth> GetTargets(int deviceIndex, int channel, bool includeDisabledRoutes)
     {
         if (!_routing.TryGetValue(deviceIndex, out var perChannel)) yield break;
 
         HashSet<ISynth>? any = null;
         if (perChannel.TryGetValue(AllChannels, out var anyTargets))
         {
-            any = anyTargets;
-            foreach (var synth in anyTargets)
+            any = new HashSet<ISynth>();
+            foreach (var route in anyTargets.Values)
             {
-                yield return synth;
+                if (route.Enabled || includeDisabledRoutes)
+                {
+                    any.Add(route.Synth);
+                    yield return route.Synth;
+                }
             }
         }
 
         if (!perChannel.TryGetValue(channel, out var channelTargets)) yield break;
-        foreach (var synth in channelTargets)
+        foreach (var route in channelTargets.Values)
         {
-            if (any == null || !any.Contains(synth))
+            if ((route.Enabled || includeDisabledRoutes) && (any == null || !any.Contains(route.Synth)))
             {
-                yield return synth;
+                yield return route.Synth;
             }
         }
     }
@@ -377,15 +479,42 @@ public sealed class MidiRouter
         {
             foreach (var targets in perChannel.Values)
             {
-                foreach (var synth in targets)
+                foreach (var route in targets.Values)
                 {
-                    if (seen.Add(synth))
+                    if (seen.Add(route.Synth))
                     {
-                        yield return synth;
+                        yield return route.Synth;
                     }
                 }
             }
         }
+    }
+
+    private IEnumerable<ISynth> GetRoutedSynths(int deviceIndex)
+    {
+        if (!_routing.TryGetValue(deviceIndex, out var perChannel)) yield break;
+        var seen = new HashSet<ISynth>();
+        foreach (var targets in perChannel.Values)
+        {
+            foreach (var route in targets.Values)
+            {
+                if (seen.Add(route.Synth))
+                {
+                    yield return route.Synth;
+                }
+            }
+        }
+    }
+
+    private static int? TryGetChannel(MidiInMessageEventArgs args)
+    {
+        return args.MidiEvent switch
+        {
+            NAudio.Midi.NoteEvent note => Math.Clamp(note.Channel, 0, 15),
+            PitchWheelChangeEvent bend => Math.Clamp(bend.Channel, 0, 15),
+            ControlChangeEvent cc => Math.Clamp(cc.Channel, 0, 15),
+            _ => null
+        };
     }
 }
 

@@ -15,16 +15,18 @@ public sealed class MidiSend
 {
     private readonly Random _random = new();
     private readonly MidiEffectChain _effects = new();
+    private readonly AudioEngine? _engine;
 
     public int DeviceIndex { get; }
     public int Channel { get; }
     public ISynth Synth { get; }
 
-    public MidiSend(int deviceIndex, int channel, ISynth synth)
+    public MidiSend(int deviceIndex, int channel, ISynth synth, AudioEngine? engine = null)
     {
         DeviceIndex = deviceIndex;
         Channel = channel;
         Synth = synth;
+        _engine = engine;
     }
 
     /// <summary>
@@ -36,6 +38,24 @@ public sealed class MidiSend
     /// Clear all MIDI effects.
     /// </summary>
     public void ClearEffects() => _effects.Clear();
+
+    /// <summary>
+    /// Enable or disable this specific route.
+    /// </summary>
+    public void Active(bool enabled, bool sendAllNotesOff = true)
+    {
+        _engine?.SetMidiRouteEnabled(DeviceIndex, Channel, Synth, enabled, sendAllNotesOff);
+    }
+
+    /// <summary>
+    /// Enable this specific route.
+    /// </summary>
+    public void Enable(bool sendAllNotesOff = true) => Active(true, sendAllNotesOff);
+
+    /// <summary>
+    /// Disable this specific route.
+    /// </summary>
+    public void Disable(bool sendAllNotesOff = true) => Active(false, sendAllNotesOff);
 
     /// <summary>
     /// Trigger a note on.

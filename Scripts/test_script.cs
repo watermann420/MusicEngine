@@ -3,6 +3,7 @@ audio.all.gain(1);  // Adjust as needed // Default is 0.1 is 10% volume
 
 
 
+
 // Create the synthesizer instance
 var synth = CreateSynth();
 
@@ -30,6 +31,9 @@ Midi.Device(0).Pitchbend().to((Action<float>)(val => synth.PitchBend(val * 2f - 
 Midi.Device(0).Pitchbend().to((Action<float>)(val => piano.PitchBend(val * 2f - 1f))); // map wheel to -1..1
 Midi.Device(0).Pitchbend().to((Action<float>)(val => vital.PitchBend(val * 2f - 1f))); // -1..1
 //midi.device(0).log.info(true); // Log MIDI input for debugging and mapping midi controls
+
+
+
 
 
 

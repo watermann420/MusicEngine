@@ -64,7 +64,7 @@ public sealed class DeviceControl
     public MidiSend to(ISynth synth)
     {
         _globals.RouteMidi(_deviceIndex, synth);
-        return new MidiSend(_deviceIndex, -1, synth);
+        return new MidiSend(_deviceIndex, -1, synth, _globals.Engine);
     }
     /// <summary>
     /// Route the device to a synth.
@@ -84,6 +84,27 @@ public sealed class DeviceControl
     /// Access a specific MIDI channel on this device.
     /// </summary>
     public ChannelControl Channel(int channel) => new ChannelControl(_globals, _deviceIndex, channel);
+
+    /// <summary>
+    /// Enable or disable this device.
+    /// </summary>
+    public void Active(bool enabled, bool sendAllNotesOff = true)
+        => _globals.SetMidiDeviceEnabled(_deviceIndex, enabled, sendAllNotesOff);
+
+    /// <summary>
+    /// Enable or disable this device.
+    /// </summary>
+    public void active(bool enabled, bool sendAllNotesOff = true) => Active(enabled, sendAllNotesOff);
+
+    /// <summary>
+    /// Enable this device.
+    /// </summary>
+    public void Enable(bool sendAllNotesOff = true) => Active(true, sendAllNotesOff);
+
+    /// <summary>
+    /// Disable this device.
+    /// </summary>
+    public void Disable(bool sendAllNotesOff = true) => Active(false, sendAllNotesOff);
 
     /// <summary>
     /// Map pitch bend to a control action.
@@ -174,7 +195,7 @@ public sealed class ChannelControl
     public MidiSend to(ISynth synth)
     {
         _globals.RouteMidi(_deviceIndex, _channel, synth);
-        return new MidiSend(_deviceIndex, _channel, synth);
+        return new MidiSend(_deviceIndex, _channel, synth, _globals.Engine);
     }
     /// <summary>
     /// Route the device channel to a synth.
@@ -250,6 +271,27 @@ public sealed class ChannelControl
     /// </summary>
     public JogControl Jog(MidiMap map, string name, JogMode fallbackMode = JogMode.RelativeSigned, int fallbackScale = 1)
         => jog(map, name, fallbackMode, fallbackScale);
+
+    /// <summary>
+    /// Enable or disable this device channel.
+    /// </summary>
+    public void Active(bool enabled, bool sendAllNotesOff = true)
+        => _globals.SetMidiChannelEnabled(_deviceIndex, _channel, enabled, sendAllNotesOff);
+
+    /// <summary>
+    /// Enable or disable this device channel.
+    /// </summary>
+    public void active(bool enabled, bool sendAllNotesOff = true) => Active(enabled, sendAllNotesOff);
+
+    /// <summary>
+    /// Enable this device channel.
+    /// </summary>
+    public void Enable(bool sendAllNotesOff = true) => Active(true, sendAllNotesOff);
+
+    /// <summary>
+    /// Disable this device channel.
+    /// </summary>
+    public void Disable(bool sendAllNotesOff = true) => Active(false, sendAllNotesOff);
 }
 
 /// <summary>

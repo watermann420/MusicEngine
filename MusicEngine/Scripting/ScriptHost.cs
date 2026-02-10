@@ -117,6 +117,20 @@ public sealed class ScriptHost
         }
     }
 
+    /// <summary>
+    /// Clear state then execute the configured script file, if available.
+    /// </summary>
+    public async Task<bool> RefreshScriptFromFileAsync(bool skipIfUnchanged = true)
+    {
+        if (string.IsNullOrWhiteSpace(_scriptFilePath) || !File.Exists(_scriptFilePath))
+        {
+            return false;
+        }
+
+        var code = await File.ReadAllTextAsync(_scriptFilePath);
+        return await RefreshScriptAsync(code, skipIfUnchanged);
+    }
+
     public async Task<bool> RefreshMainScriptsAsync()
     {
         ClearState();
@@ -1555,6 +1569,15 @@ public sealed class ScriptGlobals
 
     internal void RouteMidi(int deviceIndex, int channel, ISynth synth)
         => Engine.RouteMidiInput(deviceIndex, channel, synth);
+
+    internal void SetMidiDeviceEnabled(int deviceIndex, bool enabled, bool sendAllNotesOff)
+        => Engine.SetMidiDeviceEnabled(deviceIndex, enabled, sendAllNotesOff);
+
+    internal void SetMidiChannelEnabled(int deviceIndex, int channel, bool enabled, bool sendAllNotesOff)
+        => Engine.SetMidiChannelEnabled(deviceIndex, channel, enabled, sendAllNotesOff);
+
+    internal void SetMidiRouteEnabled(int deviceIndex, int channel, ISynth synth, bool enabled, bool sendAllNotesOff)
+        => Engine.SetMidiRouteEnabled(deviceIndex, channel, synth, enabled, sendAllNotesOff);
 
     internal void MapControlAction(int deviceIndex, int controlId, Action<float> action)
         => Engine.MapControlAction(deviceIndex, controlId, action);

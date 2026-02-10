@@ -25,25 +25,58 @@ public static class EngineLauncher
     /// <param name="startSequencerOnStartup">Start the sequencer immediately.</param>
     /// <param name="startSleeping">Start with audio output suspended.</param>
     /// <param name="editorMode">Enable editor mode hooks.</param>
+    /// <param name="enableIpc">Enable IPC server for editor integration.</param>
     public static async Task LaunchAsync(string defaultScript = "// Start coding music here...",
         bool executeScriptOnStartup = true, bool startSequencerOnStartup = true, bool startSleeping = false,
-        bool editorMode = false)
+        bool editorMode = false, bool enableIpc = true)
     {
         Console.WriteLine("MusicEngine minimal mode");
         Console.WriteLine("Initializing audio engine...");
 
-        using var engine = new AudioEngine();
-        engine.Initialize();
-        engine.SetEditorMode(editorMode);
+        string scriptPath = Path.Combine(AppContext.BaseDirectory, "Scripts", "test_script.cs");
 
-        var sequencer = new Sequencer();
-        if (startSequencerOnStartup)
+        string? projectDir = AppContext.BaseDirectory;
+        while (projectDir != null && !File.Exists(Path.Combine(projectDir, "MusicEngine.csproj")))
         {
-            sequencer.Start();
+            projectDir = Path.GetDirectoryName(projectDir);
         }
 
-        Vst3Registry? registry = null;
-        var outputDevices = engine.ListOutputDevices();
+        if (projectDir != null)
+        {
+            scriptPath = Path.Combine(projectDir, "Scripts", "test_script.cs");
+        }
+
+        if (!File.Exists(scriptPath))
+        {
+            var fallback = Path.ChangeExtension(scriptPath, ".csx");
+            if (File.Exists(fallback))
+            {
+                scriptPath = fallback;
+            }
+        }
+
+        using var engine = new EngineScriptInterface(new EngineScriptInterfaceOptions
+        {
+            StartSequencerOnStartup = startSequencerOnStartup,
+            ScriptFilePath = scriptPath
+        });
+        await engine.StartupAsync();
+        engine.SetEditorMode(editorMode);
+        var audioEngine = engine.Engine;
+        var sequencer = engine.Sequencer;
+        var host = engine.Host;
+        var registry = engine.VstRegistry;
+        EngineIpcServer? ipcServer = null;
+        if (enableIpc)
+        {
+            ipcServer = new EngineIpcServer(engine);
+            ipcServer.Start();
+            Console.WriteLine("IPC server running.");
+            Console.WriteLine($"State pipe: {EngineIpcServer.StatePipeName}");
+            Console.WriteLine($"Events pipe: {EngineIpcServer.EventsPipeName}");
+        }
+
+        var outputDevices = audioEngine.ListOutputDevices();
         Console.WriteLine();
         Console.WriteLine("Audio Outputs:");
         if (outputDevices.Count == 0)
@@ -60,7 +93,7 @@ public static class EngineLauncher
             }
         }
 
-        var inputDevices = engine.ListInputDevices();
+        var inputDevices = audioEngine.ListInputDevices();
         Console.WriteLine();
         Console.WriteLine("Audio Inputs:");
         if (inputDevices.Count == 0)
@@ -90,45 +123,20 @@ public static class EngineLauncher
             }
         }
 
-        if (VstSystem.TryScan(out var scannedRegistry, out var scanMessage))
+        Console.WriteLine();
+        if (registry == null || registry.Plugins.Count == 0)
         {
-            registry = scannedRegistry;
-            Console.WriteLine();
-            Console.WriteLine(scanMessage);
+            Console.WriteLine("No VST3 plugins found.");
+        }
+        else
+        {
+            Console.WriteLine("VST3 plugins:");
             foreach (var plugin in registry.Plugins)
             {
                 Console.WriteLine($"  [{plugin.Index}] {plugin.Name}");
             }
         }
-        else
-        {
-            Console.WriteLine();
-            Console.WriteLine(scanMessage);
-        }
 
-        string scriptPath = Path.Combine(AppContext.BaseDirectory, "Scripts", "test_script.cs");
-
-        string? projectDir = AppContext.BaseDirectory;
-        while (projectDir != null && !File.Exists(Path.Combine(projectDir, "MusicEngine.csproj")))
-        {
-            projectDir = Path.GetDirectoryName(projectDir);
-        }
-
-        if (projectDir != null)
-        {
-            scriptPath = Path.Combine(projectDir, "Scripts", "test_script.cs");
-        }
-
-        if (!File.Exists(scriptPath))
-        {
-            var fallback = Path.ChangeExtension(scriptPath, ".csx");
-            if (File.Exists(fallback))
-            {
-                scriptPath = fallback;
-            }
-        }
-
-        var host = new ScriptHost(engine, sequencer, registry, scriptPath);
         AppDomain.CurrentDomain.ProcessExit += (_, _) => host.SaveVstState();
         Console.CancelKeyPress += (_, e) =>
         {
@@ -152,31 +160,37 @@ public static class EngineLauncher
         if (editorMode)
         {
             sequencer.Stop();
-            engine.SetTransportMuted(true);
-            engine.SetMidiEnabled(false, sendAllNotesOff: false);
-            engine.EditorPatternNote += info =>
+            audioEngine.SetTransportMuted(true);
+            audioEngine.SetMidiEnabled(false, sendAllNotesOff: false);
+            audioEngine.EditorPatternNote += info =>
             {
                 Console.WriteLine(info.IsOn ? $"NOTE_ON {info.Note}" : $"NOTE_OFF {info.Note}");
             };
-            engine.EditorMidiNote += info =>
+            audioEngine.EditorMidiNote += info =>
             {
                 Console.WriteLine(info.IsOn
                     ? $"MIDI_IN {info.DeviceIndex} NOTE_ON {info.Note} {info.Velocity}"
                     : $"MIDI_IN {info.DeviceIndex} NOTE_OFF {info.Note}");
             };
-            engine.EditorMidiDeviceActive += deviceIndex =>
+            audioEngine.EditorMidiDeviceActive += deviceIndex =>
             {
                 Console.WriteLine($"MIDI_DEVICE_ACTIVE {deviceIndex}");
             };
         }
         else if (startSleeping)
         {
-            sequencer.Stop();
-            engine.SuspendOutput();
+            engine.Sleep();
         }
 
         var ui = new ConsoleInterface(host, activeScript, () => sequencer.Stop(), scriptPath, registry,
             editorMode: editorMode, useMainScripts: true);
-        await ui.RunAsync();
+        try
+        {
+            await ui.RunAsync();
+        }
+        finally
+        {
+            ipcServer?.Dispose();
+        }
     }
 }

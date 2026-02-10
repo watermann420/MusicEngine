@@ -328,6 +328,31 @@ public sealed class AudioEngine : IDisposable
     }
 
     /// <summary>
+    /// Enable or disable a specific MIDI input device.
+    /// </summary>
+    public void SetMidiDeviceEnabled(int deviceIndex, bool enabled, bool sendAllNotesOff = true)
+    {
+        _midiRouter.SetDeviceEnabled(deviceIndex, enabled, sendAllNotesOff);
+    }
+
+    /// <summary>
+    /// Enable or disable a specific MIDI input channel on a device.
+    /// </summary>
+    public void SetMidiChannelEnabled(int deviceIndex, int channel, bool enabled, bool sendAllNotesOff = true)
+    {
+        _midiRouter.SetChannelEnabled(deviceIndex, channel, enabled, sendAllNotesOff);
+    }
+
+    /// <summary>
+    /// Enable or disable a specific MIDI route to a synth.
+    /// </summary>
+    public void SetMidiRouteEnabled(int deviceIndex, int channel, ISynth synth, bool enabled,
+        bool sendAllNotesOff = true)
+    {
+        _midiRouter.SetRouteEnabled(deviceIndex, channel, synth, enabled, sendAllNotesOff);
+    }
+
+    /// <summary>
     /// Toggle editor mode for patterns and MIDI routing.
     /// </summary>
     /// <param name="enabled">True to enable editor mode.</param>

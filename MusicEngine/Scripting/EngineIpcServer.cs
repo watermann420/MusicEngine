@@ -138,6 +138,12 @@ public sealed class EngineIpcServer : IDisposable
                     await WriteJsonAsync(writer, new { ok = true }).ConfigureAwait(false);
                     break;
                 }
+                case "refresh_script":
+                {
+                    var executed = await _engine.Host.RefreshMainScriptsAsync().ConfigureAwait(false);
+                    await WriteJsonAsync(writer, new { ok = true, executed }).ConfigureAwait(false);
+                    break;
+                }
                 case "sleep":
                 {
                     _engine.Sleep();
