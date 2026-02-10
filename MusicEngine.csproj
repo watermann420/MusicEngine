@@ -1,73 +1,56 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
         <OutputType>Exe</OutputType>
         <TargetFramework>net10.0-windows</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
-        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <UseWindowsForms>true</UseWindowsForms>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <NoWarn>1591</NoWarn>
     </PropertyGroup>
 
-    <!-- Allow test project to access internal members -->
     <ItemGroup>
-        <InternalsVisibleTo Include="MusicEngine.Tests" />
-    </ItemGroup>
-
-    <!-- Exclude test project from main compilation -->
-    <ItemGroup>
-        <Compile Remove="MusicEngine.Tests\**" />
-        <None Remove="MusicEngine.Tests\**" />
-    </ItemGroup>
-
-    <ItemGroup>
-      <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="5.0.0" />
+      <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="4.12.0" />
       <PackageReference Include="NAudio" Version="2.2.1" />
-      <PackageReference Include="NAudio.Asio" Version="2.2.1" />
       <PackageReference Include="NAudio.Midi" Version="2.2.1" />
-      <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
-      <PackageReference Include="NAudio.WinForms" Version="2.2.1" />
-      <PackageReference Include="NAudio.WinMM" Version="2.2.1" />
     </ItemGroup>
 
-    <!-- Logging -->
     <ItemGroup>
-      <PackageReference Include="Microsoft.Extensions.Logging" Version="9.0.0" />
-      <PackageReference Include="Serilog" Version="4.1.0" />
-      <PackageReference Include="Serilog.Extensions.Logging" Version="8.0.0" />
-      <PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />
-      <PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
+      <Folder Include="DevDocs\" />
+      <Folder Include="Docs\" />
     </ItemGroup>
 
-    <!-- DI & Configuration -->
     <ItemGroup>
-      <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.0" />
-      <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="9.0.0" />
-      <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="9.0.0" />
-      <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="9.0.0" />
-      <PackageReference Include="Microsoft.Extensions.Options" Version="9.0.0" />
-      <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="9.0.0" />
+      <Compile Remove="MusicEngine.Installer\**\*.cs" />
+      <Compile Remove="Scripts\**\*.cs" />
+      <Compile Remove="**\Scripts\**\*.cs" />
     </ItemGroup>
 
-    <!-- Serilog Enrichers -->
     <ItemGroup>
-      <PackageReference Include="Serilog.Enrichers.Thread" Version="4.0.0" />
+      <None Include="Scripts\**\*.cs" />
     </ItemGroup>
 
-    <!-- Code Quality -->
     <ItemGroup>
-      <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="8.0.0" />
+      <EditorConfigFiles Remove=".editorconfig" />
+      <EditorConfigFiles Include="Settings\.editorconfig" />
     </ItemGroup>
+
+    <Target Name="CopyNativeVstHost" AfterTargets="Build">
+      <PropertyGroup>
+        <NativeVstHostDll>$(MSBuildProjectDirectory)\MusicEngine.CppLayer\native\x64\$(Configuration)\MusicEngine.CppLayer.Native.dll</NativeVstHostDll>
+      </PropertyGroup>
+      <ItemGroup>
+        <NativeVstHostFiles Include="$(NativeVstHostDll)" Condition="Exists('$(NativeVstHostDll)')" />
+      </ItemGroup>
+      <Copy SourceFiles="@(NativeVstHostFiles)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
+    </Target>
+
+    <!-- Code Quality (.NET 10 SDK includes built-in analyzers) -->
     <PropertyGroup>
       <EnableNETAnalyzers>true</EnableNETAnalyzers>
       <AnalysisLevel>latest</AnalysisLevel>
     </PropertyGroup>
 
-    <!-- Configuration Files -->
-    <ItemGroup>
-      <None Update="appsettings.json">
-        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      </None>
-    </ItemGroup>
-
-
 </Project>
+

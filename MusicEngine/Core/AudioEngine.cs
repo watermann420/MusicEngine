@@ -1,1385 +1,1176 @@
-﻿// MusicEngine License (MEL) - Honor-Based Commercial Support
+// MusicEngine License (MEL) - Honor-Based Commercial Support
 // Copyright (c) 2025-2026 Yannis Watermann (watermann420, nullonebinary)
 // https://github.com/watermann420/MusicEngine
-// Description: Core engine component.
+// Description: Minimal audio engine for script-driven playback.
 
 using System;
+using System.Buffers;
 using System.Collections.Generic;
-using System.Threading;
-using System.Threading.Tasks;
-using NAudio.Wave;
+using MusicEngine.Effects.Audio;
+using NAudio.CoreAudioApi;
 using NAudio.Midi;
+using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
-using Microsoft.Extensions.Logging;
-using MusicEngine.Core.Events;
-using MusicEngine.Core.PDC;
-using MusicEngine.Core.Progress;
-using MusicEngine.Core.Routing;
-using MusicEngine.Infrastructure.Logging;
-using MusicEngine.Infrastructure.Memory;
-
 
 namespace MusicEngine.Core;
 
-
-public class AudioEngine : IDisposable
+/// <summary>
+/// Minimal audio engine for script-driven playback, routing, and recording.
+/// </summary>
+public sealed class AudioEngine : IDisposable
 {
-    private readonly List<IWaveIn> _inputs = new(); // Audio Inputs
-    private readonly List<IWavePlayer> _outputs = new(); // Audio Outputs
-    private readonly List<MidiIn> _midiInputs = new(); // MIDI Inputs
-    private readonly Dictionary<int, string> _midiInputNames = new(); // MIDI Input Names
-    private readonly List<MidiOut> _midiOutputs = new();   // MIDI Outputs
-    private readonly Dictionary<int, string> _midiOutputNames = new(); // MIDI Output Names
-    private readonly Dictionary<int, ISynth> _midiInputRouting = new(); // MIDI Input to Synth Routing
-    private readonly List<(int deviceIndex, int control, ISynth synth, string parameter)> _midiMappings = new(); // MIDI Control Mappings
-    private readonly List<(int deviceIndex, string command, Action<float> action)> _transportMappings = new(); // Transport Control Mappings
-    private readonly List<(int deviceIndex, int startNote, int endNote, ISynth synth, bool reversed)> _rangeMappings = new(); // Note Range Mappings
-    private readonly List<FrequencyMidiMapping> _frequencyMappings = new(); // Frequency Analysis Mappings
-    private readonly Dictionary<int, FrequencyAnalyzer> _inputAnalyzers = new(); // Input Analyzers
-    private readonly Dictionary<int, Action<float[]>> _fftHandlers = new(); // FFT event handlers for cleanup
-    private readonly Dictionary<int, EventHandler<WaveInEventArgs>> _dataHandlers = new(); // DataAvailable event handlers for cleanup
-    private readonly Dictionary<int, EventHandler<MidiInMessageEventArgs>> _midiHandlers = new(); // MIDI MessageReceived event handlers for cleanup
-    private readonly Dictionary<int, IWaveIn> _inputDevices = new(); // Input devices for handler cleanup
-    private readonly MixingSampleProvider _mixer; // Main Mixer
-    private readonly VolumeSampleProvider _masterVolume; // Master Volume Control
-    private readonly WaveFormat _waveFormat; // Audio Format
-    private readonly List<VolumeSampleProvider> _channels = new(); // Individual Channel Volume Controls
-    private volatile float _masterGain = 1.0f; // Master Gain
+    private readonly WaveFormat _waveFormat;
+    private readonly MixingSampleProvider _mixer;
+    private readonly AudioEffectChain _masterEffects;
+    private readonly VolumeSampleProvider _allGainVolume;
+    private readonly VolumeSampleProvider _masterVolume;
+    private readonly VolumeSampleProvider _transportVolume;
+    private readonly RecordingTap _masterTap;
+    private readonly ISampleProvider _masterChain;
+    private readonly Dictionary<int, AudioChannel> _channels = new();
+    private readonly Dictionary<ISampleProvider, AudioChannel> _routing = new();
+    private readonly Dictionary<ISampleProvider, ISampleProvider> _masterRouting = new();
+    private readonly Dictionary<ISampleProvider, ISampleProvider> _normalizedProviders = new();
+    private readonly Dictionary<(int Source, int Target), ChannelSend> _channelSends = new();
+    private readonly HashSet<int> _masterChannelRoutes = new();
+    private readonly object _routingLock = new();
+    private readonly Dictionary<int, MidiIn> _midiInputs = new();
+    private readonly List<AudioInput> _audioInputs = new();
+    private readonly MidiRouter _midiRouter = new();
+    private readonly List<AudioVirtualOutput> _masterVirtualOutputs = new();
+    private readonly Dictionary<int, List<AudioVirtualOutput>> _channelVirtualOutputs = new();
+    private readonly object _virtualOutputLock = new();
+    private IWavePlayer? _output;
+    private bool _initialized;
+    private bool _outputRunning;
+    private bool _editorModeEnabled;
+    private float _allChannelsGain = 1f;
 
-    // VST Host
-    private readonly VstHost _vstHost = new(); // VST Plugin Host
-    private readonly Dictionary<string, VstPlugin> _vstRouting = new(); // VST Plugin Routing
+    /// <summary>
+    /// Raised when a pattern note is triggered in editor mode.
+    /// </summary>
+    public event Action<PatternNoteEventInfo>? EditorPatternNote;
 
-    // Virtual Audio Channels
-    private readonly VirtualChannelManager _virtualChannels = new();
+    /// <summary>
+    /// Raised when a MIDI note is received in editor mode.
+    /// </summary>
+    public event Action<MidiNoteEventInfo>? EditorMidiNote;
 
-    // Plugin Delay Compensation (PDC)
-    private readonly PdcManager _pdcManager;
+    /// <summary>
+    /// Raised when a MIDI device becomes active in editor mode.
+    /// </summary>
+    public event Action<int>? EditorMidiDeviceActive;
 
-    // Routing Matrix and Sidechain Management
-    private readonly RoutingMatrix _routingMatrix;
-    private readonly SidechainBusManager _sidechainBusManager;
-    private readonly TrackGroupManager _trackGroupManager;
-    private readonly Dictionary<string, ISampleProvider> _registeredSources = new();
-
-    // Logging
-    private readonly ILogger? _logger;
-
-    // Events for external subscribers
-    public event EventHandler<ChannelEventArgs>? ChannelAdded;
-    public event EventHandler<PluginEventArgs>? PluginLoaded;
-    public event EventHandler<PluginEventArgs>? PluginUnloaded;
-    public event EventHandler<MidiRoutingEventArgs>? MidiRoutingChanged;
-
-    // Constructor
-    public AudioEngine(int? sampleRate = null) : this(sampleRate, null)
+    /// <summary>
+    /// Create a new engine with an optional sample rate override.
+    /// </summary>
+    /// <param name="sampleRate">Sample rate in Hz. Uses <see cref="Settings.SampleRate"/> when null.</param>
+    public AudioEngine(int? sampleRate = null)
     {
-    }
-
-    // Constructor with logging support
-    public AudioEngine(int? sampleRate = null, ILogger? logger = null)
-    {
-        _logger = logger;
-        int rate = sampleRate ?? Settings.SampleRate; // Use provided or default sample rate
-        _waveFormat = WaveFormat.CreateIeeeFloatWaveFormat(rate, Settings.Channels); // Create a wave format
-        _mixer = new MixingSampleProvider(_waveFormat); // Initialize mixer
-        _mixer.ReadFully = true; // Ensure continuous output
-        _masterVolume = new VolumeSampleProvider(_mixer); // Master volume control
-
-        // Initialize PDC Manager
-        _pdcManager = new PdcManager(rate, Settings.Channels, logger);
-
-        // Initialize Routing Matrix and Managers
-        _routingMatrix = new RoutingMatrix(rate, Settings.Channels);
-        _sidechainBusManager = new SidechainBusManager(_waveFormat);
-        _trackGroupManager = new TrackGroupManager();
-
-        _logger?.LogInformation("AudioEngine initialized with sample rate {SampleRate}Hz", rate);
-    }
-
-    // MIDI Routing and Mapping Methods
-    public void RouteMidiInput(int deviceIndex, ISynth synth)
-    {
-        lock (_midiInputRouting)
+        var rate = sampleRate ?? Settings.SampleRate;
+        _waveFormat = WaveFormat.CreateIeeeFloatWaveFormat(rate, Settings.Channels);
+        _mixer = new MixingSampleProvider(_waveFormat) { ReadFully = true };
+        _masterEffects = new AudioEffectChain(_mixer, _waveFormat);
+        _allGainVolume = new VolumeSampleProvider(_masterEffects) { Volume = 1.0f };
+        _masterVolume = new VolumeSampleProvider(_allGainVolume) { Volume = 1.0f };
+        _transportVolume = new VolumeSampleProvider(_masterVolume) { Volume = 1.0f };
+        var dcBlock = new DcBlockingSampleProvider(_transportVolume, 1f, _waveFormat.SampleRate);
+        var limiter = new LimiterSampleProvider(dcBlock, 0.95f, _waveFormat.SampleRate, attackMs: 2f, releaseMs: 60f);
+        ISampleProvider master = new SoftClipSampleProvider(limiter, 0.99f);
+        if (Settings.OutputBitDepth > 0 && Settings.OutputBitDepth < 32)
         {
-            _midiInputRouting[deviceIndex] = synth; // Route MIDI input to synth
+            master = new BitDepthSampleProvider(master, Settings.OutputBitDepth);
         }
-
-        string? deviceName;
-        lock (_midiInputNames)
-        {
-            deviceName = _midiInputNames.TryGetValue(deviceIndex, out var name) ? name : null;
-        }
-        var handler = MidiRoutingChanged;
-        handler?.Invoke(this, new MidiRoutingEventArgs(deviceIndex, deviceName, synth.Name));
-        _logger?.LogDebug("MIDI input {DeviceIndex} routed to {SynthName}", deviceIndex, synth.Name);
-    }
-
-    // Map a MIDI control change to a synth parameter
-    public void MapMidiControl(int deviceIndex, int controlNumber, ISynth synth, string parameter) // Map MIDI control
-    {
-        lock (_midiMappings)
-        {
-            _midiMappings.Add((deviceIndex, controlNumber, synth, parameter)); // Add control mapping
-        }
-    }
-
-    // Map a transport control (like play, stop) to an action
-    public void MapTransportControl(int deviceIndex, int controlNumber, Action<float> action) // Map transport control
-    {
-        lock (_transportMappings)
-        {
-            _transportMappings.Add((deviceIndex, controlNumber.ToString(), action)); // Add control mapping
-        }
-    }
-
-    // Map a transport note (like start/stop) to an action
-    public void MapTransportNote(int deviceIndex, int noteNumber, Action<float> action) // Map transport note
-    {
-        lock (_transportMappings)
-        {
-            _transportMappings.Add((deviceIndex, "note_" + noteNumber, action)); // Add note mapping
-        }
-    }
-
-    // Map a range of MIDI notes to a synth
-    public void MapRange(int deviceIndex, int startNote, int endNote, ISynth synth, bool reversed = false) // Map range of notes
-    {
-        lock (_rangeMappings)
-        {
-            _rangeMappings.Add((deviceIndex, startNote, endNote, synth, reversed)); // Add range mapping
-        }
-    }
-
-    // Clear all MIDI mappings
-    public void ClearMappings()
-    {
-        lock (_midiInputRouting)
-        {
-            _midiInputRouting.Clear(); // Clear routing
-        }
-        lock (_midiMappings)
-        {
-            _midiMappings.Clear(); // Clear control mappings
-        }
-        lock (_transportMappings)
-        {
-            _transportMappings.Clear(); // Clear transport mappings
-        }
-        lock (_rangeMappings)
-        {
-            _rangeMappings.Clear(); // Clear range mappings
-        }
-        lock (_frequencyMappings)
-        {
-            _frequencyMappings.Clear(); // Clear frequency mappings
-        }
-    }
-
-    // Add a frequency to MIDI mapping
-    public void AddFrequencyMapping(FrequencyMidiMapping mapping)
-    {
-        lock (_frequencyMappings)
-        {
-            _frequencyMappings.Add(mapping);
-        }
-        StartInputCapture(mapping.DeviceIndex);
-    }
-
-    // Start capturing audio input for frequency analysis
-    private void StartInputCapture(int deviceIndex)
-    {
-        lock (_inputAnalyzers)
-        {
-            if (_inputAnalyzers.ContainsKey(deviceIndex)) return; // Already capturing
-
-            var analyzer = new FrequencyAnalyzer(Settings.FftSize, _waveFormat.SampleRate);
-            WaveInEvent? waveIn = null;
-
-            // Store the FFT handler for later cleanup
-            Action<float[]> fftHandler = magnitudes => {
-                lock (_frequencyMappings)
-                {
-                    foreach (var mapping in _frequencyMappings)
-                    {
-                        if (mapping.DeviceIndex == deviceIndex)
-                        {
-                            float magnitude = analyzer.GetMagnitudeForRange(magnitudes, mapping.LowFreq, mapping.HighFreq);
-                            mapping.ProcessMagnitude(magnitude);
-                        }
-                    }
-                }
-            };
-
-            try
-            {
-                waveIn = new WaveInEvent
-                {
-                    DeviceNumber = deviceIndex,
-                    WaveFormat = new WaveFormat(_waveFormat.SampleRate, 16, 1)
-                };
-
-                // Store the DataAvailable handler for later cleanup
-                EventHandler<WaveInEventArgs> dataHandler = (s, e) => {
-                    int sampleCount = e.BytesRecorded / 2;
-                    using var pooledBuffer = AudioBufferPool.Instance.RentScoped(sampleCount);
-                    var samples = pooledBuffer.Data;
-                    for (int i = 0; i < sampleCount; i++)
-                    {
-                        samples[i] = BitConverter.ToInt16(e.Buffer, i * 2) / 32768f;
-                    }
-                    analyzer.AddSamples(pooledBuffer.Array, sampleCount);
-                };
-
-                // Register handlers only after successful waveIn creation
-                analyzer.FftCalculated += fftHandler;
-                waveIn.DataAvailable += dataHandler;
-
-                // Store references for cleanup
-                _fftHandlers[deviceIndex] = fftHandler;
-                _dataHandlers[deviceIndex] = dataHandler;
-                _inputDevices[deviceIndex] = waveIn;
-
-                waveIn.StartRecording();
-                _inputs.Add(waveIn);
-                _inputAnalyzers[deviceIndex] = analyzer;
-                _logger?.LogDebug("Started capturing from Input Device [{Index}]", deviceIndex);
-            }
-            catch (Exception ex)
-            {
-                // Cleanup on failure to prevent memory leaks
-                waveIn?.Dispose();
-                _fftHandlers.Remove(deviceIndex);
-                _dataHandlers.Remove(deviceIndex);
-                _inputDevices.Remove(deviceIndex);
-                _logger?.LogWarning(ex, "Failed to start input capture for device {Index}", deviceIndex);
-            }
-        }
-    }
-
-    // Clear all channels from the mixer
-    public void ClearMixer()
-    {
-        lock (_channels)
-        {
-            _mixer.RemoveAllMixerInputs(); // Clear mixer inputs
-            _channels.Clear(); // Clear channel list
-        }
-    }
-
-    // Initialize Audio Engine
-    public void Initialize()
-    {
-        Console.WriteLine("[AudioEngine] Step 1: Creating WaveOutEvent...");
-
-        // Setup default output
-        var output = new WaveOutEvent(); // Create output device
-
-        Console.WriteLine("[AudioEngine] Step 2: Initializing output device...");
-        output.Init(_masterVolume); // Initialize with the master volume
-
-        Console.WriteLine("[AudioEngine] Step 3: Starting playback...");
-        output.Play(); // Start playback
-        _outputs.Add(output); // Store output
-
-        Console.WriteLine("[AudioEngine] Step 4: Enumerating audio outputs...");
-        // Enumerate Audio Outputs
-        for (int i = 0; i < WaveOut.DeviceCount; i++)
-        {
-            var capabilities = WaveOut.GetCapabilities(i); // Get device capabilities
-            Console.WriteLine($"[AudioEngine]   Output {i}: {capabilities.ProductName}");
-            _logger?.LogDebug("Found Output Device [{Index}]: {Name}", i, capabilities.ProductName); // Log found device
-        }
-
-        Console.WriteLine("[AudioEngine] Step 5: Enumerating audio inputs...");
-        // Enumerate Audio Inputs
-        for (int i = 0; i < WaveIn.DeviceCount; i++)
-        {
-            var capabilities = WaveIn.GetCapabilities(i); // Get device capabilities
-            Console.WriteLine($"[AudioEngine]   Input {i}: {capabilities.ProductName}");
-            _logger?.LogDebug("Found Input Device [{Index}]: {Name}", i, capabilities.ProductName); // Log found device
-        }
-
-        Console.WriteLine("[AudioEngine] Step 6: Enumerating MIDI inputs...");
-        // Enumerate MIDI Inputs
-        for (int i = 0; i < MidiIn.NumberOfDevices; i++)
-        {
-            var name = MidiIn.DeviceInfo(i).ProductName; // Get device name
-            Console.WriteLine($"[AudioEngine]   MIDI Input {i}: {name}");
-            _logger?.LogDebug("Found MIDI Input [{Index}]: {Name}", i, name); // Log found device
-            _midiInputNames[i] = name; // Store device name
-            try
-            {
-                var midiIn = new MidiIn(i); // Create MIDI input
-                int deviceIndex = i; // Capture index for closure
-
-                // Store the MIDI MessageReceived handler for later cleanup
-                EventHandler<MidiInMessageEventArgs> midiHandler = (s, e) => {
-                    if (e.MidiEvent is ControlChangeEvent ccEvent) // Handle Control Change events
-                    {
-                        float normalizedValue = ccEvent.ControllerValue / 127f;
-
-                        // Auto-route common CCs to routed synth
-                        ISynth? ccRoutedSynth = null;
-                        lock (_midiInputRouting)
-                        {
-                            _midiInputRouting.TryGetValue(deviceIndex, out ccRoutedSynth);
-                        }
-                        if (ccRoutedSynth != null)
-                        {
-                            // CC#1 = Mod Wheel
-                            if ((int)ccEvent.Controller == 1)
-                            {
-                                ccRoutedSynth.SetParameter("modwheel", normalizedValue);
-                            }
-                            // CC#7 = Volume
-                            else if ((int)ccEvent.Controller == 7)
-                            {
-                                ccRoutedSynth.SetParameter("volume", normalizedValue);
-                            }
-                            // CC#10 = Pan
-                            else if ((int)ccEvent.Controller == 10)
-                            {
-                                ccRoutedSynth.SetParameter("pan", normalizedValue * 2f - 1f); // Convert 0-1 to -1 to +1
-                            }
-                            // CC#74 = Filter Cutoff (often used on synths)
-                            else if ((int)ccEvent.Controller == 74)
-                            {
-                                ccRoutedSynth.SetParameter("cutoff", normalizedValue);
-                            }
-                            // CC#71 = Resonance
-                            else if ((int)ccEvent.Controller == 71)
-                            {
-                                ccRoutedSynth.SetParameter("resonance", normalizedValue);
-                            }
-                            // CC#73 = Attack
-                            else if ((int)ccEvent.Controller == 73)
-                            {
-                                ccRoutedSynth.SetParameter("attack", normalizedValue * 2f); // 0-2 seconds
-                            }
-                            // CC#72 = Release
-                            else if ((int)ccEvent.Controller == 72)
-                            {
-                                ccRoutedSynth.SetParameter("release", normalizedValue * 2f); // 0-2 seconds
-                            }
-                        }
-
-                        lock (_midiMappings) // Lock for thread safety
-                        {
-                            foreach (var mapping in _midiMappings) // Iterate mappings
-                            {
-                                if (mapping.deviceIndex == deviceIndex && mapping.control == (int)ccEvent.Controller) // Match device and control
-                                {
-                                    mapping.synth.SetParameter(mapping.parameter, normalizedValue); // Set parameter
-                                }
-                            }
-                        }
-
-                        lock (_transportMappings) // Lock for thread safety
-                        {
-                            foreach (var mapping in _transportMappings) // Iterate transport mappings
-                            {
-                                if (mapping.deviceIndex == deviceIndex && mapping.command == ((int)ccEvent.Controller).ToString()) // Match device and command
-                                {
-                                    mapping.action(normalizedValue); // Invoke action
-                                }
-                            }
-                        }
-                    }
-
-                    if (e.MidiEvent is PitchWheelChangeEvent pitchEvent) // Handle Pitch Bend events
-                    {
-                        // Normalize pitch bend: 0-16383 where 8192 is center
-                        // Convert to -1 to +1 range for synth PitchBend property
-                        float normalizedBipolar = (pitchEvent.Pitch - 8192) / 8192f;
-                        float normalizedUnipolar = pitchEvent.Pitch / 16383f;
-
-                        // Send to routed synth automatically
-                        ISynth? pitchRoutedSynth = null;
-                        lock (_midiInputRouting)
-                        {
-                            _midiInputRouting.TryGetValue(deviceIndex, out pitchRoutedSynth);
-                        }
-                        if (pitchRoutedSynth != null)
-                        {
-                            pitchRoutedSynth.SetParameter("pitchbend", normalizedBipolar);
-                        }
-
-                        lock (_midiMappings) // Lock for thread safety
-                        {
-                            foreach (var mapping in _midiMappings) // Iterate mappings
-                            {
-                                if (mapping.deviceIndex == deviceIndex && mapping.control == -1) // Use -1 to denote pitch bend
-                                {
-                                    mapping.synth.SetParameter(mapping.parameter, normalizedUnipolar); // Set parameter
-                                }
-                            }
-                        }
-
-                        lock (_transportMappings) // Lock for thread safety
-                        {
-                            foreach (var mapping in _transportMappings) // Iterate transport mappings
-                            {
-                                if (mapping.deviceIndex == deviceIndex && mapping.command == "pitch") // Match pitch command
-                                {
-                                    mapping.action(normalizedUnipolar); // Invoke action
-                                }
-                            }
-                        }
-                    }
-
-                    bool noteHandledByRange = false; // Flag to check if a note was handled by range mapping
-                    if (e.MidiEvent is NAudio.Midi.NoteEvent noteEvent) // Handle Note events
-                    {
-                        lock (_rangeMappings) // Lock for thread safety
-                        {
-                            foreach (var mapping in _rangeMappings) // Iterate range mappings
-                            {
-                                if (mapping.deviceIndex == deviceIndex && noteEvent.NoteNumber >= Math.Min(mapping.startNote, mapping.endNote) && noteEvent.NoteNumber <= Math.Max(mapping.startNote, mapping.endNote)) // Check if the note is within range
-                                {
-                                    int effectiveNote = noteEvent.NoteNumber; // Calculate effective note
-                                    if (mapping.reversed) // If reversed mapping
-                                    {
-                                        effectiveNote = mapping.startNote + mapping.endNote - noteEvent.NoteNumber; // Reverse the note
-                                    }
-
-                                    ProcessEffectiveNoteEvent(noteEvent, mapping.synth, effectiveNote); // Process the note event
-                                    noteHandledByRange = true; // Mark as handled
-                                }
-                            }
-                        }
-                    }
-
-                    if (noteHandledByRange) return; // If the note was handled by range mapping, skip further processing
-
-                    // Get routing and transport mappings without holding locks during processing
-                    ISynth? routedSynth = null;
-                    List<(int deviceIndex, string command, Action<float> action)>? transportMappingsCopy = null;
-
-                    lock (_midiInputRouting)
-                    {
-                        _midiInputRouting.TryGetValue(deviceIndex, out routedSynth);
-                    }
-
-                    if (routedSynth == null)
-                    {
-                        // If no synth routed, check for transport note mappings
-                        if (e.MidiEvent is NAudio.Midi.NoteEvent note)
-                        {
-                            lock (_transportMappings)
-                            {
-                                transportMappingsCopy = _transportMappings.ToList();
-                            }
-                            foreach (var mapping in transportMappingsCopy)
-                            {
-                                if (mapping.deviceIndex == deviceIndex && mapping.command == "note_" + note.NoteNumber)
-                                {
-                                    mapping.action(note.CommandCode == MidiCommandCode.NoteOn ? 1.0f : 0.0f);
-                                }
-                            }
-                        }
-                        return;
-                    }
-
-                    if (e.MidiEvent is NAudio.Midi.NoteEvent ne) // Handle Note events
-                    {
-                        ProcessNoteEvent(ne, routedSynth); // Process the note event
-                    }
-                };
-                midiIn.MessageReceived += midiHandler;
-                _midiHandlers[deviceIndex] = midiHandler;
-
-                midiIn.Start(); // Start MIDI input
-                _midiInputs.Add(midiIn); // Store MIDI input
-            }
-            catch (Exception ex)  // Handle exceptions
-            {
-                _logger?.LogWarning(ex, "Failed to open MIDI Input {Index}", i);
-            }
-        }
-
-        Console.WriteLine("[AudioEngine] Step 7: Enumerating MIDI outputs...");
-        // Enumerate MIDI Outputs
-        for (int i = 0; i < MidiOut.NumberOfDevices; i++)
-        {
-            var name = MidiOut.DeviceInfo(i).ProductName; // Get device name
-            Console.WriteLine($"[AudioEngine]   MIDI Output {i}: {name}");
-            _logger?.LogDebug("Found MIDI Output [{Index}]: {Name}", i, name); // Log found device
-            _midiOutputNames[i] = name; // Store device name
-            try
-            {
-                var midiOut = new MidiOut(i); // Create MIDI output
-                _midiOutputs.Add(midiOut); // Store MIDI output
-            }
-            catch (Exception ex) // Handle exceptions
-            {
-                Console.WriteLine($"[AudioEngine]   WARNING: Failed to open MIDI Output {i}: {ex.Message}");
-                _logger?.LogWarning(ex, "Failed to open MIDI Output {Index}", i);
-            }
-        }
-
-        Console.WriteLine("[AudioEngine] Step 8: Scanning for VST plugins...");
-        // Scan for VST Plugins
-        _logger?.LogDebug("Scanning for VST Plugins...");
-        var vstPlugins = ScanVstPlugins();
-        if (vstPlugins.Count > 0)
-        {
-            Console.WriteLine($"[AudioEngine] Found {vstPlugins.Count} VST plugin(s)");
-            PrintVstPlugins();
-        }
-        else
-        {
-            Console.WriteLine("[AudioEngine] No VST plugins found");
-            _logger?.LogDebug("No VST plugins found in configured paths.");
-        }
-
-        Console.WriteLine("[AudioEngine] Initialization complete!");
+        _masterChain = master;
+        _masterTap = new RecordingTap(_masterChain);
+        _masterTap.SamplesAvailable += OnMasterSamples;
+        _midiRouter.EditorMidiNoteEvent += info => EditorMidiNote?.Invoke(info);
+        _midiRouter.EditorMidiDeviceActive += deviceIndex => EditorMidiDeviceActive?.Invoke(deviceIndex);
     }
 
     /// <summary>
-    /// Asynchronously initializes the audio engine with progress reporting.
+    /// Whether editor mode is currently enabled.
     /// </summary>
-    /// <param name="progress">Optional progress reporter for initialization status.</param>
-    /// <param name="cancellationToken">Cancellation token to cancel the initialization.</param>
-    /// <returns>A task that completes when initialization is finished.</returns>
-    /// <remarks>
-    /// This method performs the following initialization steps:
-    /// <list type="number">
-    /// <item>Sets up the default audio output device</item>
-    /// <item>Enumerates available audio input and output devices</item>
-    /// <item>Enumerates MIDI input and output devices</item>
-    /// <item>Scans for VST plugins</item>
-    /// </list>
-    /// Uses <see cref="Progress.InitializationProgress"/> record for structured progress reporting.
-    /// </remarks>
-    /// <example>
-    /// <code>
-    /// var engine = new AudioEngine();
-    /// var progress = new Progress&lt;InitializationProgress&gt;(p =>
-    ///     Console.WriteLine($"{p.Stage}: {p.PercentComplete:F1}%"));
-    ///
-    /// await engine.InitializeAsync(progress, cancellationToken);
-    /// </code>
-    /// </example>
-    public async Task InitializeAsync(
-        IProgress<Progress.InitializationProgress>? progress = null,
-        CancellationToken cancellationToken = default)
+    public bool EditorModeEnabled => _editorModeEnabled;
+
+    /// <summary>
+    /// Whether the audio output device is currently running.
+    /// </summary>
+    public bool OutputRunning => _outputRunning;
+
+    /// <summary>
+    /// Whether MIDI input routing is currently enabled.
+    /// </summary>
+    public bool MidiEnabled => _midiRouter.Enabled;
+
+    /// <summary>
+    /// Initialize the audio output and start playback.
+    /// </summary>
+    public void Initialize()
     {
-        const int totalSteps = 5;
-
-        await Task.Run(() =>
+        if (_initialized) return;
+        _output = new WaveOutEvent
         {
-            progress?.Report(new Progress.InitializationProgress(
-                "Audio Output", 1, totalSteps, "Setting up default audio output device"));
-
-            // Setup default output
-            var output = new WaveOutEvent();
-            output.Init(_masterVolume);
-            output.Play();
-            _outputs.Add(output);
-
-            cancellationToken.ThrowIfCancellationRequested();
-            progress?.Report(new Progress.InitializationProgress(
-                "Audio Devices", 2, totalSteps,
-                $"Found {WaveOut.DeviceCount} output, {WaveIn.DeviceCount} input devices"));
-
-            // Enumerate Audio Outputs
-            for (int i = 0; i < WaveOut.DeviceCount; i++)
-            {
-                var capabilities = WaveOut.GetCapabilities(i);
-                _logger?.LogDebug("Found Output Device [{Index}]: {Name}", i, capabilities.ProductName);
-            }
-
-            // Enumerate Audio Inputs
-            for (int i = 0; i < WaveIn.DeviceCount; i++)
-            {
-                var capabilities = WaveIn.GetCapabilities(i);
-                _logger?.LogDebug("Found Input Device [{Index}]: {Name}", i, capabilities.ProductName);
-            }
-
-            cancellationToken.ThrowIfCancellationRequested();
-            progress?.Report(new Progress.InitializationProgress(
-                "MIDI Devices", 3, totalSteps,
-                $"Found {MidiIn.NumberOfDevices} MIDI inputs, {MidiOut.NumberOfDevices} MIDI outputs"));
-
-            // Enumerate MIDI Inputs (simplified - the full MIDI setup remains in sync Initialize)
-            for (int i = 0; i < MidiIn.NumberOfDevices; i++)
-            {
-                var name = MidiIn.DeviceInfo(i).ProductName;
-                _logger?.LogDebug("Found MIDI Input [{Index}]: {Name}", i, name);
-                _midiInputNames[i] = name;
-            }
-
-            // Enumerate MIDI Outputs
-            for (int i = 0; i < MidiOut.NumberOfDevices; i++)
-            {
-                var name = MidiOut.DeviceInfo(i).ProductName;
-                _logger?.LogDebug("Found MIDI Output [{Index}]: {Name}", i, name);
-                _midiOutputNames[i] = name;
-            }
-
-            cancellationToken.ThrowIfCancellationRequested();
-            progress?.Report(new Progress.InitializationProgress(
-                "VST Plugins", 4, totalSteps, "Scanning for VST plugins..."));
-
-            // Scan for VST Plugins
-            _logger?.LogInformation("Scanning for VST Plugins...");
-            var vstPlugins = ScanVstPlugins();
-            if (vstPlugins.Count > 0)
-            {
-                _logger?.LogInformation("Found {Count} VST plugins", vstPlugins.Count);
-            }
-
-            progress?.Report(Progress.InitializationProgress.Complete(totalSteps, "AudioEngine initialization complete"));
-            _logger?.LogInformation("AudioEngine initialization complete");
-
-        }, cancellationToken).ConfigureAwait(false);
+            DesiredLatency = 100,
+            NumberOfBuffers = 3
+        };
+        _output.Init(_masterTap);
+        _output.Play();
+        _initialized = true;
+        _outputRunning = true;
     }
 
-    // Process Note Events
-    private void ProcessNoteEvent(NAudio.Midi.NoteEvent noteEvent, ISynth synth)
+    /// <summary>
+    /// Stop audio output without tearing down routing state.
+    /// </summary>
+    public void SuspendOutput()
     {
-        ProcessEffectiveNoteEvent(noteEvent, synth, noteEvent.NoteNumber); // Process with the original note number
+        if (_output == null) return;
+        _output.Stop();
+        _outputRunning = false;
     }
 
-    // Process Note Events with effective note number
-    private void ProcessEffectiveNoteEvent(NAudio.Midi.NoteEvent noteEvent, ISynth synth, int effectiveNote)
+    /// <summary>
+    /// Try to suspend output if it is currently running.
+    /// </summary>
+    /// <returns>True when output was running and has been stopped.</returns>
+    public bool TrySuspendOutput()
     {
-        // In NAudio, NoteOff is often represented as NoteOn with Velocity 0
-        // or as a distinct NoteOff event.
-        bool isNoteOn = noteEvent.CommandCode == MidiCommandCode.NoteOn; // Note On event
-        bool isNoteOff = noteEvent.CommandCode == MidiCommandCode.NoteOff; // Note Off event
-        int velocity = 0; // Default velocity
-        if (noteEvent is NoteOnEvent on) velocity = on.Velocity; // Get velocity for Note On
+        if (_output == null || !_outputRunning) return false;
+        _output.Stop();
+        _outputRunning = false;
+        return true;
+    }
 
-        if (isNoteOn && velocity > 0) // Note On with non-zero velocity
+    /// <summary>
+    /// Resume audio output, initializing if needed.
+    /// </summary>
+    public void ResumeOutput()
+    {
+        if (!_initialized)
         {
-            synth.NoteOn(effectiveNote, velocity);
+            Initialize();
+            return;
         }
-        else if (isNoteOff || (isNoteOn && velocity == 0)) // Note Off or Note On with zero velocity
+
+        if (_output == null) return;
+        if (_outputRunning) return;
+        _output.Play();
+        _outputRunning = true;
+    }
+
+    /// <summary>
+    /// Route a provider directly to the master output.
+    /// </summary>
+    /// <param name="provider">Sample provider to route.</param>
+    public void AddSampleProvider(ISampleProvider provider)
+    {
+        RouteToMaster(provider);
+    }
+
+    /// <summary>
+    /// Route a provider directly to the master output.
+    /// </summary>
+    /// <param name="provider">Sample provider to route.</param>
+    public void RouteToMaster(ISampleProvider provider)
+    {
+        if (provider == null) return;
+        var normalized = GetOrCreateNormalized(provider);
+        lock (_routingLock)
         {
-            synth.NoteOff(effectiveNote);
+            if (_routing.TryGetValue(provider, out var existing))
+            {
+                existing.Mixer.RemoveMixerInput(normalized);
+                _routing.Remove(provider);
+            }
+
+            if (_masterRouting.ContainsKey(provider))
+            {
+                return;
+            }
+
+            _mixer.AddMixerInput(normalized);
+            _masterRouting[provider] = normalized;
         }
     }
 
-    // Get MIDI Device Index by Name
-    public int GetMidiDeviceIndex(string name)
+    /// <summary>
+    /// Route a provider into a specific channel mix.
+    /// </summary>
+    /// <param name="provider">Sample provider to route.</param>
+    /// <param name="channelIndex">1-based channel index.</param>
+    public void RouteToChannel(ISampleProvider provider, int channelIndex)
     {
-        lock (_midiInputNames)
+        if (provider == null) return;
+        if (channelIndex < 1) channelIndex = 1;
+
+        var normalized = GetOrCreateNormalized(provider);
+        lock (_routingLock)
         {
-            foreach (var kvp in _midiInputNames)
+            if (_masterRouting.TryGetValue(provider, out var masterInput))
             {
-                if (kvp.Value.Contains(name, StringComparison.OrdinalIgnoreCase)) // Case-insensitive match
-                    return kvp.Key;
+                _mixer.RemoveMixerInput(masterInput);
+                _masterRouting.Remove(provider);
             }
+
+            if (_routing.TryGetValue(provider, out var existing))
+            {
+                existing.Mixer.RemoveMixerInput(normalized);
+                _routing.Remove(provider);
+            }
+
+            var channel = GetOrCreateChannel(channelIndex);
+            channel.Mixer.AddMixerInput(normalized);
+            _routing[provider] = channel;
         }
-        return -1;
     }
 
-    // Get MIDI Output Device Index by Name
-    public int GetMidiOutputDeviceIndex(string name)
+    /// <summary>
+    /// Set gain for all channel strips.
+    /// </summary>
+    /// <param name="value">Gain in [0, 1].</param>
+    public void SetAllChannelsGain(float value)
     {
-        lock (_midiOutputNames)
-        {
-            foreach (var kvp in _midiOutputNames)
-            {
-                if (kvp.Value.Contains(name, StringComparison.OrdinalIgnoreCase))
-                    return kvp.Key;
-            }
-        }
-        return -1;
+        var gain = Math.Max(0f, value);
+        _allChannelsGain = gain;
+        _allGainVolume.Volume = gain;
     }
 
-    // Get MIDI Output by Index
-    public MidiOut? GetMidiOutput(int index)
+    /// <summary>
+    /// Set pan for all channel strips.
+    /// </summary>
+    /// <param name="value">Pan in [-1, 1].</param>
+    public void SetAllChannelsPan(float value)
     {
-        lock (_midiOutputs)
+        var pan = Math.Clamp(value, -1f, 1f);
+        foreach (var channel in _channels.Values)
         {
-            if (index >= 0 && index < _midiOutputs.Count)
+            channel.Pan.Pan = pan;
+        }
+    }
+
+    /// <summary>
+    /// Route a channel output into the master mix.
+    /// </summary>
+    /// <param name="index">1-based channel index.</param>
+    public void RouteChannelToMaster(int index)
+    {
+        if (index < 1) return;
+        var channel = GetOrCreateChannel(index);
+        lock (_routingLock)
+        {
+            if (_masterChannelRoutes.Contains(index))
             {
-                return _midiOutputs[index];
+                return;
+            }
+            _mixer.AddMixerInput(channel.Tap);
+            _masterChannelRoutes.Add(index);
+        }
+    }
+
+    /// <summary>
+    /// Remove a channel from the master mix.
+    /// </summary>
+    /// <param name="index">1-based channel index.</param>
+    public void UnrouteChannelFromMaster(int index)
+    {
+        if (index < 1) return;
+        if (!_channels.TryGetValue(index, out var channel)) return;
+        lock (_routingLock)
+        {
+            if (_masterChannelRoutes.Remove(index))
+            {
+                _mixer.RemoveMixerInput(channel.Tap);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Master output gain in [0, 1].
+    /// </summary>
+    public float MasterGain
+    {
+        get => _masterVolume.Volume;
+        set => _masterVolume.Volume = Math.Max(0f, value);
+    }
+
+    /// <summary>
+    /// Set master output gain in [0, 1].
+    /// </summary>
+    public void SetMasterGain(float value) => MasterGain = value;
+
+    /// <summary>
+    /// Mute or unmute the transport output.
+    /// </summary>
+    /// <param name="muted">True to mute, false to restore.</param>
+    public void SetTransportMuted(bool muted)
+    {
+        _transportVolume.Volume = muted ? 0f : 1f;
+    }
+
+    /// <summary>
+    /// Enable or disable MIDI input processing.
+    /// </summary>
+    /// <param name="enabled">True to enable MIDI input.</param>
+    public void SetMidiEnabled(bool enabled)
+    {
+        _midiRouter.SetEnabled(enabled);
+    }
+
+    /// <summary>
+    /// Enable or disable MIDI input processing with optional all-notes-off.
+    /// </summary>
+    /// <param name="enabled">True to enable MIDI input.</param>
+    /// <param name="sendAllNotesOff">Send all-notes-off when disabling.</param>
+    public void SetMidiEnabled(bool enabled, bool sendAllNotesOff)
+    {
+        _midiRouter.SetEnabled(enabled, sendAllNotesOff);
+    }
+
+    /// <summary>
+    /// Enable or disable a specific MIDI input device.
+    /// </summary>
+    public void SetMidiDeviceEnabled(int deviceIndex, bool enabled, bool sendAllNotesOff = true)
+    {
+        _midiRouter.SetDeviceEnabled(deviceIndex, enabled, sendAllNotesOff);
+    }
+
+    /// <summary>
+    /// Enable or disable a specific MIDI input channel on a device.
+    /// </summary>
+    public void SetMidiChannelEnabled(int deviceIndex, int channel, bool enabled, bool sendAllNotesOff = true)
+    {
+        _midiRouter.SetChannelEnabled(deviceIndex, channel, enabled, sendAllNotesOff);
+    }
+
+    /// <summary>
+    /// Enable or disable a specific MIDI route to a synth.
+    /// </summary>
+    public void SetMidiRouteEnabled(int deviceIndex, int channel, ISynth synth, bool enabled,
+        bool sendAllNotesOff = true)
+    {
+        _midiRouter.SetRouteEnabled(deviceIndex, channel, synth, enabled, sendAllNotesOff);
+    }
+
+    /// <summary>
+    /// Toggle editor mode for patterns and MIDI routing.
+    /// </summary>
+    /// <param name="enabled">True to enable editor mode.</param>
+    public void SetEditorMode(bool enabled)
+    {
+        _editorModeEnabled = enabled;
+        Pattern.SetEditorMode(enabled);
+        _midiRouter.SetEditorMode(enabled);
+    }
+
+    /// <summary>
+    /// Start recording the master output.
+    /// </summary>
+    /// <param name="path">Target file path.</param>
+    /// <param name="format">Optional format override.</param>
+    /// <returns>Recording session instance.</returns>
+    public RecordingSession StartMasterRecording(string path, string? format = null, RecordingOptions? options = null)
+    {
+        return _masterTap.StartRecording(path, format, options);
+    }
+
+    /// <summary>
+    /// Stop master recording.
+    /// </summary>
+    /// <param name="session">Specific session to stop (optional).</param>
+    public void StopMasterRecording(RecordingSession? session = null)
+    {
+        _masterTap.StopRecording(session);
+    }
+
+    /// <summary>
+    /// List available output devices for routing (render endpoints).
+    /// </summary>
+    public IReadOnlyList<AudioOutputDeviceInfo> ListOutputDevices()
+    {
+        using var enumerator = new MMDeviceEnumerator();
+        var devices = enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active);
+        var list = new List<AudioOutputDeviceInfo>();
+        for (int i = 0; i < devices.Count; i++)
+        {
+            var device = devices[i];
+            var format = device.AudioClient.MixFormat;
+            list.Add(new AudioOutputDeviceInfo(i, device.ID, device.FriendlyName, format.Channels, format.SampleRate));
+        }
+        return list;
+    }
+
+    /// <summary>
+    /// Start a virtual output from the master chain to a render device (e.g. VB-CABLE).
+    /// </summary>
+    public bool StartMasterVirtualOutput(int deviceIndex, int latencyMs = 80)
+    {
+        var device = TryGetOutputDevice(deviceIndex);
+        if (device == null) return false;
+        AddVirtualOutput(_masterVirtualOutputs, device, latencyMs, 0);
+        return true;
+    }
+
+    /// <summary>
+    /// Start a virtual output from the master chain to a render device with channel offset.
+    /// </summary>
+    public bool StartMasterVirtualOutput(int deviceIndex, int outputChannelOffset, int latencyMs = 80)
+    {
+        var device = TryGetOutputDevice(deviceIndex);
+        if (device == null) return false;
+        AddVirtualOutput(_masterVirtualOutputs, device, latencyMs, outputChannelOffset);
+        return true;
+    }
+
+    /// <summary>
+    /// Start a virtual output from the master chain to a render device by name.
+    /// </summary>
+    public bool StartMasterVirtualOutput(string deviceName, int latencyMs = 80)
+    {
+        var device = TryGetOutputDevice(deviceName);
+        if (device == null) return false;
+        AddVirtualOutput(_masterVirtualOutputs, device, latencyMs, 0);
+        return true;
+    }
+
+    /// <summary>
+    /// Start a virtual output from the master chain to a render device by name with channel offset.
+    /// </summary>
+    public bool StartMasterVirtualOutput(string deviceName, int outputChannelOffset, int latencyMs = 80)
+    {
+        var device = TryGetOutputDevice(deviceName);
+        if (device == null) return false;
+        AddVirtualOutput(_masterVirtualOutputs, device, latencyMs, outputChannelOffset);
+        return true;
+    }
+
+    /// <summary>
+    /// Stop all virtual outputs on the master chain.
+    /// </summary>
+    public void StopMasterVirtualOutputs()
+    {
+        lock (_virtualOutputLock)
+        {
+            foreach (var output in _masterVirtualOutputs)
+            {
+                output.Dispose();
+            }
+            _masterVirtualOutputs.Clear();
+        }
+    }
+
+    /// <summary>
+    /// Route a channel output into another channel (send).
+    /// </summary>
+    /// <param name="sourceIndex">Source channel (1-based).</param>
+    /// <param name="targetIndex">Target channel (1-based).</param>
+    /// <param name="gain">Send gain in [0, 1].</param>
+    public void RouteChannelToChannel(int sourceIndex, int targetIndex, float gain = 1f)
+    {
+        if (sourceIndex < 1) sourceIndex = 1;
+        if (targetIndex < 1) targetIndex = 1;
+        if (sourceIndex == targetIndex) return;
+
+        var source = GetOrCreateChannel(sourceIndex);
+        var target = GetOrCreateChannel(targetIndex);
+
+        var key = (sourceIndex, targetIndex);
+        lock (_routingLock)
+        {
+            if (_channelSends.TryGetValue(key, out var existing))
+            {
+                target.Mixer.RemoveMixerInput(existing.Volume);
+                source.Tap.SamplesAvailable -= existing.Handler;
+                _channelSends.Remove(key);
+            }
+
+            var buffer = new BufferedWaveProvider(_waveFormat)
+            {
+                DiscardOnBufferOverflow = true,
+                BufferDuration = TimeSpan.FromSeconds(2)
+            };
+            var sampleProvider = buffer.ToSampleProvider();
+            var volume = new VolumeSampleProvider(sampleProvider)
+            {
+                Volume = Math.Clamp(gain, 0f, 1f)
+            };
+
+            Action<float[], int, int> handler = (data, offset, count) =>
+            {
+                if (AudioSilence.IsSilent(data, offset, count, Settings.AudioSilenceThreshold))
+                {
+                    return;
+                }
+                WriteToBuffer(buffer, data, offset, count);
+            };
+
+            source.Tap.SamplesAvailable += handler;
+            target.Mixer.AddMixerInput(volume);
+
+            _channelSends[key] = new ChannelSend(sourceIndex, targetIndex, buffer, volume, handler);
+        }
+    }
+
+    /// <summary>
+    /// Update gain for an existing channel send.
+    /// </summary>
+    public void SetChannelSendGain(int sourceIndex, int targetIndex, float gain)
+    {
+        var key = (sourceIndex, targetIndex);
+        lock (_routingLock)
+        {
+            if (_channelSends.TryGetValue(key, out var send))
+            {
+                send.Volume.Volume = Math.Clamp(gain, 0f, 1f);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Remove a channel send.
+    /// </summary>
+    public void UnrouteChannelFromChannel(int sourceIndex, int targetIndex)
+    {
+        var key = (sourceIndex, targetIndex);
+        lock (_routingLock)
+        {
+            if (!_channelSends.TryGetValue(key, out var send)) return;
+            if (_channels.TryGetValue(targetIndex, out var target))
+            {
+                target.Mixer.RemoveMixerInput(send.Volume);
+            }
+            if (_channels.TryGetValue(sourceIndex, out var source))
+            {
+                source.Tap.SamplesAvailable -= send.Handler;
+            }
+            _channelSends.Remove(key);
+        }
+    }
+
+    /// <summary>
+    /// Clear all sends for a source channel.
+    /// </summary>
+    public void ClearChannelSends(int sourceIndex)
+    {
+        if (sourceIndex < 1) sourceIndex = 1;
+        List<(int Source, int Target)> keys = new();
+        lock (_routingLock)
+        {
+            foreach (var key in _channelSends.Keys)
+            {
+                if (key.Source == sourceIndex)
+                {
+                    keys.Add(key);
+                }
+            }
+        }
+
+        foreach (var key in keys)
+        {
+            UnrouteChannelFromChannel(key.Source, key.Target);
+        }
+    }
+
+    /// <summary>
+    /// Start a virtual output from a channel to a render device.
+    /// </summary>
+    public bool StartChannelVirtualOutput(int channelIndex, int deviceIndex, int latencyMs = 80)
+    {
+        if (channelIndex < 1) channelIndex = 1;
+        var device = TryGetOutputDevice(deviceIndex);
+        if (device == null) return false;
+        var outputs = GetOrCreateChannelVirtualOutputs(channelIndex);
+        AddVirtualOutput(outputs, device, latencyMs, 0);
+        return true;
+    }
+
+    /// <summary>
+    /// Start a virtual output from a channel to a render device with channel offset.
+    /// </summary>
+    public bool StartChannelVirtualOutput(int channelIndex, int deviceIndex, int outputChannelOffset, int latencyMs = 80)
+    {
+        if (channelIndex < 1) channelIndex = 1;
+        var device = TryGetOutputDevice(deviceIndex);
+        if (device == null) return false;
+        var outputs = GetOrCreateChannelVirtualOutputs(channelIndex);
+        AddVirtualOutput(outputs, device, latencyMs, outputChannelOffset);
+        return true;
+    }
+
+    /// <summary>
+    /// Start a virtual output from a channel to a render device by name.
+    /// </summary>
+    public bool StartChannelVirtualOutput(int channelIndex, string deviceName, int latencyMs = 80)
+    {
+        if (channelIndex < 1) channelIndex = 1;
+        var device = TryGetOutputDevice(deviceName);
+        if (device == null) return false;
+        var outputs = GetOrCreateChannelVirtualOutputs(channelIndex);
+        AddVirtualOutput(outputs, device, latencyMs, 0);
+        return true;
+    }
+
+    /// <summary>
+    /// Start a virtual output from a channel to a render device by name with channel offset.
+    /// </summary>
+    public bool StartChannelVirtualOutput(int channelIndex, string deviceName, int outputChannelOffset, int latencyMs = 80)
+    {
+        if (channelIndex < 1) channelIndex = 1;
+        var device = TryGetOutputDevice(deviceName);
+        if (device == null) return false;
+        var outputs = GetOrCreateChannelVirtualOutputs(channelIndex);
+        AddVirtualOutput(outputs, device, latencyMs, outputChannelOffset);
+        return true;
+    }
+
+    /// <summary>
+    /// Stop all virtual outputs on a channel.
+    /// </summary>
+    public void StopChannelVirtualOutputs(int channelIndex)
+    {
+        if (channelIndex < 1) channelIndex = 1;
+        lock (_virtualOutputLock)
+        {
+            if (_channelVirtualOutputs.TryGetValue(channelIndex, out var outputs))
+            {
+                foreach (var output in outputs)
+                {
+                    output.Dispose();
+                }
+                outputs.Clear();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Add an effect to the master chain.
+    /// </summary>
+    /// <param name="effect">Effect to add.</param>
+    public void AddMasterEffect(IAudioEffect effect)
+    {
+        _masterEffects.AddEffect(effect);
+    }
+
+    /// <summary>
+    /// Remove all master effects.
+    /// </summary>
+    public void ClearMasterEffects()
+    {
+        _masterEffects.ClearEffects();
+    }
+
+    /// <summary>
+    /// Set the gain for a specific channel.
+    /// </summary>
+    /// <param name="index">1-based channel index.</param>
+    /// <param name="value">Gain in [0, 1].</param>
+    public void SetChannelGain(int index, float value)
+    {
+        if (index < 1) return;
+        if (_channels.TryGetValue(index, out var channel))
+        {
+            channel.ChannelGain = Math.Max(0f, value);
+            channel.Volume.Volume = channel.ChannelGain;
+        }
+    }
+
+    /// <summary>
+    /// Set the pan for a specific channel.
+    /// </summary>
+    /// <param name="index">1-based channel index.</param>
+    /// <param name="value">Pan in [-1, 1].</param>
+    public void SetChannelPan(int index, float value)
+    {
+        if (index < 1) return;
+        if (_channels.TryGetValue(index, out var channel))
+        {
+            channel.Pan.Pan = value;
+        }
+    }
+
+    /// <summary>
+    /// Add an effect to a channel chain.
+    /// </summary>
+    /// <param name="index">1-based channel index.</param>
+    /// <param name="effect">Effect to add.</param>
+    public void AddChannelEffect(int index, IAudioEffect effect)
+    {
+        if (index < 1) return;
+        var channel = GetOrCreateChannel(index);
+        channel.Effects.AddEffect(effect);
+    }
+
+    /// <summary>
+    /// Clear all effects on a channel.
+    /// </summary>
+    /// <param name="index">1-based channel index.</param>
+    public void ClearChannelEffects(int index)
+    {
+        if (index < 1) return;
+        if (_channels.TryGetValue(index, out var channel))
+        {
+            channel.Effects.ClearEffects();
+        }
+    }
+
+    /// <summary>
+    /// Start recording a specific channel.
+    /// </summary>
+    /// <param name="index">1-based channel index.</param>
+    /// <param name="path">Target file path.</param>
+    /// <param name="format">Optional format override.</param>
+    /// <returns>Recording session instance.</returns>
+    public RecordingSession StartChannelRecording(int index, string path, string? format = null, RecordingOptions? options = null)
+    {
+        if (index < 1) index = 1;
+        var channel = GetOrCreateChannel(index);
+        return channel.Tap.StartRecording(path, format, options);
+    }
+
+    /// <summary>
+    /// Stop channel recording.
+    /// </summary>
+    /// <param name="index">1-based channel index.</param>
+    /// <param name="session">Specific session to stop (optional).</param>
+    public void StopChannelRecording(int index, RecordingSession? session = null)
+    {
+        if (index < 1) index = 1;
+        if (_channels.TryGetValue(index, out var channel))
+        {
+            channel.Tap.StopRecording(session);
+        }
+    }
+
+    /// <summary>
+    /// Route a MIDI input device to a synth.
+    /// </summary>
+    /// <param name="deviceIndex">MIDI device index.</param>
+    /// <param name="synth">Target synth.</param>
+    public void RouteMidiInput(int deviceIndex, ISynth synth)
+    {
+        RouteMidiInput(deviceIndex, -1, synth);
+    }
+
+    /// <summary>
+    /// Route a MIDI input device channel to a synth.
+    /// </summary>
+    /// <param name="deviceIndex">MIDI device index.</param>
+    /// <param name="channel">MIDI channel (0-15) or -1 for all.</param>
+    /// <param name="synth">Target synth.</param>
+    public void RouteMidiInput(int deviceIndex, int channel, ISynth synth)
+    {
+        _midiRouter.Route(deviceIndex, channel, synth);
+        EnsureMidiInput(deviceIndex);
+    }
+
+    /// <summary>
+    /// Map a MIDI controller to a custom action.
+    /// </summary>
+    /// <param name="deviceIndex">MIDI device index.</param>
+    /// <param name="controlId">Control change ID.</param>
+    /// <param name="action">Action invoked with normalized value.</param>
+    public void MapControlAction(int deviceIndex, int controlId, Action<float> action)
+    {
+        MapControlAction(deviceIndex, -1, controlId, action);
+    }
+
+    /// <summary>
+    /// Map a MIDI controller to a custom action for a specific channel.
+    /// </summary>
+    /// <param name="deviceIndex">MIDI device index.</param>
+    /// <param name="channel">MIDI channel (0-15) or -1 for all.</param>
+    /// <param name="controlId">Control change ID.</param>
+    /// <param name="action">Action invoked with normalized value.</param>
+    public void MapControlAction(int deviceIndex, int channel, int controlId, Action<float> action)
+    {
+        _midiRouter.MapControlAction(deviceIndex, channel, controlId, action);
+        EnsureMidiInput(deviceIndex);
+    }
+
+    /// <summary>
+    /// Clear all MIDI control mappings and routes.
+    /// </summary>
+    public void ClearMappings()
+    {
+        _midiRouter.Clear();
+    }
+
+    /// <summary>
+    /// Snapshot of recent MIDI device activity.
+    /// </summary>
+    /// <returns>List of activity snapshots.</returns>
+    public IReadOnlyList<MidiDeviceActivitySnapshot> GetMidiActivitySnapshot()
+    {
+        return _midiRouter.GetActivitySnapshot();
+    }
+
+    /// <summary>
+    /// Remove all routed providers and reset effects/recording state.
+    /// </summary>
+    public void ClearMixer()
+    {
+        _mixer.RemoveAllMixerInputs();
+        _channels.Clear();
+        _routing.Clear();
+        _masterRouting.Clear();
+        _masterChannelRoutes.Clear();
+        _normalizedProviders.Clear();
+        _masterEffects.ClearEffects();
+        _masterTap.StopAll();
+    }
+
+    /// <summary>
+    /// Register a pattern so its editor note events are forwarded by the engine.
+    /// </summary>
+    /// <param name="pattern">Pattern to register for editor events.</param>
+    public void RegisterPatternForEditor(Pattern pattern)
+    {
+        if (pattern == null) return;
+        pattern.EditorNoteEvent += OnPatternNoteEvent;
+    }
+
+    private void OnPatternNoteEvent(PatternNoteEventInfo info)
+    {
+        var handler = EditorPatternNote;
+        handler?.Invoke(info);
+    }
+
+    private void EnsureMidiInput(int deviceIndex)
+    {
+        if (_midiInputs.ContainsKey(deviceIndex)) return;
+        if (deviceIndex < 0 || deviceIndex >= MidiIn.NumberOfDevices) return;
+
+        var midiIn = new MidiIn(deviceIndex);
+        midiIn.MessageReceived += (_, args) => HandleMidiMessage(deviceIndex, args);
+        midiIn.ErrorReceived += (_, _) => { };
+        midiIn.Start();
+        _midiInputs[deviceIndex] = midiIn;
+    }
+
+    private void HandleMidiMessage(int deviceIndex, MidiInMessageEventArgs args)
+    {
+        _midiRouter.HandleMidiMessage(deviceIndex, args);
+    }
+
+    /// <summary>
+    /// Dispose the audio engine and release resources.
+    /// </summary>
+    public void Dispose()
+    {
+        SetEditorMode(false);
+        ClearAllChannelSends();
+        foreach (var midiIn in _midiInputs.Values)
+        {
+            midiIn.Stop();
+            midiIn.Dispose();
+        }
+        _midiInputs.Clear();
+
+        foreach (var input in _audioInputs)
+        {
+            input.Dispose();
+        }
+        _audioInputs.Clear();
+
+        StopMasterVirtualOutputs();
+        foreach (var entry in _channelVirtualOutputs.Values)
+        {
+            foreach (var output in entry)
+            {
+                output.Dispose();
+            }
+            entry.Clear();
+        }
+        _channelVirtualOutputs.Clear();
+
+        _output?.Stop();
+        _output?.Dispose();
+        _output = null;
+        _outputRunning = false;
+
+        MidiOutPool.DisposeAll();
+    }
+
+    private AudioChannel GetOrCreateChannel(int index)
+    {
+        if (_channels.TryGetValue(index, out var existing)) return existing;
+
+        var mixer = new MixingSampleProvider(_waveFormat) { ReadFully = true };
+        var effects = new AudioEffectChain(mixer, _waveFormat);
+        var pan = new PanSampleProvider(effects);
+        var volume = new VolumeSampleProvider(pan) { Volume = 1f };
+        var tap = new RecordingTap(volume);
+        tap.SamplesAvailable += (buffer, offset, count) => OnChannelSamples(index, buffer, offset, count);
+
+        var channel = new AudioChannel(index, mixer, effects, pan, volume, tap)
+        {
+            ChannelGain = 1f
+        };
+        channel.Volume.Volume = channel.ChannelGain;
+        _channels[index] = channel;
+        return channel;
+    }
+
+    private static void WriteToBuffer(BufferedWaveProvider buffer, float[] samples, int offset, int count)
+    {
+        int byteCount = count * sizeof(float);
+        var rented = ArrayPool<byte>.Shared.Rent(byteCount);
+        try
+        {
+            Buffer.BlockCopy(samples, offset * sizeof(float), rented, 0, byteCount);
+            buffer.AddSamples(rented, 0, byteCount);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(rented);
+        }
+    }
+
+    private void ClearAllChannelSends()
+    {
+        List<(int Source, int Target)> keys;
+        lock (_routingLock)
+        {
+            keys = new List<(int, int)>(_channelSends.Keys);
+        }
+
+        foreach (var key in keys)
+        {
+            UnrouteChannelFromChannel(key.Source, key.Target);
+        }
+    }
+
+    private ISampleProvider GetOrCreateNormalized(ISampleProvider provider)
+    {
+        if (_normalizedProviders.TryGetValue(provider, out var normalized)) return normalized;
+
+        var current = provider;
+        if (current.WaveFormat.SampleRate != _waveFormat.SampleRate)
+        {
+            current = new WdlResamplingSampleProvider(current, _waveFormat.SampleRate);
+        }
+
+        if (current.WaveFormat.Channels != _waveFormat.Channels)
+        {
+            current = current.WaveFormat.Channels == 1
+                ? new MonoToStereoSampleProvider(current)
+                : new StereoToMonoSampleProvider(current);
+        }
+
+        _normalizedProviders[provider] = current;
+        return current;
+    }
+
+    private sealed class AudioChannel
+    {
+        public int Index { get; }
+        public MixingSampleProvider Mixer { get; }
+        public AudioEffectChain Effects { get; }
+        public PanSampleProvider Pan { get; }
+        public VolumeSampleProvider Volume { get; }
+        public RecordingTap Tap { get; }
+        public float ChannelGain { get; set; } = 1f;
+
+        public AudioChannel(int index, MixingSampleProvider mixer, AudioEffectChain effects, PanSampleProvider pan,
+            VolumeSampleProvider volume, RecordingTap tap)
+        {
+            Index = index;
+            Mixer = mixer;
+            Effects = effects;
+            Pan = pan;
+            Volume = volume;
+            Tap = tap;
+        }
+    }
+
+    private sealed class ChannelSend
+    {
+        public int Source { get; }
+        public int Target { get; }
+        public BufferedWaveProvider Buffer { get; }
+        public VolumeSampleProvider Volume { get; }
+        public Action<float[], int, int> Handler { get; }
+
+        public ChannelSend(int source, int target, BufferedWaveProvider buffer, VolumeSampleProvider volume,
+            Action<float[], int, int> handler)
+        {
+            Source = source;
+            Target = target;
+            Buffer = buffer;
+            Volume = volume;
+            Handler = handler;
+        }
+    }
+
+    /// <summary>
+    /// List available audio input devices (capture endpoints).
+    /// </summary>
+    public IReadOnlyList<AudioInputDeviceInfo> ListInputDevices()
+    {
+        using var enumerator = new MMDeviceEnumerator();
+        var devices = enumerator.EnumerateAudioEndPoints(DataFlow.Capture, DeviceState.Active);
+        var list = new List<AudioInputDeviceInfo>();
+        for (int i = 0; i < devices.Count; i++)
+        {
+            var device = devices[i];
+            list.Add(new AudioInputDeviceInfo(i, device.ID, device.FriendlyName));
+        }
+        return list;
+    }
+
+    /// <summary>
+    /// Create a live audio input from a capture device index.
+    /// </summary>
+    public AudioInput CreateInput(int deviceIndex)
+    {
+        var device = TryGetInputDevice(deviceIndex);
+        if (device == null)
+        {
+            throw new InvalidOperationException($"Audio input device not found: {deviceIndex}");
+        }
+
+        var input = new AudioInput(device, deviceIndex);
+        _audioInputs.Add(input);
+        return input;
+    }
+
+    /// <summary>
+    /// Create a live audio input from a capture device name.
+    /// </summary>
+    public AudioInput CreateInput(string deviceName)
+    {
+        var device = TryGetInputDevice(deviceName);
+        if (device == null)
+        {
+            throw new InvalidOperationException($"Audio input device not found: {deviceName}");
+        }
+
+        var input = new AudioInput(device, -1);
+        _audioInputs.Add(input);
+        return input;
+    }
+
+    private void OnMasterSamples(float[] buffer, int offset, int count)
+    {
+        if (AudioSilence.IsSilent(buffer, offset, count, Settings.AudioSilenceThreshold))
+        {
+            return;
+        }
+        List<AudioVirtualOutput> outputs;
+        lock (_virtualOutputLock)
+        {
+            if (_masterVirtualOutputs.Count == 0) return;
+            outputs = new List<AudioVirtualOutput>(_masterVirtualOutputs);
+        }
+
+        foreach (var output in outputs)
+        {
+            output.Push(buffer, offset, count);
+        }
+    }
+
+    private void OnChannelSamples(int channelIndex, float[] buffer, int offset, int count)
+    {
+        if (AudioSilence.IsSilent(buffer, offset, count, Settings.AudioSilenceThreshold))
+        {
+            return;
+        }
+        List<AudioVirtualOutput>? outputs;
+        lock (_virtualOutputLock)
+        {
+            if (!_channelVirtualOutputs.TryGetValue(channelIndex, out outputs) || outputs.Count == 0)
+            {
+                return;
+            }
+
+            outputs = new List<AudioVirtualOutput>(outputs);
+        }
+
+        foreach (var output in outputs)
+        {
+            output.Push(buffer, offset, count);
+        }
+    }
+
+    private List<AudioVirtualOutput> GetOrCreateChannelVirtualOutputs(int channelIndex)
+    {
+        lock (_virtualOutputLock)
+        {
+            if (_channelVirtualOutputs.TryGetValue(channelIndex, out var outputs))
+            {
+                return outputs;
+            }
+
+            outputs = new List<AudioVirtualOutput>();
+            _channelVirtualOutputs[channelIndex] = outputs;
+            return outputs;
+        }
+    }
+
+    private void AddVirtualOutput(List<AudioVirtualOutput> outputs, MMDevice device, int latencyMs, int outputChannelOffset)
+    {
+        lock (_virtualOutputLock)
+        {
+            foreach (var existing in outputs)
+            {
+                if (string.Equals(existing.DeviceId, device.ID, StringComparison.OrdinalIgnoreCase) &&
+                    existing.OutputChannelOffset == outputChannelOffset)
+                {
+                    device.Dispose();
+                    return;
+                }
+            }
+
+            outputs.Add(new AudioVirtualOutput(device, _waveFormat, latencyMs, outputChannelOffset));
+        }
+    }
+
+    private static MMDevice? TryGetOutputDevice(int index)
+    {
+        using var enumerator = new MMDeviceEnumerator();
+        var devices = enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active);
+        if (index < 0 || index >= devices.Count) return null;
+        return devices[index];
+    }
+
+    private static MMDevice? TryGetOutputDevice(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return null;
+        using var enumerator = new MMDeviceEnumerator();
+        var devices = enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active);
+        foreach (var device in devices)
+        {
+            if (device.FriendlyName.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return device;
             }
         }
         return null;
     }
 
-    // Send MIDI message to output
-    public void SendMidiMessage(int outputIndex, int status, int data1, int data2)
+    public readonly record struct AudioOutputDeviceInfo(int Index, string Id, string Name, int Channels, int SampleRate);
+    public readonly record struct AudioInputDeviceInfo(int Index, string Id, string Name);
+
+    private static MMDevice? TryGetInputDevice(int index)
     {
-        var midiOut = GetMidiOutput(outputIndex);
-        if (midiOut != null)
+        using var enumerator = new MMDeviceEnumerator();
+        var devices = enumerator.EnumerateAudioEndPoints(DataFlow.Capture, DeviceState.Active);
+        if (index < 0 || index >= devices.Count) return null;
+        return devices[index];
+    }
+
+    private static MMDevice? TryGetInputDevice(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return null;
+        using var enumerator = new MMDeviceEnumerator();
+        var devices = enumerator.EnumerateAudioEndPoints(DataFlow.Capture, DeviceState.Active);
+        foreach (var device in devices)
         {
-            int message = status | (data1 << 8) | (data2 << 16);
-            midiOut.Send(message);
-        }
-    }
-
-    // Send Note On to MIDI output
-    public void SendNoteOn(int outputIndex, int channel, int note, int velocity)
-    {
-        int status = 0x90 | (channel & 0x0F);
-        SendMidiMessage(outputIndex, status, note, velocity);
-    }
-
-    // Send Note Off to MIDI output
-    public void SendNoteOff(int outputIndex, int channel, int note)
-    {
-        int status = 0x80 | (channel & 0x0F);
-        SendMidiMessage(outputIndex, status, note, 0);
-    }
-
-    // Send Control Change to MIDI output
-    public void SendControlChange(int outputIndex, int channel, int controller, int value)
-    {
-        int status = 0xB0 | (channel & 0x0F);
-        SendMidiMessage(outputIndex, status, controller, value);
-    }
-
-    // === VST Plugin Methods ===
-
-    // Get VST Host instance
-    public VstHost VstHost => _vstHost;
-
-    // Scan for VST plugins
-    public List<VstPluginInfo> ScanVstPlugins()
-    {
-        return _vstHost.ScanForPlugins();
-    }
-
-    // Load a VST plugin by name (returns IVstPlugin to support both VST2 and VST3)
-    public IVstPlugin? LoadVstPlugin(string nameOrPath)
-    {
-        var plugin = _vstHost.LoadPlugin(nameOrPath);
-        if (plugin != null)
-        {
-            AddSampleProvider(plugin);
-            var handler = PluginLoaded;
-            handler?.Invoke(this, new PluginEventArgs(plugin));
-        }
-        return plugin;
-    }
-
-    // Load a VST plugin by index (returns IVstPlugin to support both VST2 and VST3)
-    public IVstPlugin? LoadVstPluginByIndex(int index)
-    {
-        var plugin = _vstHost.LoadPluginByIndex(index);
-        if (plugin != null)
-        {
-            AddSampleProvider(plugin);
-            var handler = PluginLoaded;
-            handler?.Invoke(this, new PluginEventArgs(plugin));
-        }
-        return plugin;
-    }
-
-    // Get a loaded VST plugin (returns IVstPlugin to support both VST2 and VST3)
-    public IVstPlugin? GetVstPlugin(string name)
-    {
-        return _vstHost.GetPlugin(name);
-    }
-
-    // Route MIDI input to a VST plugin
-    public void RouteMidiToVst(int deviceIndex, VstPlugin plugin)
-    {
-        lock (_midiInputRouting)
-        {
-            _midiInputRouting[deviceIndex] = plugin;
-        }
-    }
-
-    // Unload a VST plugin
-    public void UnloadVstPlugin(string name)
-    {
-        var plugin = _vstHost.GetPlugin(name);
-        _vstHost.UnloadPlugin(name);
-        if (plugin != null)
-        {
-            var handler = PluginUnloaded;
-            handler?.Invoke(this, new PluginEventArgs(plugin));
-        }
-    }
-
-    // Print discovered VST plugins
-    public void PrintVstPlugins()
-    {
-        _vstHost.PrintDiscoveredPlugins();
-    }
-
-    // Print loaded VST plugins
-    public void PrintLoadedVstPlugins()
-    {
-        _vstHost.PrintLoadedPlugins();
-    }
-
-    // Mixer and Channel Management
-    public void AddSampleProvider(ISampleProvider provider)
-    {
-        var resampled = provider.WaveFormat.SampleRate == _waveFormat.SampleRate // No resampling needed
-            ? provider // Use as is
-            : new WdlResamplingSampleProvider(provider, _waveFormat.SampleRate); // Resample to match engine sample rate
-
-        var volumeProvider = new VolumeSampleProvider(resampled); // Create volume control for the channel
-
-        int channelIndex;
-        lock (_channels) // Lock for thread safety
-        {
-            volumeProvider.Volume = 1.0f;  // Default volume
-            _channels.Add(volumeProvider); // Add to the channel list
-            channelIndex = _channels.Count - 1; // Capture index under lock
-        }
-
-        _mixer.AddMixerInput(volumeProvider); // Add to mixer
-        var handler = ChannelAdded;
-        handler?.Invoke(this, new ChannelEventArgs(channelIndex));
-    }
-
-    // Set gain for a specific channel
-    public void SetChannelGain(int index, float gain)
-    {
-        lock (_channels)
-        {
-            if (index >= 0 && index < _channels.Count)
+            if (device.FriendlyName.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0)
             {
-                _channels[index].Volume = gain;
+                return device;
             }
         }
-    }
-
-    // Set master gain for all channels
-    public void SetAllChannelsGain(float gain)
-    {
-        _masterVolume.Volume = gain; // Set master volume
-        _masterGain = gain; // Store master gain
-    }
-
-    // === Virtual Audio Channel Methods ===
-
-    /// <summary>
-    /// Gets the virtual channel manager.
-    /// </summary>
-    public VirtualChannelManager VirtualChannels => _virtualChannels;
-
-    /// <summary>
-    /// Creates a virtual audio channel that other applications can read from.
-    /// </summary>
-    public VirtualAudioChannel CreateVirtualChannel(string name)
-    {
-        var channel = _virtualChannels.CreateChannel(name, _waveFormat.SampleRate, _waveFormat.Channels);
-        channel.Start();
-        return channel;
-    }
-
-    /// <summary>
-    /// Sends audio to a virtual channel (call from a sample provider).
-    /// </summary>
-    public void SendToVirtualChannel(string channelName, float[] samples)
-    {
-        var channel = _virtualChannels.GetChannel(channelName);
-        channel?.Write(samples);
-    }
-
-    /// <summary>
-    /// Lists all virtual channels.
-    /// </summary>
-    public void ListVirtualChannels()
-    {
-        _virtualChannels.ListChannels();
-    }
-
-    // === Audio Recording Methods ===
-
-    /// <summary>
-    /// Creates an AudioRecorder for recording the master output.
-    /// </summary>
-    /// <returns>A new AudioRecorder configured with the master output.</returns>
-    /// <example>
-    /// using var recorder = engine.CreateRecorder();
-    /// recorder.StartRecording("output.wav");
-    /// // ... play audio ...
-    /// recorder.StopRecording();
-    /// </example>
-    public AudioRecorder CreateRecorder()
-    {
-        return new AudioRecorder(_masterVolume, _waveFormat.SampleRate, _waveFormat.Channels);
-    }
-
-    // === Plugin Delay Compensation (PDC) Methods ===
-
-    /// <summary>
-    /// Gets the PDC Manager for managing plugin delay compensation across tracks.
-    /// </summary>
-    public PdcManager PdcManager => _pdcManager;
-
-    /// <summary>
-    /// Gets or sets whether Plugin Delay Compensation is enabled.
-    /// </summary>
-    public bool PdcEnabled
-    {
-        get => _pdcManager.Enabled;
-        set => _pdcManager.Enabled = value;
-    }
-
-    /// <summary>
-    /// Gets the maximum latency across all registered PDC tracks in samples.
-    /// </summary>
-    public int PdcMaxLatencySamples => _pdcManager.MaxLatencySamples;
-
-    /// <summary>
-    /// Gets the maximum latency across all registered PDC tracks in milliseconds.
-    /// </summary>
-    public double PdcMaxLatencyMs => _pdcManager.MaxLatencyMs;
-
-    /// <summary>
-    /// Registers a track with its effect chain for PDC management.
-    /// </summary>
-    /// <param name="trackId">Unique identifier for the track.</param>
-    /// <param name="effectChain">The effect chain for this track.</param>
-    /// <param name="maxCompensationSamples">Maximum compensation delay capacity (default: 1 second).</param>
-    public void RegisterTrackForPdc(string trackId, EffectChain effectChain, int maxCompensationSamples = 0)
-    {
-        var reporters = effectChain.GetLatencyReporters();
-        _pdcManager.RegisterTrack(trackId, reporters, maxCompensationSamples);
-        _logger?.LogDebug("Registered track '{TrackId}' for PDC with {Count} latency reporters", trackId, reporters.Count);
-    }
-
-    /// <summary>
-    /// Registers a track with a VST plugin for PDC management.
-    /// </summary>
-    /// <param name="trackId">Unique identifier for the track.</param>
-    /// <param name="vstEffectAdapter">The VST effect adapter for this track.</param>
-    /// <param name="maxCompensationSamples">Maximum compensation delay capacity (default: 1 second).</param>
-    public void RegisterTrackForPdc(string trackId, VstEffectAdapter vstEffectAdapter, int maxCompensationSamples = 0)
-    {
-        _pdcManager.RegisterTrack(trackId, vstEffectAdapter, maxCompensationSamples);
-        _logger?.LogDebug("Registered track '{TrackId}' for PDC with VST effect '{EffectName}'", trackId, vstEffectAdapter.Name);
-    }
-
-    /// <summary>
-    /// Unregisters a track from PDC management.
-    /// </summary>
-    /// <param name="trackId">The track identifier.</param>
-    public void UnregisterTrackFromPdc(string trackId)
-    {
-        _pdcManager.UnregisterTrack(trackId);
-        _logger?.LogDebug("Unregistered track '{TrackId}' from PDC", trackId);
-    }
-
-    /// <summary>
-    /// Gets the compensation delay buffer for a track to apply PDC during processing.
-    /// </summary>
-    /// <param name="trackId">The track identifier.</param>
-    /// <returns>The delay compensation buffer, or null if track not found.</returns>
-    public DelayCompensationBuffer? GetPdcBuffer(string trackId)
-    {
-        return _pdcManager.GetCompensationBuffer(trackId);
-    }
-
-    /// <summary>
-    /// Processes audio through PDC compensation for a specific track.
-    /// </summary>
-    /// <param name="trackId">The track identifier.</param>
-    /// <param name="input">Input audio samples.</param>
-    /// <param name="output">Output buffer for compensated audio.</param>
-    /// <param name="offset">Offset into the output buffer.</param>
-    /// <param name="count">Number of samples to process.</param>
-    /// <returns>Number of samples processed.</returns>
-    public int ApplyPdcCompensation(string trackId, float[] input, float[] output, int offset, int count)
-    {
-        return _pdcManager.ProcessCompensation(trackId, input, output, offset, count);
-    }
-
-    /// <summary>
-    /// Manually triggers recalculation of PDC compensation values.
-    /// This is automatically called when track latencies change.
-    /// </summary>
-    public void RecalculatePdc()
-    {
-        _pdcManager.RecalculateCompensation();
-    }
-
-    /// <summary>
-    /// Gets a summary of PDC latencies and compensations for all tracks.
-    /// </summary>
-    /// <returns>Dictionary mapping track IDs to (Latency, Compensation) tuples.</returns>
-    public Dictionary<string, (int Latency, int Compensation)> GetPdcSummary()
-    {
-        return _pdcManager.GetLatencySummary();
-    }
-
-    // === Routing Matrix Methods ===
-
-    /// <summary>
-    /// Gets the routing matrix for managing audio signal routing.
-    /// </summary>
-    public RoutingMatrix RoutingMatrix => _routingMatrix;
-
-    /// <summary>
-    /// Gets the sidechain bus manager for managing sidechain signal paths.
-    /// </summary>
-    public SidechainBusManager SidechainBusManager => _sidechainBusManager;
-
-    /// <summary>
-    /// Gets the track group manager for managing track groups.
-    /// </summary>
-    public TrackGroupManager TrackGroupManager => _trackGroupManager;
-
-    /// <summary>
-    /// Registers a track source for routing.
-    /// </summary>
-    /// <param name="trackId">Unique identifier for the track.</param>
-    /// <param name="trackName">Display name for the track.</param>
-    /// <param name="source">The audio source sample provider.</param>
-    /// <returns>The created routing point for the track output.</returns>
-    public RoutingPoint RegisterTrackSource(string trackId, string trackName, ISampleProvider source)
-    {
-        if (string.IsNullOrWhiteSpace(trackId))
-            throw new ArgumentNullException(nameof(trackId));
-        if (source == null)
-            throw new ArgumentNullException(nameof(source));
-
-        lock (_registeredSources)
-        {
-            _registeredSources[trackId] = source;
-        }
-
-        // Create and register routing point
-        var point = RoutingPointFactory.CreateTrackOutput(trackId, trackName, source, source.WaveFormat.Channels);
-        _routingMatrix.RegisterPoint(point);
-
-        _logger?.LogDebug("Registered track source '{TrackId}' ({TrackName}) for routing", trackId, trackName);
-        return point;
-    }
-
-    /// <summary>
-    /// Unregisters a track source from routing.
-    /// </summary>
-    /// <param name="trackId">The track identifier to unregister.</param>
-    /// <returns>True if unregistered successfully.</returns>
-    public bool UnregisterTrackSource(string trackId)
-    {
-        if (string.IsNullOrWhiteSpace(trackId))
-            return false;
-
-        lock (_registeredSources)
-        {
-            _registeredSources.Remove(trackId);
-        }
-
-        // Find and unregister the routing point
-        var point = _routingMatrix.GetAllPoints()
-            .Find(p => p.AssociatedTrackId == trackId);
-
-        if (point != null)
-        {
-            _routingMatrix.UnregisterPoint(point.PointId);
-            _logger?.LogDebug("Unregistered track source '{TrackId}' from routing", trackId);
-            return true;
-        }
-
-        return false;
-    }
-
-    /// <summary>
-    /// Gets the sidechain signal from a registered source.
-    /// </summary>
-    /// <param name="sourceId">The source track ID or routing point name.</param>
-    /// <returns>The sample provider for the sidechain signal, or null if not found.</returns>
-    /// <remarks>
-    /// This method retrieves the audio signal from a registered track source
-    /// that can be used as a sidechain input for dynamics processors like compressors.
-    /// </remarks>
-    /// <example>
-    /// <code>
-    /// // Get the kick drum track as a sidechain source
-    /// var kickSidechain = engine.GetSidechainSignal("kick_track");
-    /// if (kickSidechain != null)
-    /// {
-    ///     compressor.ConnectSidechain(kickSidechain);
-    /// }
-    /// </code>
-    /// </example>
-    public ISampleProvider? GetSidechainSignal(string sourceId)
-    {
-        if (string.IsNullOrWhiteSpace(sourceId))
-            return null;
-
-        // First check registered sources
-        lock (_registeredSources)
-        {
-            if (_registeredSources.TryGetValue(sourceId, out var source))
-            {
-                return source;
-            }
-        }
-
-        // Check routing points
-        var point = _routingMatrix.GetPointByName(sourceId);
-        if (point?.SampleProvider != null)
-        {
-            return point.SampleProvider;
-        }
-
-        // Check by track ID in routing points
-        point = _routingMatrix.GetAllPoints()
-            .Find(p => p.AssociatedTrackId?.Equals(sourceId, StringComparison.OrdinalIgnoreCase) == true);
-
-        return point?.SampleProvider;
-    }
-
-    /// <summary>
-    /// Creates a sidechain bus that routes audio from a source track to a target effect.
-    /// </summary>
-    /// <param name="sourceTrackId">The source track ID.</param>
-    /// <param name="targetEffectName">The target effect name.</param>
-    /// <param name="tapPoint">Where to tap the signal (default: PostFader).</param>
-    /// <returns>The created sidechain bus.</returns>
-    public SidechainBus CreateSidechainRoute(string sourceTrackId, string targetEffectName,
-        SidechainTapPoint tapPoint = SidechainTapPoint.PostFader)
-    {
-        var source = GetSidechainSignal(sourceTrackId);
-        var bus = _sidechainBusManager.CreateBusForEffect(targetEffectName, source, sourceTrackId);
-        bus.TapPoint = tapPoint;
-
-        // Create routing points and route
-        var sourcePoint = _routingMatrix.GetAllPoints()
-            .Find(p => p.AssociatedTrackId == sourceTrackId);
-
-        if (sourcePoint == null)
-        {
-            // Create a send point if source point doesn't exist
-            sourcePoint = RoutingPointFactory.CreateSend($"{sourceTrackId} SC Send", sourceTrackId);
-            sourcePoint.SampleProvider = source;
-            _routingMatrix.RegisterPoint(sourcePoint);
-        }
-
-        var destPoint = RoutingPointFactory.CreateSidechainInput(targetEffectName);
-        _routingMatrix.RegisterPoint(destPoint);
-
-        // Create the route if both points exist
-        if (sourcePoint.CanBeSource)
-        {
-            try
-            {
-                _routingMatrix.CreateRoute(sourcePoint, destPoint, 0f);
-                _logger?.LogDebug("Created sidechain route from '{Source}' to '{Target}'", sourceTrackId, targetEffectName);
-            }
-            catch (InvalidOperationException ex)
-            {
-                _logger?.LogWarning(ex, "Could not create sidechain route: {Message}", ex.Message);
-            }
-        }
-
-        return bus;
-    }
-
-    /// <summary>
-    /// Creates a route between two tracks or routing points.
-    /// </summary>
-    /// <param name="sourceId">The source track ID or routing point name.</param>
-    /// <param name="destinationId">The destination track ID or routing point name.</param>
-    /// <param name="gainDb">Route gain in decibels (default: 0 dB).</param>
-    /// <returns>The created audio route, or null if routing is not possible.</returns>
-    public AudioRoute? CreateRoute(string sourceId, string destinationId, float gainDb = 0f)
-    {
-        var sourcePoint = _routingMatrix.GetPointByName(sourceId) ??
-            _routingMatrix.GetAllPoints().Find(p => p.AssociatedTrackId == sourceId);
-
-        var destPoint = _routingMatrix.GetPointByName(destinationId) ??
-            _routingMatrix.GetAllPoints().Find(p => p.AssociatedTrackId == destinationId);
-
-        if (sourcePoint == null || destPoint == null)
-        {
-            _logger?.LogWarning("Cannot create route: source or destination point not found");
-            return null;
-        }
-
-        try
-        {
-            return _routingMatrix.CreateRoute(sourcePoint, destPoint, gainDb);
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogWarning(ex, "Failed to create route from '{Source}' to '{Destination}'", sourceId, destinationId);
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// Gets the routing matrix visualization data for UI display.
-    /// </summary>
-    /// <returns>List of matrix cells representing the routing state.</returns>
-    public List<MatrixCell> GetRoutingMatrixVisualization()
-    {
-        return _routingMatrix.GetMatrixCells();
-    }
-
-    /// <summary>
-    /// Gets a summary of the current routing configuration.
-    /// </summary>
-    public string GetRoutingSummary()
-    {
-        return _routingMatrix.GetRoutingSummary();
-    }
-
-    // === Track Group Methods ===
-
-    /// <summary>
-    /// Creates a new track group.
-    /// </summary>
-    /// <param name="name">The name of the group.</param>
-    /// <param name="color">Optional display color (as ARGB int).</param>
-    /// <returns>The created track group.</returns>
-    public TrackGroup CreateTrackGroup(string name, int? color = null)
-    {
-        var group = _trackGroupManager.CreateGroup(name, color);
-
-        // Create a routing point for the group
-        var groupPoint = RoutingPointFactory.CreateGroup(name);
-        _routingMatrix.RegisterPoint(groupPoint);
-
-        _logger?.LogDebug("Created track group '{GroupName}'", name);
-        return group;
-    }
-
-    /// <summary>
-    /// Adds a track to a group.
-    /// </summary>
-    /// <param name="groupId">The group ID.</param>
-    /// <param name="trackId">The track ID to add.</param>
-    /// <param name="channel">Optional audio channel reference.</param>
-    /// <returns>True if successful.</returns>
-    public bool AddTrackToGroup(Guid groupId, string trackId, AudioChannel? channel = null)
-    {
-        return _trackGroupManager.AddTrackToGroup(groupId, trackId, channel);
-    }
-
-    /// <summary>
-    /// Removes a track from its group.
-    /// </summary>
-    /// <param name="trackId">The track ID to remove.</param>
-    /// <returns>True if successful.</returns>
-    public bool RemoveTrackFromGroup(string trackId)
-    {
-        return _trackGroupManager.RemoveTrackFromGroup(trackId);
-    }
-
-    /// <summary>
-    /// Gets the group that a track belongs to.
-    /// </summary>
-    /// <param name="trackId">The track ID.</param>
-    /// <returns>The track group, or null if not in any group.</returns>
-    public TrackGroup? GetGroupForTrack(string trackId)
-    {
-        return _trackGroupManager.GetGroupForTrack(trackId);
-    }
-
-    /// <summary>
-    /// Gets all track groups.
-    /// </summary>
-    public IReadOnlyList<TrackGroup> GetAllTrackGroups()
-    {
-        return _trackGroupManager.Groups;
-    }
-
-    private int _disposed; // 0 = not disposed, 1 = disposed
-
-    // Dispose resources
-    public void Dispose()
-    {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
-
-        // Stop all outputs and inputs safely
-        foreach (var output in _outputs)
-        {
-            try { output.Stop(); }
-            catch (Exception ex) { _logger?.LogWarning(ex, "Error stopping audio output"); }
-        }
-        foreach (var input in _inputs)
-        {
-            try { input.StopRecording(); }
-            catch (Exception ex) { _logger?.LogWarning(ex, "Error stopping audio input"); }
-        }
-
-        System.Threading.Thread.Sleep(100); // Give it a moment to stop
-
-        // Unsubscribe FFT event handlers to prevent memory leaks
-        foreach (var kvp in _fftHandlers)
-        {
-            if (_inputAnalyzers.TryGetValue(kvp.Key, out var analyzer))
-            {
-                analyzer.FftCalculated -= kvp.Value;
-            }
-        }
-        _fftHandlers.Clear();
-
-        // Dispose input analyzers
-        foreach (var kvp in _inputAnalyzers)
-        {
-            try { (kvp.Value as IDisposable)?.Dispose(); }
-            catch (Exception ex) { _logger?.LogWarning(ex, "Error disposing input analyzer for device {Index}", kvp.Key); }
-        }
-        _inputAnalyzers.Clear();
-
-        // Unsubscribe DataAvailable event handlers to prevent memory leaks
-        foreach (var kvp in _dataHandlers)
-        {
-            if (_inputDevices.TryGetValue(kvp.Key, out var waveIn))
-            {
-                waveIn.DataAvailable -= kvp.Value;
-            }
-        }
-        _dataHandlers.Clear();
-        _inputDevices.Clear();
-
-        // Unsubscribe MIDI MessageReceived event handlers to prevent memory leaks
-        for (int i = 0; i < _midiInputs.Count; i++)
-        {
-            if (_midiHandlers.TryGetValue(i, out var handler))
-            {
-                _midiInputs[i].MessageReceived -= handler;
-            }
-        }
-        _midiHandlers.Clear();
-
-        // Dispose all resources with exception handling
-        foreach (var input in _inputs)
-        {
-            try { input.Dispose(); }
-            catch (Exception ex) { _logger?.LogWarning(ex, "Error disposing audio input"); }
-        }
-        foreach (var output in _outputs)
-        {
-            try { output.Dispose(); }
-            catch (Exception ex) { _logger?.LogWarning(ex, "Error disposing audio output"); }
-        }
-        foreach (var midiIn in _midiInputs)
-        {
-            try { midiIn.Dispose(); }
-            catch (Exception ex) { _logger?.LogWarning(ex, "Error disposing MIDI input"); }
-        }
-        foreach (var midiOut in _midiOutputs)
-        {
-            try { midiOut.Dispose(); }
-            catch (Exception ex) { _logger?.LogWarning(ex, "Error disposing MIDI output"); }
-        }
-
-        try { _vstHost.Dispose(); }
-        catch (Exception ex) { _logger?.LogWarning(ex, "Error disposing VST host"); }
-
-        try { _virtualChannels.Dispose(); }
-        catch (Exception ex) { _logger?.LogWarning(ex, "Error disposing virtual channels"); }
-
-        try { _pdcManager.Dispose(); }
-        catch (Exception ex) { _logger?.LogWarning(ex, "Error disposing PDC manager"); }
-
-        try { _routingMatrix.Dispose(); }
-        catch (Exception ex) { _logger?.LogWarning(ex, "Error disposing routing matrix"); }
-
-        _trackGroupManager.Clear();
-        _sidechainBusManager.Clear();
-
-        _logger?.LogInformation("AudioEngine disposed");
-
-        GC.SuppressFinalize(this);
+        return null;
     }
 }

@@ -1,464 +1,1593 @@
-﻿// MusicEngine License (MEL) - Honor-Based Commercial Support
+// MusicEngine License (MEL) - Honor-Based Commercial Support
 // Copyright (c) 2025-2026 Yannis Watermann (watermann420, nullonebinary)
 // https://github.com/watermann420/MusicEngine
-// Description: MusicEngine component.
+// Description: Script host for test_script.cs.
 
 using System;
 using System.IO;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis.CSharp.Scripting;
 using Microsoft.CodeAnalysis.Scripting;
 using MusicEngine.Core;
+using MusicEngine.Core.Modulation;
+using MusicEngine.Effects.Audio;
+using MusicEngine.Effects.Midi;
+using MusicEngine.Effects.Vst;
+using MusicEngine.Instruments;
 using MusicEngine.Scripting.FluentApi;
-
+using MusicEngine.Vst;
+using MusicEngine.Timing;
 
 namespace MusicEngine.Scripting;
 
-
-public class ScriptHost
+/// <summary>
+/// Script host for executing C# scripts against the engine.
+/// </summary>
+public sealed class ScriptHost
 {
-    private readonly AudioEngine _engine; // The audio engine instance
-    private readonly Sequencer _sequencer; // The sequencer instance
+    /// <summary>
+    /// When true, VST instances are disposed when clearing script state.
+    /// </summary>
+    public bool DisposeVstOnClear { get; set; } = false;
+    private VstAccess? _vstAccessCache;
+    private readonly AudioEngine _engine;
+    private readonly Sequencer _sequencer;
+    private readonly Vst3Registry? _vstRegistry;
+    private readonly HashSet<ISynth> _activeSynths = new();
+    private ScriptGlobals? _globalsCache;
+    private readonly ScriptOptions _options;
+    private readonly object _compileLock = new();
+    private readonly object _stateRewriteLock = new();
+    private Script<object>? _compiledScript;
+    private string? _compiledCode;
+    private string? _compiledFilePath;
+    private string? _lastExecutedCode;
+    private readonly string? _scriptFilePath;
+    private readonly Dictionary<string, string> _moduleCodeCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ScriptLibrary _library;
+    private readonly HashSet<string> _masterScripts = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<string> _masterScriptOrder = new();
+    private readonly Dictionary<string, string> _scriptAliases = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, VstBinding> _vstBindings = new(StringComparer.OrdinalIgnoreCase);
+    private HashSet<string>? _modulesExecutedThisRun;
+    private string? _currentScriptFilePath;
 
     /// <summary>
-    /// Event fired when a refresh is requested (e.g., via MIDI binding).
-    /// Subscribe to this to reload the script.
+    /// Create a script host bound to an engine and sequencer.
     /// </summary>
-    public event Action? OnRefreshRequested;
-
-    /// <summary>
-    /// Event fired when a custom action is triggered via MIDI.
-    /// The string parameter is the action name.
-    /// </summary>
-    public event Action<string>? OnActionTriggered;
-
-    // Constructor to initialize the script host with engine and sequencer
-    public ScriptHost(AudioEngine engine, Sequencer sequencer)
+    /// <param name="engine">Audio engine instance.</param>
+    /// <param name="sequencer">Sequencer instance.</param>
+    /// <param name="vstRegistry">Optional VST registry.</param>
+    public ScriptHost(AudioEngine engine, Sequencer sequencer, Vst3Registry? vstRegistry = null,
+        string? scriptFilePath = null)
     {
-        _engine = engine; // Initialize the audio engine
-        _sequencer = sequencer; // Initialize the sequencer
+        _engine = engine;
+        _sequencer = sequencer;
+        _vstRegistry = vstRegistry;
+        _scriptFilePath = scriptFilePath;
+        _library = new ScriptLibrary(this);
+        _options = ScriptOptions.Default
+            .WithReferences(typeof(AudioEngine).Assembly, typeof(NAudio.Wave.ISampleProvider).Assembly)
+            .WithImports("System", "MusicEngine.Core", "MusicEngine.Instruments", "MusicEngine.Instruments.Modules",
+                "MusicEngine.Vst", "MusicEngine.Effects.Audio", "MusicEngine.Effects.Midi",
+                "MusicEngine.Effects.Vst", "MusicEngine.Effects.Modulation", "MusicEngine.Core.Modulation",
+                "MusicEngine.Timing",
+                "System.Collections.Generic");
+        if (!string.IsNullOrWhiteSpace(_scriptFilePath))
+        {
+            _options = _options.WithFilePath(_scriptFilePath);
+        }
     }
 
     /// <summary>
-    /// Triggers the refresh event. Call this to request a script reload.
+    /// Execute script code without clearing state.
     /// </summary>
-    public void TriggerRefresh() => OnRefreshRequested?.Invoke();
-
-    /// <summary>
-    /// Triggers a custom action event.
-    /// </summary>
-    public void TriggerAction(string actionName) => OnActionTriggered?.Invoke(actionName);
-
-    // Executes a C# script asynchronously
     public async Task ExecuteScriptAsync(string code)
     {
-        var options = ScriptOptions.Default // Configure script options
-            .WithReferences(typeof(AudioEngine).Assembly, typeof(NAudio.Wave.ISampleProvider).Assembly)  // Add necessary assembly references
-            .WithImports("System", "MusicEngine.Core", "System.Collections.Generic"); // Add common namespaces
+        await RunScriptAsync(code, skipIfUnchanged: false, clearState: false, filePath: _scriptFilePath,
+            cacheKey: null);
+    }
 
-        var globals = new ScriptGlobals { Engine = _engine, Sequencer = _sequencer, Host = this }; // Create globals for the script
+    /// <summary>
+    /// Execute script code only if it has changed.
+    /// </summary>
+    public async Task<bool> ExecuteScriptIfChangedAsync(string code)
+    {
+        return await RunScriptAsync(code, skipIfUnchanged: true, clearState: false, filePath: _scriptFilePath,
+            cacheKey: null);
+    }
+
+    /// <summary>
+    /// Clear state then execute script code.
+    /// </summary>
+    public async Task<bool> RefreshScriptAsync(string code, bool skipIfUnchanged = true)
+    {
+        ClearState();
+        _modulesExecutedThisRun = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            await RunMasterScriptsAsync();
+            return await RunScriptAsync(code, skipIfUnchanged, clearState: false, filePath: _scriptFilePath,
+                cacheKey: null);
+        }
+        finally
+        {
+            _modulesExecutedThisRun = null;
+        }
+    }
+
+    /// <summary>
+    /// Clear state then execute the configured script file, if available.
+    /// </summary>
+    public async Task<bool> RefreshScriptFromFileAsync(bool skipIfUnchanged = true)
+    {
+        if (string.IsNullOrWhiteSpace(_scriptFilePath) || !File.Exists(_scriptFilePath))
+        {
+            return false;
+        }
+
+        var code = await File.ReadAllTextAsync(_scriptFilePath);
+        return await RefreshScriptAsync(code, skipIfUnchanged);
+    }
+
+    public async Task<bool> RefreshMainScriptsAsync()
+    {
+        ClearState();
+        _modulesExecutedThisRun = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            var mainScripts = FindMainScripts();
+            if (mainScripts.Count == 0)
+            {
+                Console.WriteLine("No main file active.");
+                return false;
+            }
+
+            foreach (var script in mainScripts)
+            {
+                await ExecuteModuleAsync(script, skipIfUnchanged: false);
+            }
+            return true;
+        }
+        finally
+        {
+            _modulesExecutedThisRun = null;
+        }
+    }
+
+
+    internal async Task<bool> ExecuteModuleAsync(string scriptName, bool skipIfUnchanged = true)
+    {
+        if (string.IsNullOrWhiteSpace(scriptName))
+        {
+            Console.WriteLine("Script Error: module name is empty.");
+            return false;
+        }
+
+        if (_modulesExecutedThisRun != null && _modulesExecutedThisRun.Contains(scriptName))
+        {
+            return false;
+        }
+
+        var path = ResolveScriptPath(scriptName);
+        if (path == null)
+        {
+            Console.WriteLine($"Script Error: module not found: {scriptName}");
+            return false;
+        }
+
+        var code = File.ReadAllText(path);
+        var executed = await RunScriptAsync(code, skipIfUnchanged, clearState: false, filePath: path, cacheKey: path);
+        if (_modulesExecutedThisRun != null && executed)
+        {
+            _modulesExecutedThisRun.Add(scriptName);
+        }
+        return executed;
+    }
+
+    private async Task<bool> RunScriptAsync(string code, bool skipIfUnchanged, bool clearState, string? filePath,
+        string? cacheKey)
+    {
+        var rawCode = code;
+        code = PreprocessCode(code);
+        if (skipIfUnchanged)
+        {
+            if (cacheKey == null && string.Equals(_lastExecutedCode, code, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            if (cacheKey != null && _moduleCodeCache.TryGetValue(cacheKey, out var cached) &&
+                string.Equals(cached, code, StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        if (clearState)
+        {
+            ClearState();
+        }
+
+        var globals = GetOrCreateGlobals();
+        var previousFilePath = _currentScriptFilePath;
+        var previousGlobalsPath = globals.ScriptFilePath;
+        _currentScriptFilePath = filePath;
+        globals.ScriptFilePath = filePath;
+        var script = GetOrCompile(code, filePath);
 
         try
         {
-            await CSharpScript.RunAsync(code, options, globals); // Execute the script
+            _globalsCache?.vst.BeginScriptRun();
+            await script.RunAsync(globals);
+            if (cacheKey == null)
+            {
+                _lastExecutedCode = code;
+            }
+            else
+            {
+                _moduleCodeCache[cacheKey] = code;
+            }
+            UpdateVstBindings(rawCode);
+            _globalsCache?.vst.PruneUnusedStates();
+            TryUpdateScriptStateSnapshots();
+            return true;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Script Error: {ex.Message}"); // Log any script errors
+            if (ex is CompilationErrorException compilationError)
+            {
+                LogCompilationErrors(compilationError);
+            }
+            else
+            {
+                LogRuntimeError(ex);
+            }
+            return false;
+        }
+        finally
+        {
+            _currentScriptFilePath = previousFilePath;
+            globals.ScriptFilePath = previousGlobalsPath;
         }
     }
 
-    // Clears the current state of the engine and sequencer
+    private ScriptGlobals GetOrCreateGlobals()
+    {
+        if (_globalsCache != null) return _globalsCache;
+
+        var globals = new ScriptGlobals
+        {
+            Engine = _engine,
+            Sequencer = _sequencer,
+            Host = this,
+            VstRegistry = _vstRegistry,
+            ScriptFilePath = _scriptFilePath
+        };
+        globals.SetLibrary(_library);
+        if (_vstAccessCache != null)
+        {
+            _vstAccessCache.UpdateGlobals(globals);
+            globals.SetVstAccess(_vstAccessCache);
+        }
+        _globalsCache = globals;
+        return globals;
+    }
+
+    private Script<object> GetOrCompile(string code, string? filePath)
+    {
+        lock (_compileLock)
+        {
+            if (_compiledScript != null && string.Equals(_compiledCode, code, StringComparison.Ordinal) &&
+                string.Equals(_compiledFilePath, filePath, StringComparison.Ordinal))
+            {
+                return _compiledScript;
+            }
+
+            var options = _options;
+            if (!string.IsNullOrWhiteSpace(filePath))
+            {
+                options = options.WithFilePath(filePath);
+            }
+            _compiledScript = CSharpScript.Create(code, options, typeof(ScriptGlobals));
+            _compiledCode = code;
+            _compiledFilePath = filePath;
+            return _compiledScript;
+        }
+    }
+
+    internal string? CurrentScriptFilePath => _currentScriptFilePath;
+
+    internal string? GetAliasForScript(string scriptName)
+    {
+        if (string.IsNullOrWhiteSpace(scriptName)) return null;
+        return _scriptAliases.TryGetValue(scriptName, out var alias) ? alias : null;
+    }
+
+    internal bool TryResolveVstInstrument(string variableName, out IVstInstrument instrument)
+    {
+        instrument = null!;
+        if (string.IsNullOrWhiteSpace(variableName)) return false;
+        if (_globalsCache == null) return false;
+        if (!_vstBindings.TryGetValue(variableName, out var binding)) return false;
+        if (binding.IsEffect) return false;
+        return _globalsCache.vst.TryGetInstrument(binding.PluginName, out instrument);
+    }
+
+    internal void RegisterScriptAlias(string alias, string scriptName)
+    {
+        if (string.IsNullOrWhiteSpace(alias) || string.IsNullOrWhiteSpace(scriptName)) return;
+        _scriptAliases[scriptName] = alias;
+    }
+
+    internal void RegisterMasterScript(string scriptName)
+    {
+        if (string.IsNullOrWhiteSpace(scriptName)) return;
+        if (_masterScripts.Add(scriptName))
+        {
+            _masterScriptOrder.Add(scriptName);
+        }
+    }
+
+    private async Task RunMasterScriptsAsync()
+    {
+        if (_masterScriptOrder.Count == 0) return;
+        var mainName = string.IsNullOrWhiteSpace(_scriptFilePath)
+            ? null
+            : Path.GetFileNameWithoutExtension(_scriptFilePath);
+        foreach (var script in _masterScriptOrder)
+        {
+            if (!string.IsNullOrWhiteSpace(mainName) &&
+                string.Equals(mainName, script, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+            await ExecuteModuleAsync(script, skipIfUnchanged: false);
+        }
+    }
+
+    private string? ResolveScriptsDirectory()
+    {
+        var baseDir = !string.IsNullOrWhiteSpace(_scriptFilePath)
+            ? Path.GetDirectoryName(_scriptFilePath)
+            : AppContext.BaseDirectory;
+        return string.IsNullOrWhiteSpace(baseDir) ? null : baseDir;
+    }
+
+    private List<string> FindMainScripts()
+    {
+        var scriptsDir = ResolveScriptsDirectory();
+        if (string.IsNullOrWhiteSpace(scriptsDir) || !Directory.Exists(scriptsDir))
+        {
+            return new List<string>();
+        }
+
+        var results = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var files = Directory.GetFiles(scriptsDir, "*.*", SearchOption.TopDirectoryOnly)
+            .Where(path => path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) ||
+                           path.EndsWith(".csx", StringComparison.OrdinalIgnoreCase));
+        foreach (var file in files)
+        {
+            var code = File.ReadAllText(file);
+            foreach (Match match in MainFileRegex.Matches(code))
+            {
+                if (match.Groups.Count < 2) continue;
+                var name = match.Groups[1].Value.Trim();
+                if (string.IsNullOrWhiteSpace(name) && match.Groups.Count > 2)
+                {
+                    name = match.Groups[2].Value.Trim();
+                }
+                if (!string.IsNullOrWhiteSpace(name))
+                {
+                    results.Add(name);
+                }
+            }
+
+            if (MainFileBuilderRegex.IsMatch(code))
+            {
+                results.Add(Path.GetFileNameWithoutExtension(file));
+            }
+        }
+
+        return results.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+
+    private static readonly Regex FileTwoArgsRegex =
+        new(@"\bFile\s*\(\s*([A-Za-z_]\w*)\s*,\s*([A-Za-z_]\w*)\s*\)", RegexOptions.Compiled);
+    private static readonly Regex FileOneArgRegex =
+        new(@"\bFile\s*\(\s*([A-Za-z_]\w*)\s*\)", RegexOptions.Compiled);
+    private static readonly Regex MainFileRegex =
+        new(@"\bFile\s*\(\s*(?:Main|\""Main\"")\s*,\s*(?:\""([^\""]+)\""|([A-Za-z_]\w*))\s*\)",
+            RegexOptions.Compiled);
+    private static readonly Regex MainFileBuilderRegex =
+        new(@"\bFile\s*\.Main\s*\(\s*\)\s*\.Name\s*\(\s*(?:\""([^\""]+)\""|([A-Za-z_]\w*))\s*\)",
+            RegexOptions.Compiled);
+
+    private string PreprocessCode(string code)
+    {
+        if (string.IsNullOrEmpty(code)) return code;
+        code = FileTwoArgsRegex.Replace(code, "File(\"$1\", \"$2\")");
+        code = FileOneArgRegex.Replace(code, "File(\"$1\")");
+        code = PreprocessFileNameCalls(code);
+        code = PreprocessVstAliasCalls(code);
+        code = PreprocessNoteNameCalls(code);
+        code = PreprocessFriendlyNoteArgs(code);
+        return code;
+    }
+
+    private string PreprocessFileNameCalls(string code)
+    {
+        var scriptsDir = ResolveScriptsDirectory();
+        if (!string.IsNullOrWhiteSpace(scriptsDir) && Directory.Exists(scriptsDir))
+        {
+            foreach (var path in Directory.GetFiles(scriptsDir, "*.*", SearchOption.TopDirectoryOnly)
+                         .Where(file => file.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) ||
+                                        file.EndsWith(".csx", StringComparison.OrdinalIgnoreCase)))
+            {
+                var name = Path.GetFileNameWithoutExtension(path);
+                if (string.IsNullOrWhiteSpace(name)) continue;
+                code = Regex.Replace(code, $@"\bFile\.Main\s*\(\s*\.Name\(\s*{Regex.Escape(name)}\s*\)\s*\)",
+                    $"File.Main().Name(\"{name}\")");
+                code = Regex.Replace(code, $@"\bFile\s*\(\s*\.Name\(\s*{Regex.Escape(name)}\s*\)\s*\)",
+                    $"File.Name(\"{name}\")");
+                code = Regex.Replace(code, $@"\bFile\.Main\s*\(\s*\)\s*\.Name\(\s*{Regex.Escape(name)}\s*\)",
+                    $"File.Main().Name(\"{name}\")");
+                code = Regex.Replace(code, $@"\bFile\s*\.Name\(\s*{Regex.Escape(name)}\s*\)",
+                    $"File.Name(\"{name}\")");
+                code = Regex.Replace(code, $@"\bfile\s*\.Name\(\s*{Regex.Escape(name)}\s*\)",
+                    $"file.Name(\"{name}\")");
+                code = Regex.Replace(code, $@"\bfile\s*\.NameSpace\(\s*{Regex.Escape(name)}\s*\)",
+                    $"file.NameSpace(\"{name}\")");
+                code = Regex.Replace(code, $@"\bFile\s*\.NameSpace\(\s*{Regex.Escape(name)}\s*\)",
+                    $"File.NameSpace(\"{name}\")");
+            }
+        }
+
+        code = Regex.Replace(code, @"\bFile\s*\.Main\s*\(\s*\)\s*\.Name\(\s*([A-Za-z_]\w*)\s*\)",
+            "File.Main().Name(\"$1\")");
+        code = Regex.Replace(code, @"\bFile\s*\.Name\(\s*([A-Za-z_]\w*)\s*\)",
+            "File.Name(\"$1\")");
+        code = Regex.Replace(code, @"\bfile\s*\.Name\(\s*([A-Za-z_]\w*)\s*\)",
+            "file.Name(\"$1\")");
+
+        return code;
+    }
+
+    private static string PreprocessVstAliasCalls(string code)
+    {
+        if (string.IsNullOrWhiteSpace(code)) return code;
+
+        const string callPattern =
+            @"(?:[A-Za-z_]\w*\.)*(?:CreateVstEffect|VstEffect|VstFx|CreateVst|Vst)";
+        var regex = new Regex(
+            $@"\bvar\s+(?<var>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?<call>{callPattern})\s*\(\s*""(?<name>[^""]+)""\s*\)",
+            RegexOptions.IgnoreCase);
+
+        return regex.Replace(code, @"var ${var} = ${call}(""${name}"", ""${var}"")");
+    }
+
+    private static string PreprocessNoteNameCalls(string code)
+    {
+        if (string.IsNullOrWhiteSpace(code)) return code;
+
+        var regex = new Regex(@"\bNote(?:Ms)?\s*\(\s*(?<note>[A-Ga-g])(?<accidental>[bBsS]?)(?<octave>-?\d+)",
+            RegexOptions.Compiled);
+
+        return regex.Replace(code, match =>
+        {
+            var noteChar = char.ToUpperInvariant(match.Groups["note"].Value[0]);
+            var accidental = match.Groups["accidental"].Value;
+            var octaveText = match.Groups["octave"].Value;
+            if (!int.TryParse(octaveText, out var octave))
+            {
+                return match.Value;
+            }
+
+            int baseNote = noteChar switch
+            {
+                'C' => 0,
+                'D' => 2,
+                'E' => 4,
+                'F' => 5,
+                'G' => 7,
+                'A' => 9,
+                'B' => 11,
+                _ => 0
+            };
+
+            int offset = 0;
+            if (!string.IsNullOrWhiteSpace(accidental))
+            {
+                var acc = char.ToUpperInvariant(accidental[0]);
+                if (acc == 'B')
+                {
+                    offset = -1;
+                }
+                else if (acc == 'S')
+                {
+                    offset = 1;
+                }
+            }
+
+            var midi = (octave + 1) * 12 + baseNote + offset;
+            return match.Value.Replace(match.Groups["note"].Value + accidental + octaveText, midi.ToString());
+        });
+    }
+
+    private static string PreprocessFriendlyNoteArgs(string code)
+    {
+        if (string.IsNullOrWhiteSpace(code)) return code;
+
+        code = Regex.Replace(
+            code,
+            @"\bNoteMs\s*\((?<args>[^\)]*)\)",
+            match =>
+            {
+                var args = match.Groups["args"].Value;
+                args = ExpandNoteShorthand(args);
+                args = Regex.Replace(
+                    args,
+                    @"(^|,)\s*time\s+(?<value>-?\d+(?:\.\d+)?)",
+                    "$1 timeMs: ${value}",
+                    RegexOptions.IgnoreCase);
+                args = Regex.Replace(
+                    args,
+                    @"(^|,)\s*duration\s+(?<value>-?\d+(?:\.\d+)?)",
+                    "$1 durationMs: ${value}",
+                    RegexOptions.IgnoreCase);
+                return $"NoteMs({args})";
+            },
+            RegexOptions.IgnoreCase);
+
+        code = Regex.Replace(
+            code,
+            @"\bNote\s*\((?<args>[^\)]*)\)",
+            match =>
+            {
+                var args = match.Groups["args"].Value;
+                args = ExpandNoteShorthand(args);
+                return $"Note({args})";
+            },
+            RegexOptions.IgnoreCase);
+
+        code = Regex.Replace(
+            code,
+            @"(?<=\()\s*Note\s+(?<value>-?\d+(?:\.\d+)?)",
+            "note: ${value}",
+            RegexOptions.IgnoreCase);
+
+        code = Regex.Replace(
+            code,
+            @"(?<=\(|,)\s*(?<name>note|beat|duration|speed|velocity|slideto|slidetime|slidetimems)\s+(?<value>-?\d+(?:\.\d+)?)",
+            match =>
+            {
+                var name = match.Groups["name"].Value;
+                var value = match.Groups["value"].Value;
+                string mapped = name.ToLowerInvariant() switch
+                {
+                    "speed" => "velocity",
+                    "slideto" => "slideTo",
+                    "slidetime" => "slideTimeMs",
+                    "slidetimems" => "slideTimeMs",
+                    _ => name
+                };
+                return $"{mapped}: {value}";
+            },
+            RegexOptions.IgnoreCase);
+
+        return code;
+    }
+
+    private static string ExpandNoteShorthand(string args)
+    {
+        if (string.IsNullOrWhiteSpace(args)) return args;
+
+        args = Regex.Replace(
+            args,
+            @"(?<=^|,)\s*(?<token>Note|N)\s*(?<value>-?\d+(?:\.\d+)?)\b",
+            " note ${value}",
+            RegexOptions.IgnoreCase);
+
+        args = Regex.Replace(
+            args,
+            @"(?<=^|,)\s*(?<token>Note|N)\s*(?<name>[A-Ga-g][bBsS]?-?\d+)\b",
+            " note ${name}",
+            RegexOptions.IgnoreCase);
+
+        args = Regex.Replace(
+            args,
+            @"(?<=^|,)\s*(?<token>Note|N)(?<value>-?\d+(?:\.\d+)?)\b",
+            " note ${value}",
+            RegexOptions.IgnoreCase);
+
+        args = Regex.Replace(
+            args,
+            @"(?<=^|,)\s*(?<token>Note|N)(?<name>[A-Ga-g][bBsS]?-?\d+)\b",
+            " note ${name}",
+            RegexOptions.IgnoreCase);
+
+        args = Regex.Replace(
+            args,
+            @"(?<=^|,)\s*(?<name>vel|velocity|speed|len|length|dur|duration|start|beat|time)\s+(?<value>-?\d+(?:\.\d+)?)",
+            match =>
+            {
+                var name = match.Groups["name"].Value;
+                var value = match.Groups["value"].Value;
+                string mapped = name.ToLowerInvariant() switch
+                {
+                    "vel" => "velocity",
+                    "speed" => "velocity",
+                    "len" => "duration",
+                    "length" => "duration",
+                    "dur" => "duration",
+                    "start" => "beat",
+                    _ => name
+                };
+                return $" {mapped} {value}";
+            },
+            RegexOptions.IgnoreCase);
+
+        return args;
+    }
+
+    /// <summary>
+    /// Clear script state, routing, and mappings.
+    /// </summary>
     public void ClearState()
     {
-        _sequencer.ClearPatterns(); // Stop patterns first so they call AllNotesOff if enabled
-        _engine.ClearMappings(); // Clear MIDI and frequency mappings
-        _engine.ClearMixer(); // Clear the audio mixer
+        bool resumeOutput = _engine.TrySuspendOutput();
+        _sequencer.ClearPatterns();
+        _engine.ClearMappings();
+        _engine.ClearMixer();
+        _activeSynths.Clear();
+        _moduleCodeCache.Clear();
+        _vstBindings.Clear();
+        _library.Clear();
+        if (_globalsCache != null)
+        {
+            if (DisposeVstOnClear)
+            {
+                _globalsCache.vst.KeepInstances = false;
+                _globalsCache.vst.Clear();
+                _vstAccessCache = null;
+            }
+            else
+            {
+                _globalsCache.vst.KeepInstances = true;
+                _vstAccessCache = _globalsCache.VstAccessInstance;
+            }
+            _globalsCache = null;
+        }
+        if (resumeOutput)
+        {
+            _engine.ResumeOutput();
+        }
+    }
+
+    private void TryUpdateScriptStateSnapshots(bool force = false)
+    {
+        if (string.IsNullOrWhiteSpace(_scriptFilePath)) return;
+        if (!File.Exists(_scriptFilePath)) return;
+        if (_globalsCache == null) return;
+
+        if (!Monitor.TryEnter(_stateRewriteLock))
+        {
+            return;
+        }
+
+        try
+        {
+            var code = File.ReadAllText(_scriptFilePath);
+            if (string.IsNullOrWhiteSpace(code)) return;
+
+            var bindings = ParseVstBindings(code);
+            if (bindings.Count == 0) return;
+
+            var updated = code;
+            bool changed = false;
+
+            foreach (var binding in bindings)
+            {
+                var state = GetStateBase64(binding);
+                if (string.IsNullOrWhiteSpace(state)) continue;
+
+                var replaced = ReplaceStateCall(updated, binding.Variable, state);
+                if (!ReferenceEquals(replaced, updated))
+                {
+                    updated = replaced;
+                    changed = true;
+                }
+            }
+
+            if (!changed) return;
+            if (!force && string.Equals(code, updated, StringComparison.Ordinal)) return;
+
+            File.WriteAllText(_scriptFilePath, updated);
+        }
+        catch
+        {
+        }
+        finally
+        {
+            Monitor.Exit(_stateRewriteLock);
+        }
+    }
+
+    private string? GetStateBase64(VstBinding binding)
+    {
+        if (_globalsCache == null) return null;
+        var vstAccess = _globalsCache.VstAccessInstance;
+        if (vstAccess == null) return null;
+
+        if (binding.IsEffect)
+        {
+            if (vstAccess.TryGetEffect(binding.PluginName, out var effect))
+            {
+                return effect.State();
+            }
+            return null;
+        }
+
+        if (vstAccess.TryGetInstrument(binding.PluginName, out var instrument))
+        {
+            return instrument.State();
+        }
+
+        return null;
+    }
+
+    private static string ReplaceStateCall(string code, string variable, string base64)
+    {
+        if (string.IsNullOrWhiteSpace(variable)) return code;
+        if (string.IsNullOrWhiteSpace(base64)) return code;
+
+        var pattern = $@"\b{Regex.Escape(variable)}\s*\.\s*State\s*\(\s*[^)]*\)";
+        var replacement = $"{variable}.State(\"{base64}\")";
+
+        var replaced = Regex.Replace(code, pattern, replacement, RegexOptions.IgnoreCase);
+        return string.Equals(replaced, code, StringComparison.Ordinal) ? code : replaced;
+    }
+
+    private static List<VstBinding> ParseVstBindings(string code)
+    {
+        var bindings = new List<VstBinding>();
+        if (string.IsNullOrWhiteSpace(code)) return bindings;
+
+        var pattern =
+            @"\bvar\s+(?<var>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?<call>[A-Za-z0-9_\.]+)\s*\(\s*""(?<name>[^""]+)""\s*(?:,\s*[^)]*)?\)";
+        var regex = new Regex(pattern, RegexOptions.IgnoreCase);
+        var matches = regex.Matches(code);
+        foreach (Match match in matches)
+        {
+            if (!match.Success) continue;
+            var variable = match.Groups["var"].Value;
+            var call = match.Groups["call"].Value;
+            var name = match.Groups["name"].Value;
+            if (string.IsNullOrWhiteSpace(variable) || string.IsNullOrWhiteSpace(call) || string.IsNullOrWhiteSpace(name))
+            {
+                continue;
+            }
+
+            var isEffect = call.EndsWith("CreateVstEffect", StringComparison.OrdinalIgnoreCase) ||
+                call.EndsWith("VstEffect", StringComparison.OrdinalIgnoreCase) ||
+                call.EndsWith("VstFx", StringComparison.OrdinalIgnoreCase);
+            if (!isEffect && !call.EndsWith("CreateVst", StringComparison.OrdinalIgnoreCase) &&
+                !call.EndsWith("Vst", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            bindings.Add(new VstBinding(variable, name, isEffect));
+        }
+
+        return bindings;
+    }
+
+    private readonly record struct VstBinding(string Variable, string PluginName, bool IsEffect);
+
+    private void UpdateVstBindings(string code)
+    {
+        if (string.IsNullOrWhiteSpace(code)) return;
+        var bindings = ParseVstBindings(code);
+        if (bindings.Count == 0)
+        {
+            _vstBindings.Clear();
+            _globalsCache?.vst.UpdateDeclaredStateKeys(Array.Empty<string>());
+            return;
+        }
+
+        _vstBindings.Clear();
+        var declaredKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var binding in bindings)
+        {
+            _vstBindings[binding.Variable] = binding;
+            if (!string.IsNullOrWhiteSpace(binding.Variable))
+            {
+                declaredKeys.Add(binding.Variable);
+            }
+        }
+
+        _globalsCache?.vst.UpdateDeclaredStateKeys(declaredKeys);
+    }
+
+    private bool TryResolveVstBinding(string name, out VstBinding binding)
+    {
+        if (_vstBindings.TryGetValue(name, out binding))
+        {
+            return true;
+        }
+
+        binding = default;
+        return false;
+    }
+
+    private static bool TryOpenVstBinding(VstBinding binding, VstAccess vstAccess)
+    {
+        if (binding.IsEffect)
+        {
+            if (vstAccess.TryGetEffect(binding.PluginName, out var effect))
+            {
+                effect.OpenEditor();
+                return true;
+            }
+            return false;
+        }
+
+        if (vstAccess.TryGetInstrument(binding.PluginName, out var instrument))
+        {
+            instrument.OpenEditor();
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Try to open a VST editor by name if already loaded.
+    /// </summary>
+    public bool TryOpenVstEditor(string name)
+    {
+        if (_globalsCache == null) return false;
+        if (TryResolveVstBinding(name, out var binding) &&
+            TryOpenVstBinding(binding, _globalsCache.vst))
+        {
+            return true;
+        }
+
+        return _globalsCache.vst.TryOpenEditor(name);
+    }
+
+    /// <summary>
+    /// Reset VST state in the script globals.
+    /// </summary>
+    public void ResetVstState()
+    {
+        _globalsCache?.vst.ResetState();
+    }
+
+    /// <summary>
+    /// Persist VST state for all cached instances.
+    /// </summary>
+    public void SaveVstState()
+    {
+        _globalsCache?.vst.SaveAllStates();
+        TryUpdateScriptStateSnapshots(force: true);
+    }
+
+    /// <summary>
+    /// Mute or unmute the transport output.
+    /// </summary>
+    public void SetTransportMuted(bool muted)
+    {
+        _engine.SetTransportMuted(muted);
+    }
+
+    /// <summary>
+    /// Enable or disable MIDI input.
+    /// </summary>
+    public void SetMidiEnabled(bool enabled)
+    {
+        _engine.SetMidiEnabled(enabled, sendAllNotesOff: false);
+    }
+
+    /// <summary>
+    /// Start the sequencer if not running.
+    /// </summary>
+    public void StartSequencer()
+    {
+        if (!_sequencer.IsRunning)
+        {
+            _sequencer.Start();
+        }
+    }
+
+    /// <summary>
+    /// Stop the sequencer if running.
+    /// </summary>
+    public void StopSequencer()
+    {
+        if (_sequencer.IsRunning)
+        {
+            _sequencer.Stop();
+        }
+    }
+
+    internal void RegisterSynth(ISynth synth)
+    {
+        if (synth == null) return;
+        _activeSynths.Add(synth);
+    }
+
+    /// <summary>
+    /// Send all-notes-off to active non-VST synths.
+    /// </summary>
+    public void AllNotesOff()
+    {
+        foreach (var synth in _activeSynths)
+        {
+            if (synth is MusicEngine.Vst.Vst3Instrument)
+            {
+                continue;
+            }
+            synth.AllNotesOff();
+        }
+    }
+
+    internal string? ResolveScriptPath(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return null;
+        if (Path.IsPathRooted(name))
+        {
+            if (File.Exists(name)) return name;
+            if (File.Exists($"{name}.cs")) return $"{name}.cs";
+            if (File.Exists($"{name}.csx")) return $"{name}.csx";
+            return null;
+        }
+
+        string? baseDir;
+        if (!string.IsNullOrWhiteSpace(_scriptFilePath))
+        {
+            var scriptDir = Path.GetDirectoryName(_scriptFilePath);
+            if (!string.IsNullOrWhiteSpace(scriptDir) &&
+                string.Equals(Path.GetFileName(scriptDir), "Scripts", StringComparison.OrdinalIgnoreCase))
+            {
+                baseDir = Path.GetDirectoryName(scriptDir);
+            }
+            else
+            {
+                baseDir = scriptDir;
+            }
+        }
+        else
+        {
+            baseDir = AppContext.BaseDirectory;
+        }
+        if (string.IsNullOrWhiteSpace(baseDir))
+        {
+            return null;
+        }
+
+        var scriptsDir = Path.Combine(baseDir, "Scripts");
+        var candidates = new[]
+        {
+            name,
+            $"{name}.cs",
+            $"{name}.csx"
+        };
+
+        foreach (var candidate in candidates)
+        {
+            var scriptPath = Path.Combine(scriptsDir, candidate);
+            if (File.Exists(scriptPath))
+            {
+                return scriptPath;
+            }
+        }
+
+        foreach (var candidate in candidates)
+        {
+            var scriptPath = Path.Combine(baseDir, candidate);
+            if (File.Exists(scriptPath))
+            {
+                return scriptPath;
+            }
+        }
+
+        return null;
+    }
+
+    private void LogCompilationErrors(CompilationErrorException error)
+    {
+        Console.WriteLine("Script Error: compilation failed.");
+        foreach (var diagnostic in error.Diagnostics)
+        {
+            var lineSpan = diagnostic.Location.GetLineSpan();
+            var line = lineSpan.StartLinePosition.Line + 1;
+            var column = lineSpan.StartLinePosition.Character + 1;
+            var path = string.IsNullOrWhiteSpace(lineSpan.Path) ? _scriptFilePath : lineSpan.Path;
+            var location = string.IsNullOrWhiteSpace(path)
+                ? $"line {line}, col {column}"
+                : $"{path}:{line}:{column}";
+            Console.WriteLine($"  {diagnostic.Severity} {diagnostic.Id}: {diagnostic.GetMessage()} ({location})");
+        }
+    }
+
+    private void LogRuntimeError(Exception error)
+    {
+        Console.WriteLine($"Script Error: {error.GetType().Name}: {error.Message}");
+        var location = TryFindStackLocation(error);
+        if (!string.IsNullOrWhiteSpace(location))
+        {
+            Console.WriteLine($"  at {location}");
+        }
+    }
+
+    private static string? TryFindStackLocation(Exception error)
+    {
+        if (string.IsNullOrWhiteSpace(error.StackTrace)) return null;
+        var match = Regex.Match(error.StackTrace, @"in (.*):line (\d+)");
+        if (!match.Success) return null;
+        var path = match.Groups[1].Value.Trim();
+        var line = match.Groups[2].Value.Trim();
+        return string.IsNullOrWhiteSpace(path) ? null : $"{path}:{line}";
     }
 }
 
-// Class to hold global objects and helper methods for scripts
-public class ScriptGlobals
+/// <summary>
+/// Globals exposed to scripts for building synths, patterns, and routing.
+/// </summary>
+public sealed class ScriptGlobals
 {
-    public AudioEngine Engine { get; set; } = null!; // The audio engine instance
-    public Sequencer Sequencer { get; set; } = null!; // The sequencer instance
-    public ScriptHost? Host { get; set; } // Reference to the script host for events
+    /// <summary>
+    /// Audio engine instance.
+    /// </summary>
+    public AudioEngine Engine { get; set; } = null!;
+    /// <summary>
+    /// Sequencer instance.
+    /// </summary>
+    public Sequencer Sequencer { get; set; } = null!;
+    /// <summary>
+    /// Script host instance.
+    /// </summary>
+    public ScriptHost? Host { get; set; }
+    /// <summary>
+    /// VST registry if scanning is enabled.
+    /// </summary>
+    public Vst3Registry? VstRegistry { get; set; }
+    /// <summary>
+    /// Optional script file path for per-script storage.
+    /// </summary>
+    public string? ScriptFilePath { get; set; }
+    /// <summary>
+    /// Timing master from the sequencer.
+    /// </summary>
+    public TimingMaster Timing => Sequencer.Timing;
 
-    private SimpleSynth? _synth; // Default synth instance
+      private SimpleSynth? _synth;
+      private ISynth? _lastInstrument;
+      private GeneralMidiInstrument? _lastGeneralMidi;
+      private SamplerInstrument? _lastSampler;
+      private IVstInstrument? _lastVstInstrument;
+      private Vst3Effect? _lastVstEffect;
+      private EffectRack? _lastEffectRack;
+      private MidiEffectRack? _lastMidiEffectRack;
+      private AudioInput? _lastInput;
+      private AudioDeck? _lastDeck;
+      private AudioClip? _lastClip;
+      private ScriptLibrary? _library;
+      private ActivityController? _activity;
+      private MasterBus? _masterBus;
 
-    // Default synth - created on first access
-    public SimpleSynth Synth => _synth ??= CreateSynth();
-
-    // Lowercase aliases for convenience
-    public AudioEngine engine => Engine;
-    public Sequencer sequencer => Sequencer;
-
-    // Creates and adds a SimpleSynth to the engine
+    /// <summary>
+    /// Create and route a SimpleSynth instance.
+    /// </summary>
     public SimpleSynth CreateSynth()
     {
-        var synth = new SimpleSynth(); // Create a new SimpleSynth
-        Engine.AddSampleProvider(synth); // Add it to the audio engine
-        return synth; // Return the created synth
+        var synth = new SimpleSynth();
+        Engine.AddSampleProvider(synth);
+        Host?.RegisterSynth(synth);
+        _synth = synth;
+        _lastInstrument = synth;
+        return synth;
     }
 
-    /// <summary>Alias for CreateSynth - Creates a synthesizer</summary>
-    public SimpleSynth synth() => CreateSynth();
-    /// <summary>Alias for CreateSynth - Creates a synthesizer (short form)</summary>
-    public SimpleSynth s() => CreateSynth();
-    /// <summary>Alias for CreateSynth - Creates a new synthesizer</summary>
-    public SimpleSynth newSynth() => CreateSynth();
+    /// <summary>
+    /// Create and route a General MIDI instrument.
+    /// </summary>
+      public GeneralMidiInstrument CreateGeneralMidi()
+      {
+          var instrument = new GeneralMidiInstrument();
+          Engine.AddSampleProvider(instrument);
+          Host?.RegisterSynth(instrument);
+          _lastGeneralMidi = instrument;
+          _lastInstrument = instrument;
+          return instrument;
+      }
 
-    // Creates and adds a GeneralMidiInstrument to the engine
-    public GeneralMidiInstrument CreateGeneralMidiInstrument(GeneralMidiProgram program, int channel = 0)
+      /// <summary>
+      /// Create and route a sampler instrument.
+      /// </summary>
+      public SamplerInstrument CreateSampler()
+      {
+          var sampler = new SamplerInstrument();
+          Engine.AddSampleProvider(sampler);
+          Host?.RegisterSynth(sampler);
+          _lastSampler = sampler;
+          _lastInstrument = sampler;
+          return sampler;
+      }
+
+      /// <summary>
+      /// Default General MIDI instrument (last created).
+      /// </summary>
+      public GeneralMidiInstrument piano => _lastGeneralMidi ??= CreateGeneralMidi();
+      /// <summary>
+      /// Default General MIDI instrument (last created).
+      /// </summary>
+      public GeneralMidiInstrument Piano => piano;
+      /// <summary>
+      /// Default synth (last created).
+      /// </summary>
+      public SimpleSynth synth => _synth ??= CreateSynth();
+      /// <summary>
+      /// Default synth (last created).
+      /// </summary>
+      public SimpleSynth Synth => synth;
+      /// <summary>
+      /// Default sampler (last created).
+      /// </summary>
+      public SamplerInstrument sampler => _lastSampler ??= CreateSampler();
+      /// <summary>
+      /// Default instrument (last created).
+      /// </summary>
+      public ISynth instrument => _lastInstrument ??= CreateSynth();
+      /// <summary>
+      /// Default instrument (last created).
+      /// </summary>
+      public ISynth Instrument => instrument;
+
+      /// <summary>
+      /// Create and route a live audio input (mic/line-in) by device index.
+      /// </summary>
+      public AudioInput CreateMic(int deviceIndex)
+      {
+          var input = Engine.CreateInput(deviceIndex);
+          Engine.AddSampleProvider(input);
+          _lastInput = input;
+          return input;
+      }
+
+      /// <summary>
+      /// Create and route a live audio input (mic/line-in) by device name.
+      /// </summary>
+      public AudioInput CreateMic(string deviceName)
+      {
+          var input = Engine.CreateInput(deviceName);
+          Engine.AddSampleProvider(input);
+          _lastInput = input;
+          return input;
+      }
+
+      /// <summary>
+      /// Create and route an audio deck.
+      /// </summary>
+      public AudioDeck CreateDeck(string name)
+      {
+          var deck = new AudioDeck(name);
+          Engine.AddSampleProvider(deck);
+          _lastDeck = deck;
+          return deck;
+      }
+
+    /// <summary>
+    /// Create a time master controller.
+    /// </summary>
+    public TimeMasterController CreateTimeMaster() => new TimeMasterController();
+
+    /// <summary>
+    /// Create a modular audio effect rack.
+    /// </summary>
+    public EffectRack CreateEffect()
     {
-        var instrument = new GeneralMidiInstrument(program, channel);
-        Engine.AddSampleProvider(instrument);
-        return instrument;
+        var rack = new EffectRack();
+        _lastEffectRack = rack;
+        return rack;
     }
 
-    /// <summary>Alias for CreateGeneralMidiInstrument - Creates a GM instrument (short form)</summary>
-    public GeneralMidiInstrument gm(GeneralMidiProgram program, int channel = 0) => CreateGeneralMidiInstrument(program, channel);
-    /// <summary>Alias for CreateGeneralMidiInstrument - Creates a new GM instrument</summary>
-    public GeneralMidiInstrument newGm(GeneralMidiProgram program, int channel = 0) => CreateGeneralMidiInstrument(program, channel);
+    /// <summary>
+    /// Create a reverb preset effect.
+    /// </summary>
+    public SimpleReverbEffect ReverbPreset(string name, Action<SimpleReverbEffect>? configure = null)
+        => Effect.ReverbPreset(name, configure);
 
-    // Creates a Pattern with the default Synth
-    public Pattern CreatePattern() => CreatePattern(Synth);
+    /// <summary>
+    /// Create a delay preset effect.
+    /// </summary>
+    public SimpleDelayEffect DelayPreset(string name, Action<SimpleDelayEffect>? configure = null)
+        => Effect.DelayPreset(name, configure);
 
-    // Creates a Pattern with reference to the sequencer
-    // The pattern is NOT automatically added - call pattern.Play() to start it
+    /// <summary>
+    /// Create a tremolo preset effect.
+    /// </summary>
+    public TremoloEffect TremoloPreset(string name, Action<TremoloEffect>? configure = null)
+        => Effect.TremoloPreset(name, configure);
+
+    /// <summary>
+    /// Create a bit crush preset effect.
+    /// </summary>
+    public BitCrusherEffect BitCrushPreset(string name, Action<BitCrusherEffect>? configure = null)
+        => Effect.BitCrushPreset(name, configure);
+
+    /// <summary>
+    /// Create a noise preset effect.
+    /// </summary>
+    public NoiseEffect NoisePreset(string name, Action<NoiseEffect>? configure = null)
+        => Effect.NoisePreset(name, configure);
+
+    /// <summary>
+    /// Create a drive preset effect.
+    /// </summary>
+    public DriveEffect DrivePreset(string name, Action<DriveEffect>? configure = null)
+        => Effect.DrivePreset(name, configure);
+
+    /// <summary>
+    /// Create a filter preset effect.
+    /// </summary>
+    public SimpleFilterEffect FilterPreset(string name, Action<SimpleFilterEffect>? configure = null)
+        => Effect.FilterPreset(name, configure);
+
+    /// <summary>
+    /// Create a modular MIDI effect rack.
+    /// </summary>
+    public MidiEffectRack CreateMidiEffect()
+    {
+        var rack = new MidiEffectRack();
+        _lastMidiEffectRack = rack;
+        return rack;
+    }
+
+    /// <summary>
+    /// Create a pattern using the last created synth.
+    /// </summary>
+    public Pattern CreatePattern() => CreatePattern(_synth ??= CreateSynth());
+
+    /// <summary>
+    /// Create a pattern targeting a specific synth.
+    /// </summary>
     public Pattern CreatePattern(ISynth synth)
     {
-        var pattern = new Pattern(synth); // Create a new Pattern with the given synth
-        pattern.Sequencer = Sequencer; // Set sequencer reference for Play()/Stop()
-        pattern.InstrumentName = synth is SimpleSynth ss ? (ss.Name ?? synth.GetType().Name) : synth.GetType().Name;
-        return pattern; // Return the created pattern
-    }
-
-    /// <summary>Alias for CreatePattern - Creates a pattern</summary>
-    public Pattern pattern() => CreatePattern();
-    /// <summary>Alias for CreatePattern - Creates a pattern</summary>
-    public Pattern pattern(ISynth synth) => CreatePattern(synth);
-    /// <summary>Alias for CreatePattern - Creates a pattern (short form)</summary>
-    public Pattern p() => CreatePattern();
-    /// <summary>Alias for CreatePattern - Creates a pattern (short form)</summary>
-    public Pattern p(ISynth synth) => CreatePattern(synth);
-    /// <summary>Alias for CreatePattern - Creates a new pattern</summary>
-    public Pattern newPattern() => CreatePattern();
-    /// <summary>Alias for CreatePattern - Creates a new pattern</summary>
-    public Pattern newPattern(ISynth synth) => CreatePattern(synth);
-
-    // Routes MIDI input from a device to a synthesizer
-    public void RouteMidi(int deviceIndex, ISynth synth)
-    {
-        Engine.RouteMidiInput(deviceIndex, synth);
-    }
-
-    // Maps a MIDI control change to a synthesizer parameter
-    public void MapControl(int deviceIndex, int cc, ISynth synth, string param)
-    {
-        Engine.MapMidiControl(deviceIndex, cc, synth, param);
-    }
-
-    // Maps pitch bend to a synthesizer parameter
-    public void MapPitchBend(int deviceIndex, ISynth synth, string param)
-    {
-        // We use -1 as an internal identifier for Pitch Bend
-        Engine.MapMidiControl(deviceIndex, -1, synth, param);
-    }
-
-    // Maps a MIDI control to BPM adjustment
-    public void MapBpm(int deviceIndex, int cc)
-    {
-        Engine.MapTransportControl(deviceIndex, cc, val => {
-            Sequencer.Bpm = 60 + (val * 140); // Map 0-1 to 60-200 BPM
-        });
-    }
-
-    // Maps a MIDI note to start the sequencer
-    public void MapStart(int deviceIndex, int note)
-    {
-        Engine.MapTransportNote(deviceIndex, note, val => {
-            if (val > 0) Sequencer.Start();
-        });
-    }
-
-    // Maps a MIDI note to stop the sequencer
-    public void MapStop(int deviceIndex, int note)
-    {
-        Engine.MapTransportNote(deviceIndex, note, val => {
-            if (val > 0) Sequencer.Stop();
-        });
-    }
-
-    // Maps a MIDI note to refresh/reload the script
-    public void MapRefresh(int deviceIndex, int note)
-    {
-        Engine.MapTransportNote(deviceIndex, note, val => {
-            if (val > 0) Host?.TriggerRefresh();
-        });
-    }
-
-    /// <summary>Alias for MapRefresh - Binds a note to reload the script</summary>
-    public void mapRefresh(int deviceIndex, int note) => MapRefresh(deviceIndex, note);
-    /// <summary>Alias for MapRefresh - Binds a note to reload the script</summary>
-    public void bindRefresh(int deviceIndex, int note) => MapRefresh(deviceIndex, note);
-
-    // Maps a MIDI CC to refresh/reload the script (triggers when value > 64)
-    public void MapRefreshCC(int deviceIndex, int cc)
-    {
-        Engine.MapTransportControl(deviceIndex, cc, val => {
-            if (val > 0.5f) Host?.TriggerRefresh();
-        });
-    }
-
-    // Maps a MIDI note to trigger a custom action by name
-    public void MapAction(int deviceIndex, int note, string actionName)
-    {
-        Engine.MapTransportNote(deviceIndex, note, val => {
-            if (val > 0) Host?.TriggerAction(actionName);
-        });
-    }
-
-    /// <summary>Alias for MapAction - Binds a note to a custom action</summary>
-    public void mapAction(int deviceIndex, int note, string actionName) => MapAction(deviceIndex, note, actionName);
-    /// <summary>Alias for MapAction - Binds a note to a custom action</summary>
-    public void bindAction(int deviceIndex, int note, string actionName) => MapAction(deviceIndex, note, actionName);
-
-    // Maps a MIDI CC to trigger a custom action by name (triggers when value > 64)
-    public void MapActionCC(int deviceIndex, int cc, string actionName)
-    {
-        Engine.MapTransportControl(deviceIndex, cc, val => {
-            if (val > 0.5f) Host?.TriggerAction(actionName);
-        });
-    }
-
-    // Maps a MIDI note to execute any Action callback
-    public void MapNote(int deviceIndex, int note, Action action)
-    {
-        Engine.MapTransportNote(deviceIndex, note, val => {
-            if (val > 0) action();
-        });
-    }
-
-    /// <summary>Alias for MapNote - Binds a note to a callback</summary>
-    public void mapNote(int deviceIndex, int note, Action action) => MapNote(deviceIndex, note, action);
-    /// <summary>Alias for MapNote - Binds a note to a callback</summary>
-    public void onNote(int deviceIndex, int note, Action action) => MapNote(deviceIndex, note, action);
-
-    // Maps a MIDI note to execute any Action callback with velocity
-    public void MapNoteWithVelocity(int deviceIndex, int note, Action<float> action)
-    {
-        Engine.MapTransportNote(deviceIndex, note, action);
-    }
-
-    // Maps a MIDI CC to execute any Action callback
-    public void MapCC(int deviceIndex, int cc, Action<float> action)
-    {
-        Engine.MapTransportControl(deviceIndex, cc, action);
-    }
-
-    /// <summary>Alias for MapCC - Binds a CC to a callback</summary>
-    public void mapCC(int deviceIndex, int cc, Action<float> action) => MapCC(deviceIndex, cc, action);
-    /// <summary>Alias for MapCC - Binds a CC to a callback</summary>
-    public void onCC(int deviceIndex, int cc, Action<float> action) => MapCC(deviceIndex, cc, action);
-
-    // Maps a MIDI control to skip beats in the sequencer
-    public void MapSkip(int deviceIndex, int cc, double beats)
-    {
-        Engine.MapTransportControl(deviceIndex, cc, val => {
-            if (val > 0.5f) Sequencer.Skip(beats);
-        });
-    }
-
-    // Maps a MIDI control to scratching behavior
-    public void MapScratch(int deviceIndex, int cc, double scale = 16.0)
-    {
-        Engine.MapTransportControl(deviceIndex, cc, val => {
-            Sequencer.IsScratching = true;
-            Sequencer.CurrentBeat = val * scale;
-        });
-        // We might want a way to release scratch mode
-    }
-
-    public void SetScratching(bool scratching) => Sequencer.IsScratching = scratching; // Enable or disable scratching mode
-
-    public void Start() => Sequencer.Start(); // Start the sequencer
-    /// <summary>Alias for Start - Starts playback</summary>
-    public void play() => Start();
-    /// <summary>Alias for Start - Runs the sequencer</summary>
-    public void run() => Start();
-    /// <summary>Alias for Start - Starts the sequencer</summary>
-    public void go() => Start();
-
-    public void Stop() => Sequencer.Stop(); // Stop the sequencer
-    /// <summary>Alias for Stop - Pauses playback</summary>
-    public void pause() => Stop();
-    /// <summary>Alias for Stop - Halts the sequencer</summary>
-    public void halt() => Stop();
-
-    public void SetBpm(double bpm) => Sequencer.Bpm = bpm; // Set the BPM of the sequencer
-    /// <summary>Alias for SetBpm - Sets the tempo</summary>
-    public void bpm(double bpm) => SetBpm(bpm);
-    /// <summary>Alias for SetBpm - Sets the tempo</summary>
-    public void tempo(double bpm) => SetBpm(bpm);
-
-    public void SetBPM(double bpm) => Sequencer.Bpm = bpm; // Alias for SetBpm
-    public double BPM { get => Sequencer.Bpm; set => Sequencer.Bpm = value; } // BPM property
-
-    public void Skip(double beats) => Sequencer.Skip(beats); // Skip a number of beats in the sequencer
-    /// <summary>Alias for Skip - Jumps forward by beats</summary>
-    public void jump(double beats) => Skip(beats);
-    /// <summary>Alias for Skip - Seeks to a position</summary>
-    public void seek(double beats) => Skip(beats);
-
-    public void StartPattern(Pattern p) => p.Enabled = true; // Start a pattern
-    public void StopPattern(Pattern p) => p.Enabled = false; // Stop a pattern
-
-    public PatternControl patterns => new PatternControl(this); // Accessor for pattern controls
-
-    public float Random(float min, float max) => (float)(new Random().NextDouble() * (max - min) + min); // Generate a random float
-    public int RandomInt(int min, int max) => new Random().Next(min, max); // Generate a random integer
-
-    // Adds a frequency trigger mapping
-    public void AddFrequencyTrigger(int deviceIndex, float low, float high, float threshold, Action<float> action)
-    {
-        Engine.AddFrequencyMapping(new FrequencyMidiMapping // Create and add a new frequency mapping
-        {
-            DeviceIndex = deviceIndex, // MIDI Device Index
-            LowFreq = low, // Low frequency in Hz
-            HighFreq = high, // High frequency in Hz
-            Threshold = threshold, // Magnitude threshold for triggering
-            OnTrigger = action // Action to invoke on trigger with magnitude
-        });
-    }
-
-    // Prints a message to the console
-    public void Print(string message) => Console.WriteLine(message);
-    /// <summary>Alias for Print - Logs a message to console</summary>
-    public void log(string message) => Print(message);
-    /// <summary>Alias for Print - Writes a message to console</summary>
-    public void write(string message) => Print(message);
-
-    public AudioControl audio => new AudioControl(this);
-    public MidiControl midi => new MidiControl(this);
-    public VstControl vst => new VstControl(this);
-    public SampleControl samples => new SampleControl(this);
-
-    public VirtualChannelControl virtualChannels => new VirtualChannelControl(this);
-
-    // === VST Plugin Methods ===
-
-    // Load a VST plugin by name (returns IVstPlugin to support both VST2 and VST3)
-    public IVstPlugin? LoadVst(string nameOrPath)
-    {
-        return Engine.LoadVstPlugin(nameOrPath);
-    }
-
-    // Load a VST plugin by index (returns IVstPlugin to support both VST2 and VST3)
-    public IVstPlugin? LoadVstByIndex(int index)
-    {
-        return Engine.LoadVstPluginByIndex(index);
-    }
-
-    // Get a loaded VST plugin (returns IVstPlugin to support both VST2 and VST3)
-    public IVstPlugin? GetVst(string name)
-    {
-        return Engine.GetVstPlugin(name);
-    }
-
-    // Route MIDI to a VST plugin
-    public void RouteToVst(int deviceIndex, VstPlugin plugin)
-    {
-        Engine.RouteMidiToVst(deviceIndex, plugin);
-    }
-
-    // Print all discovered VST plugins
-    public void ListVstPlugins()
-    {
-        Engine.PrintVstPlugins();
-    }
-
-    // Print loaded VST plugins
-    public void ListLoadedVstPlugins()
-    {
-        Engine.PrintLoadedVstPlugins();
-    }
-
-    // === Sample Instrument Methods ===
-
-    /// <summary>
-    /// Creates a new sample instrument and adds it to the audio engine.
-    /// </summary>
-    public SampleInstrument CreateSampler(string? name = null)
-    {
-        var sampler = new SampleInstrument();
-        if (name != null) sampler.Name = name;
-        Engine.AddSampleProvider(sampler);
-        return sampler;
-    }
-
-    /// <summary>Alias for CreateSampler - Creates a sample instrument</summary>
-    public SampleInstrument sampler(string? name = null) => CreateSampler(name);
-    /// <summary>Alias for CreateSampler - Creates a sample instrument</summary>
-    public SampleInstrument sample(string? name = null) => CreateSampler(name);
-
-    /// <summary>
-    /// Creates a sample instrument and loads a single sample.
-    /// The sample is mapped to all notes with pitch shifting from the root note.
-    /// </summary>
-    public SampleInstrument CreateSamplerFromFile(string filePath, int rootNote = 60)
-    {
-        var sampler = CreateSampler();
-        var sample = sampler.LoadSample(filePath, rootNote);
-        return sampler;
+        var pattern = new Pattern(synth);
+        pattern.Sequencer = Sequencer;
+        Engine.RegisterPatternForEditor(pattern);
+        return pattern;
     }
 
     /// <summary>
-    /// Creates a sample instrument from a directory of samples.
-    /// Each sample is mapped to a note based on filename (e.g., "kick.wav" -> use LoadAndMap).
+    /// Create a note binding helper for direct note triggering.
     /// </summary>
-    public SampleInstrument CreateSamplerFromDirectory(string directoryPath)
+    public NoteBuilder Note(int note) => new NoteBuilder(this, note);
+
+    /// <summary>
+    /// Create a note binding helper for direct note triggering.
+    /// </summary>
+    public NoteBuilder note(int note) => Note(note);
+
+    /// <summary>
+    /// Create a note binding helper for direct note triggering.
+    /// </summary>
+    public NoteBuilder NOTE(int note) => Note(note);
+
+      /// <summary>
+      /// Create a new VST3 instrument by name.
+      /// </summary>
+      public IVstInstrument CreateVst(string name, string? alias = null)
+      {
+          var instrument = alias == null ? vst.Create(name) : vst.Create(name, alias);
+          _lastVstInstrument = instrument;
+          _lastInstrument = instrument;
+          return instrument;
+      }
+      /// <summary>
+      /// Create a new VST3 instrument by name.
+      /// </summary>
+      public IVstInstrument Vst(string name, string? alias = null) => CreateVst(name, alias);
+      /// <summary>
+      /// Default VST instrument (last created).
+      /// </summary>
+      public IVstInstrument vsti => Require(_lastVstInstrument, "CreateVst(\"Name\")");
+      /// <summary>
+      /// Default VST instrument (last created).
+      /// </summary>
+      public IVstInstrument Vsti => vsti;
+      /// <summary>
+      /// Create and route a live audio input (mic/line-in) by device index.
+      /// </summary>
+      public AudioInput Mic(int deviceIndex) => CreateMic(deviceIndex);
+      /// <summary>
+      /// Create and route a live audio input (mic/line-in) by device name.
+      /// </summary>
+      public AudioInput Mic(string deviceName) => CreateMic(deviceName);
+      /// <summary>
+      /// Create and route a live audio input (mic/line-in) by device index.
+      /// </summary>
+      public AudioInput CreateInput(int deviceIndex) => CreateMic(deviceIndex);
+      /// <summary>
+      /// Create and route a live audio input (mic/line-in) by device name.
+      /// </summary>
+      public AudioInput CreateInput(string deviceName) => CreateMic(deviceName);
+      /// <summary>
+      /// Create and route a live audio input (mic/line-in) by device index.
+      /// </summary>
+      public AudioInput Input(int deviceIndex) => CreateMic(deviceIndex);
+      /// <summary>
+      /// Create and route a live audio input (mic/line-in) by device name.
+      /// </summary>
+      public AudioInput Input(string deviceName) => CreateMic(deviceName);
+      /// <summary>
+      /// Default audio input (last created).
+      /// </summary>
+      public AudioInput mic => Require(_lastInput, "CreateMic(index) / CreateInput(index)");
+    /// <summary>
+    /// Create and route a sampler instrument.
+    /// </summary>
+    public SamplerInstrument Sampler() => CreateSampler();
+    /// <summary>
+    /// Create and route an audio deck.
+    /// </summary>
+      public AudioDeck Deck(string name) => CreateDeck(name);
+      /// <summary>
+      /// Default audio deck (last created).
+      /// </summary>
+      public AudioDeck deck => Require(_lastDeck, "CreateDeck(\"Name\")");
+    /// <summary>
+    /// Create a time master controller.
+    /// </summary>
+    public TimeMasterController TimeMaster() => CreateTimeMaster();
+      /// <summary>
+      /// Create a new VST3 effect by name.
+      /// </summary>
+      public Vst3Effect CreateVstEffect(string name, string? alias = null)
+      {
+          var effect = alias == null ? vst.CreateEffect(name) : vst.CreateEffect(name, alias);
+          _lastVstEffect = effect;
+          return effect;
+      }
+      /// <summary>
+      /// Default VST effect (last created).
+      /// </summary>
+      public Vst3Effect vstfx => Require(_lastVstEffect, "CreateVstEffect(\"Name\")");
+      /// <summary>
+      /// Default VST effect (last created).
+      /// </summary>
+      public Vst3Effect VstFx => vstfx;
+      /// <summary>
+      /// Load an audio clip from disk.
+      /// </summary>
+      public AudioClip CreateAudioClip(string path)
+      {
+          var clip = new AudioClip(path);
+          _lastClip = clip;
+          return clip;
+      }
+      /// <summary>
+      /// Default audio clip (last created).
+      /// </summary>
+      public AudioClip clip => Require(_lastClip, "CreateAudioClip(\"Path\")");
+      /// <summary>
+      /// Default effect rack (last created).
+      /// </summary>
+      public EffectRack effect => Require(_lastEffectRack, "CreateEffect()");
+      /// <summary>
+      /// Default MIDI effect rack (last created).
+      /// </summary>
+      public MidiEffectRack midiefx => Require(_lastMidiEffectRack, "CreateMidiEffect()");
+
+    /// <summary>
+    /// Shared script library (dynamic).
+    /// </summary>
+    public dynamic File => _library ??= new ScriptLibrary(Host ?? throw new InvalidOperationException("Host missing."));
+
+    /// <summary>
+    /// Shared script library (typed access).
+    /// </summary>
+    public ScriptLibrary Library => _library ??= new ScriptLibrary(Host ?? throw new InvalidOperationException("Host missing."));
+
+    /// <summary>
+    /// Master bus marker for routing.
+    /// </summary>
+    public MasterBus Master => _masterBus ??= new MasterBus();
+    /// <summary>
+    /// Master bus marker for routing.
+    /// </summary>
+    public MasterBus master => Master;
+    /// <summary>
+    /// Master bus marker for routing.
+    /// </summary>
+    public MasterBus MASTER => Master;
+
+    /// <summary>
+    /// Global activity controller.
+    /// </summary>
+    public ActivityController Activity => _activity ??= new ActivityController(this);
+
+    /// <summary>
+    /// Global activity controller.
+    /// </summary>
+    public ActivityController activity => Activity;
+
+    /// <summary>
+    /// Load and run a module script by name.
+    /// </summary>
+    public Task<bool> Use(string name)
     {
-        var sampler = CreateSampler();
-        sampler.SetSampleDirectory(directoryPath);
-        return sampler;
+        if (Host == null) return Task.FromResult(false);
+        return Host.ExecuteModuleAsync(name);
     }
 
     /// <summary>
-    /// Loads a sample into an existing sampler and maps it to a specific note.
-    /// Great for drum pads.
+    /// Fluent audio control API (case-insensitive proxy).
     /// </summary>
-    public Sample? LoadSampleToNote(SampleInstrument sampler, string filePath, int note)
-    {
-        var sample = sampler.LoadSample(filePath, note);
-        if (sample != null)
-        {
-            sampler.MapSampleToNote(sample, note);
-        }
-        return sample;
-    }
-
-    // === Virtual Audio Channel Methods ===
+    public dynamic audio => _audioProxy ??= new CaseInsensitiveProxy(_audioControl ??= new AudioControl(this));
+    /// <summary>
+    /// Fluent audio control API (case-insensitive proxy).
+    /// </summary>
+    public dynamic Audio => audio;
+    /// <summary>
+    /// Fluent audio control API (case-insensitive proxy).
+    /// </summary>
+    public dynamic AUDIO => audio;
+    /// <summary>
+    /// Fluent MIDI control API.
+    /// </summary>
+    public MidiControl midi => _midiControl ??= new MidiControl(this);
+    /// <summary>
+    /// Fluent MIDI control API.
+    /// </summary>
+    public MidiControl Midi => midi;
+    /// <summary>
+    /// Fluent MIDI control API.
+    /// </summary>
+    public MidiControl MIDI => midi;
+    /// <summary>
+    /// Dynamic VST access API.
+    /// </summary>
+    public dynamic vst => _vstAccess ??= new VstAccess(this);
+    /// <summary>
+    /// Case-insensitive root for scripting APIs.
+    /// </summary>
+    public dynamic Music => _musicProxy ??= new CaseInsensitiveProxy(this);
+    /// <summary>
+    /// Case-insensitive root for scripting APIs.
+    /// </summary>
+    public dynamic music => Music;
+    /// <summary>
+    /// Case-insensitive root for scripting APIs.
+    /// </summary>
+    public dynamic MUSIC => Music;
+    /// <summary>
+    /// Random source helper for scripts.
+    /// </summary>
+    public RandomSource Random { get; } = new RandomSource();
 
     /// <summary>
-    /// Creates a virtual audio channel for routing audio to other applications.
-    /// Other apps can connect via the named pipe to receive audio.
+    /// Shared MIDI mapping helper for scripts.
     /// </summary>
-    public VirtualAudioChannel CreateVirtualChannel(string name)
-    {
-        return Engine.CreateVirtualChannel(name);
-    }
-
-    /// <summary>Alias for CreateVirtualChannel - Creates a virtual audio channel (short form)</summary>
-    public VirtualAudioChannel vchan(string name) => CreateVirtualChannel(name);
-    /// <summary>Alias for CreateVirtualChannel - Creates a virtual audio channel</summary>
-    public VirtualAudioChannel channel(string name) => CreateVirtualChannel(name);
+    public MidiMap MidiMap => _midiMap ??= new MidiMap();
+    /// <summary>
+    /// Shared MIDI mapping helper for scripts.
+    /// </summary>
+      public MidiMap Map => MidiMap;
 
     /// <summary>
-    /// Lists all virtual audio channels.
+    /// Bind a normalized MIDI value (0..1) to a property/field.
     /// </summary>
-    public void ListVirtualChannels()
+    public Action<float> Bind(object target, string member, float min = 0f, float max = 1f)
+        => PropertyBinder.Create(target, member, min, max);
+
+    /// <summary>
+    /// Bind a normalized MIDI value (0..1) to a property/field with a custom mapper.
+    /// </summary>
+    public Action<float> Bind(object target, string member, Func<float, float> map)
+        => PropertyBinder.Create(target, member, map);
+
+    /// <summary>
+    /// Bind a normalized MIDI value (0..1) to a method call on rising edge.
+    /// </summary>
+    public Action<float> BindTrigger(object target, string method)
+        => ActionBinder.Trigger(target, method);
+
+    /// <summary>
+    /// Bind a normalized MIDI value (0..1) to a method with a single parameter.
+    /// </summary>
+    public Action<float> BindCall(object target, string method, float min = 0f, float max = 1f)
+        => ActionBinder.Call(target, method, min, max);
+
+    /// <summary>
+    /// Bind a normalized MIDI value (0..1) to a method with a custom mapper.
+    /// </summary>
+    public Action<float> BindCall(object target, string method, Func<float, float> map)
+        => ActionBinder.Call(target, method, map);
+
+    /// <summary>
+    /// Toggle a boolean property/field on rising edge.
+    /// </summary>
+    public Action<float> BindToggle(object target, string member)
+        => ActionBinder.Toggle(target, member);
+
+    /// <summary>
+    /// Switch a boolean property/field based on the current value.
+    /// </summary>
+    public Action<float> BindSwitch(object target, string member)
+        => ActionBinder.Switch(target, member);
+
+    /// <summary>
+    /// Toggle a boolean value (getter/setter) on rising edge.
+    /// </summary>
+    public Action<float> BindToggle(Func<bool> getter, Action<bool> setter)
+        => ActionBinder.Toggle(getter, setter);
+
+    /// <summary>
+    /// Switch a boolean value (getter/setter) based on the current value.
+    /// </summary>
+    public Action<float> BindSwitch(Func<bool> getter, Action<bool> setter)
+        => ActionBinder.Switch(getter, setter);
+
+    /// <summary>
+    /// Create a modulated variable from any writable property/field.
+    /// </summary>
+    public ModVar Var(object target, string member, float? initial = null)
+        => Mod.Var(target, member, initial);
+
+    /// <summary>
+    /// Alias for Var.
+    /// </summary>
+    public ModVar Param(object target, string member, float? initial = null)
+        => Var(target, member, initial);
+
+    private VstAccess? _vstAccess;
+    private MidiMap? _midiMap;
+    private AudioControl? _audioControl;
+    private MidiControl? _midiControl;
+    private CaseInsensitiveProxy? _audioProxy;
+    private CaseInsensitiveProxy? _musicProxy;
+
+    internal VstAccess? VstAccessInstance => _vstAccess;
+
+    internal void SetLibrary(ScriptLibrary library)
     {
-        Engine.ListVirtualChannels();
+        _library = library;
+    }
+
+    internal void SetVstAccess(VstAccess access)
+    {
+        _vstAccess = access;
+    }
+
+    internal void RouteMidi(int deviceIndex, ISynth synth) => Engine.RouteMidiInput(deviceIndex, synth);
+
+    internal void RouteMidi(int deviceIndex, int channel, ISynth synth)
+        => Engine.RouteMidiInput(deviceIndex, channel, synth);
+
+    internal void SetMidiDeviceEnabled(int deviceIndex, bool enabled, bool sendAllNotesOff)
+        => Engine.SetMidiDeviceEnabled(deviceIndex, enabled, sendAllNotesOff);
+
+    internal void SetMidiChannelEnabled(int deviceIndex, int channel, bool enabled, bool sendAllNotesOff)
+        => Engine.SetMidiChannelEnabled(deviceIndex, channel, enabled, sendAllNotesOff);
+
+    internal void SetMidiRouteEnabled(int deviceIndex, int channel, ISynth synth, bool enabled, bool sendAllNotesOff)
+        => Engine.SetMidiRouteEnabled(deviceIndex, channel, synth, enabled, sendAllNotesOff);
+
+    internal void MapControlAction(int deviceIndex, int controlId, Action<float> action)
+        => Engine.MapControlAction(deviceIndex, controlId, action);
+
+    internal void MapControlAction(int deviceIndex, int channel, int controlId, Action<float> action)
+        => Engine.MapControlAction(deviceIndex, channel, controlId, action);
+
+    private static T Require<T>(T? value, string hint) where T : class
+    {
+        if (value != null) return value;
+        throw new InvalidOperationException($"No instance created yet. Call {hint} first.");
     }
 }

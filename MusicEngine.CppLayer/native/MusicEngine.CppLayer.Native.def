@@ -1,0 +1,19 @@
+LIBRARY MusicEngine.CppLayer.Native
+EXPORTS
+    Vst3Host_Create
+    Vst3Host_OpenEditor
+    Vst3Host_Close
+    Vst3Host_SetupAudio
+    Vst3Host_GetOutputChannels
+    Vst3Host_GetInputChannels
+    Vst3Host_Process
+    Vst3Host_ProcessWithInput
+    Vst3Host_SendNoteOn
+    Vst3Host_SendNoteOff
+    Vst3Host_AllNotesOff
+    Vst3Host_SendPitchBend
+    Vst3Host_GetParameterCount
+    Vst3Host_GetParameterInfo
+    Vst3Host_SetParameter
+    Vst3Host_GetEditorSize
+    Vst3Host_ResizeEditor
