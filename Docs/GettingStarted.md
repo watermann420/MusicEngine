@@ -7,17 +7,18 @@ This short guide shows where the default script lives and the basic workflow to 
 The engine loads the default script from:
 
 ```
-Scripts/test_script.csx
+Scripts/test_script.cs
 ```
 
-If the file does not exist, it is created on first launch.
+If the file does not exist, it is created on first launch. You can also use `Scripts/test_script.csx`.
 
 ## 2) Basic Workflow
 
 1. Start the engine (debug or release).
-2. Edit `Scripts/test_script.csx`.
-3. In the console,  `S` comamnd to reload and run the script.
-4. Use `/exit` to quit and persist VST state.
+2. Edit `Scripts/test_script.cs` (or `Scripts/test_script.csx`).
+3. In the console, use `S` to reload and run the script.
+4. Use `exit` to quit and persist VST state.
+5. Open VST editors by variable name: `open vital` or just `vital`.
 
 ## 3) First Sound (Synth)
 

@@ -343,6 +343,10 @@ public sealed class SamplerInstrument : ISynth
 
         lock (_voiceLock)
         {
+            if (_voices.Count == 0)
+            {
+                return count;
+            }
             for (int i = _voices.Count - 1; i >= 0; i--)
             {
                 var voice = _voices[i];

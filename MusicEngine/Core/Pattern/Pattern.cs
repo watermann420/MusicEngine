@@ -299,6 +299,11 @@ public sealed class Pattern
 
         StartBeat ??= startBeat;
 
+        if (Events.Count == 0 && Sequences.Count == 0)
+        {
+            return;
+        }
+
         double relativeStart = startBeat - StartBeat.Value;
         double relativeEnd = endBeat - StartBeat.Value;
 
@@ -699,145 +704,5 @@ public sealed class Pattern
             }
         }
         return buffer.ToString();
-    }
-}
-
-/// <summary>
-/// Pattern note event configuration.
-/// </summary>
-public sealed class NoteEvent
-{
-    /// <summary>
-    /// Beat position of the note.
-    /// </summary>
-    public double Beat { get; set; }
-    /// <summary>
-    /// MIDI note number.
-    /// </summary>
-    public int Note { get; set; }
-    /// <summary>
-    /// MIDI velocity.
-    /// </summary>
-    public int Velocity { get; set; }
-    /// <summary>
-    /// Duration in beats.
-    /// </summary>
-    public double Duration { get; set; }
-
-    /// <summary>
-    /// Optional millisecond position override.
-    /// </summary>
-    public double? BeatMs { get; set; }
-
-    /// <summary>
-    /// Optional millisecond duration override.
-    /// </summary>
-    public double? DurationMs { get; set; }
-
-    /// <summary>
-    /// Optional slide target note.
-    /// </summary>
-    public int? SlideTo { get; set; }
-
-    /// <summary>
-    /// Optional slide time in beats.
-    /// </summary>
-    public double? SlideTimeMs { get; set; }
-}
-
-/// <summary>
-/// Sequence driven by a base note event.
-/// </summary>
-public sealed class NoteSequence
-{
-    /// <summary>
-    /// Sequence identifier.
-    /// </summary>
-    public Guid Id { get; } = Guid.NewGuid();
-
-    /// <summary>
-    /// Base note settings (pitch, velocity, step duration).
-    /// </summary>
-    public NoteEvent Note { get; }
-
-    /// <summary>
-    /// Step string using 0/1.
-    /// </summary>
-    public string Steps { get; set; }
-
-    /// <summary>
-    /// Loop the sequence continuously after it starts.
-    /// </summary>
-    public bool Loop { get; set; }
-
-    /// <summary>
-    /// Enable or disable this sequence.
-    /// </summary>
-    public bool Enabled { get; set; } = true;
-
-    public NoteSequence(NoteEvent note, string steps)
-    {
-        Note = note;
-        Steps = steps;
-    }
-}
-
-/// <summary>
-/// Runtime note activity information.
-/// </summary>
-public sealed class NoteActivity
-{
-    /// <summary>
-    /// MIDI note number.
-    /// </summary>
-    public int Note { get; init; }
-    /// <summary>
-    /// Velocity used when triggered.
-    /// </summary>
-    public int Velocity { get; init; }
-    /// <summary>
-    /// UTC timestamp when the note started.
-    /// </summary>
-    public DateTime StartedUtc { get; init; }
-
-    internal CancellationTokenSource? SlideCancel { get; init; }
-}
-
-/// <summary>
-/// Lightweight note event data for editor feedback.
-/// </summary>
-public readonly struct PatternNoteEventInfo
-{
-    /// <summary>
-    /// Pattern identifier.
-    /// </summary>
-    public Guid PatternId { get; }
-    /// <summary>
-    /// MIDI note number.
-    /// </summary>
-    public int Note { get; }
-    /// <summary>
-    /// MIDI velocity.
-    /// </summary>
-    public int Velocity { get; }
-    /// <summary>
-    /// True when this is a note-on event.
-    /// </summary>
-    public bool IsOn { get; }
-    /// <summary>
-    /// UTC timestamp of the event.
-    /// </summary>
-    public DateTime TimestampUtc { get; }
-
-    /// <summary>
-    /// Create a new pattern note event info record.
-    /// </summary>
-    public PatternNoteEventInfo(Guid patternId, int note, int velocity, bool isOn, DateTime timestampUtc)
-    {
-        PatternId = patternId;
-        Note = note;
-        Velocity = velocity;
-        IsOn = isOn;
-        TimestampUtc = timestampUtc;
     }
 }

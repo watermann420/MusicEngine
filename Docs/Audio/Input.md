@@ -17,6 +17,13 @@ var mic = CreateMic(0); // or CreateInput(0)
 var ch1 = Audio.CreateChannel(1);
 ch1.Route(mic);
 ch1.Gain(0.7);
+ch1.Route(Master);
+```
+
+If you don't assign a channel, the input goes straight to the master output:
+
+```csharp
+var mic = CreateMic(0); // master output by default
 ```
 
 ## Direct Controls
@@ -35,6 +42,9 @@ var ch2 = Audio.CreateChannel(2);
 
 // simple send (ch1 -> ch2)
 ch1.Route(2);
+
+// output-style routing (ch1 -> ch2, no master)
+ch1.Channel = ch2;
 
 // sidechain-style send with gain control
 var side = ch1.SideChain(2, gain: 0.5f);

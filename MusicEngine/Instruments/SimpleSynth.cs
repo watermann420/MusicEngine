@@ -482,6 +482,10 @@ public class SimpleSynth : ISynth
             releaseCount = _releasingVoices.Count;
         }
         int voiceCount = _voices.Count + releaseCount;
+        if (voiceCount == 0)
+        {
+            return count;
+        }
         float voiceGain = 0.7f / MathF.Sqrt(Math.Max(1, voiceCount));
 
         // Process LFO

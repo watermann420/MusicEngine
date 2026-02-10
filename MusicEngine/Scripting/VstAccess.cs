@@ -21,9 +21,14 @@ public sealed class VstAccess : DynamicObject
     private ScriptGlobals _globals;
     private readonly Dictionary<string, IVstInstrument> _instances = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<IVstInstrument> _allInstances = new();
+    private readonly Dictionary<string, IVstInstrument> _instanceAliases = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Vst3Effect> _effects = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<Vst3Effect> _allEffects = new();
+    private readonly Dictionary<string, Vst3Effect> _effectAliases = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _activeNames = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _activeAliases = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _declaredStateKeys = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<Vst3Effect, string> _effectStatePaths = new();
     private readonly Dictionary<string, byte[]> _cachedStates = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
@@ -53,6 +58,23 @@ public sealed class VstAccess : DynamicObject
     public void BeginScriptRun()
     {
         _activeNames.Clear();
+        _activeAliases.Clear();
+    }
+
+    /// <summary>
+    /// Update which VST state keys are declared in the current script.
+    /// </summary>
+    public void UpdateDeclaredStateKeys(IEnumerable<string> keys)
+    {
+        _declaredStateKeys.Clear();
+        if (keys == null) return;
+        foreach (var key in keys)
+        {
+            if (!string.IsNullOrWhiteSpace(key))
+            {
+                _declaredStateKeys.Add(key);
+            }
+        }
     }
 
     /// <summary>
@@ -85,7 +107,7 @@ public sealed class VstAccess : DynamicObject
             return existing;
         }
 
-        var instrument = CreateInstrument(name);
+        var instrument = CreateInstrument(name, alias: null);
         _globals.Engine.AddSampleProvider(instrument);
         _instances[name] = instrument;
         _allInstances.Add(instrument);
@@ -97,14 +119,46 @@ public sealed class VstAccess : DynamicObject
     /// </summary>
     public IVstInstrument Create(string name)
     {
+        return Create(name, alias: null);
+    }
+
+    /// <summary>
+    /// Create or reuse a VST3 instrument instance by alias.
+    /// </summary>
+    public IVstInstrument Create(string name, string? alias)
+    {
         if (!string.IsNullOrWhiteSpace(name))
         {
             _activeNames.Add(name);
         }
 
-        var instrument = CreateInstrument(name);
+        if (!string.IsNullOrWhiteSpace(alias))
+        {
+            _activeAliases.Add(alias);
+        }
+
+        if (!string.IsNullOrWhiteSpace(alias) && _instanceAliases.TryGetValue(alias, out var aliased))
+        {
+            if (string.Equals(aliased.Name, name, StringComparison.OrdinalIgnoreCase))
+            {
+                _globals.Engine.AddSampleProvider(aliased);
+                return aliased;
+            }
+
+            if (aliased is IDisposable disposable)
+            {
+                disposable.Dispose();
+            }
+            _instanceAliases.Remove(alias);
+        }
+
+        var instrument = CreateInstrument(name, alias);
         _globals.Engine.AddSampleProvider(instrument);
         _allInstances.Add(instrument);
+        if (!string.IsNullOrWhiteSpace(alias))
+        {
+            _instanceAliases[alias] = instrument;
+        }
         return instrument;
     }
 
@@ -141,8 +195,36 @@ public sealed class VstAccess : DynamicObject
     /// </summary>
     public Vst3Effect CreateEffect(string name)
     {
-        var effect = CreateEffectInstance(name);
+        return CreateEffect(name, alias: null);
+    }
+
+    /// <summary>
+    /// Create or reuse a VST3 effect instance by alias.
+    /// </summary>
+    public Vst3Effect CreateEffect(string name, string? alias)
+    {
+        if (!string.IsNullOrWhiteSpace(alias))
+        {
+            _activeAliases.Add(alias);
+        }
+
+        if (!string.IsNullOrWhiteSpace(alias) && _effectAliases.TryGetValue(alias, out var aliased))
+        {
+            if (string.Equals(aliased.Name, name, StringComparison.OrdinalIgnoreCase))
+            {
+                return aliased;
+            }
+
+            aliased.Dispose();
+            _effectAliases.Remove(alias);
+        }
+
+        var effect = CreateEffectInstance(name, alias);
         _allEffects.Add(effect);
+        if (!string.IsNullOrWhiteSpace(alias))
+        {
+            _effectAliases[alias] = effect;
+        }
         return effect;
     }
 
@@ -165,7 +247,44 @@ public sealed class VstAccess : DynamicObject
             return true;
         }
 
+        if (_effects.TryGetValue(name, out var effect))
+        {
+            effect.OpenEditor();
+            return true;
+        }
+
+        for (int i = _allEffects.Count - 1; i >= 0; i--)
+        {
+            var entry = _allEffects[i];
+            if (!string.Equals(entry.Name, name, StringComparison.OrdinalIgnoreCase)) continue;
+            entry.OpenEditor();
+            return true;
+        }
+
         return false;
+    }
+
+    /// <summary>
+    /// Apply current sleep settings to all loaded VST instances and effects.
+    /// </summary>
+    public void ApplySleepSettings()
+    {
+        foreach (var instrument in _allInstances)
+        {
+            if (instrument is Vst3Instrument vst)
+            {
+                vst.SleepWhenIdle = Settings.VstInstrumentSleepWhenIdle;
+                vst.IdleThreshold = Settings.VstIdleThreshold;
+                vst.IdleTimeoutSeconds = Settings.VstIdleTimeoutSeconds;
+            }
+        }
+
+        foreach (var effect in _allEffects)
+        {
+            effect.SleepWhenIdle = Settings.VstEffectSleepWhenIdle;
+            effect.IdleThreshold = Settings.VstIdleThreshold;
+            effect.IdleTimeoutSeconds = Settings.VstIdleTimeoutSeconds;
+        }
     }
 
     /// <summary>
@@ -204,8 +323,11 @@ public sealed class VstAccess : DynamicObject
         }
         _instances.Clear();
         _allInstances.Clear();
+        _instanceAliases.Clear();
         _effects.Clear();
         _allEffects.Clear();
+        _effectAliases.Clear();
+        _effectStatePaths.Clear();
     }
 
     /// <summary>
@@ -245,8 +367,11 @@ public sealed class VstAccess : DynamicObject
         }
         _instances.Clear();
         _allInstances.Clear();
+        _instanceAliases.Clear();
         _effects.Clear();
         _allEffects.Clear();
+        _effectAliases.Clear();
+        _effectStatePaths.Clear();
     }
 
     /// <summary>
@@ -279,6 +404,11 @@ public sealed class VstAccess : DynamicObject
         foreach (var instrument in _allInstances)
         {
             instrument.SaveStateNow();
+        }
+
+        foreach (var effect in _allEffects)
+        {
+            SaveEffectState(effect);
         }
     }
 
@@ -342,17 +472,26 @@ public sealed class VstAccess : DynamicObject
         var keep = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var name in _activeNames)
         {
-            var path = Vst3Instrument.GetScriptStatePath(name, _globals.ScriptFilePath);
-            if (string.IsNullOrWhiteSpace(path)) continue;
-            keep.Add(Path.GetFullPath(path));
+            AddKeepStatePath(keep, name);
+        }
+        foreach (var alias in _activeAliases)
+        {
+            AddKeepStatePath(keep, alias);
+        }
+        foreach (var key in _declaredStateKeys)
+        {
+            AddKeepStatePath(keep, key);
         }
 
         foreach (var instrument in _allInstances)
         {
+            var stateKey = GetStateKeyForInstance(instrument);
             if (_activeNames.Contains(instrument.Name)) continue;
+            if (!string.IsNullOrWhiteSpace(stateKey) && _activeAliases.Contains(stateKey)) continue;
+            if (!string.IsNullOrWhiteSpace(stateKey) && _declaredStateKeys.Contains(stateKey)) continue;
             if (instrument is Vst3Instrument vst)
             {
-                var statePath = Vst3Instrument.GetScriptStatePath(instrument.Name, _globals.ScriptFilePath);
+                var statePath = Vst3Instrument.GetScriptStatePath(stateKey, _globals.ScriptFilePath);
                 if (string.IsNullOrWhiteSpace(statePath)) continue;
                 statePath = Path.GetFullPath(statePath);
                 var data = vst.GetState();
@@ -414,9 +553,11 @@ public sealed class VstAccess : DynamicObject
         catch
         {
         }
+
+        CleanupInactiveAliases();
     }
 
-    private IVstInstrument CreateInstrument(string name)
+    private IVstInstrument CreateInstrument(string name, string? alias)
     {
         var registry = _globals.VstRegistry;
         if (registry == null)
@@ -432,7 +573,10 @@ public sealed class VstAccess : DynamicObject
             return new MissingVstInstrument(name);
         }
 
-        var statePath = Vst3Instrument.GetScriptStatePath(name, _globals.ScriptFilePath);
+        var stateKey = !string.IsNullOrWhiteSpace(alias) ? alias : name;
+        var statePath = Vst3Instrument.GetScriptStatePath(stateKey, _globals.ScriptFilePath);
+        var legacyStatePath = Vst3Instrument.GetLegacyScriptStatePath(name, _globals.ScriptFilePath);
+        TryMigrateLegacyState(statePath, legacyStatePath);
         var instrument = new Vst3Instrument(plugin.Path, name, statePath);
         if (!string.IsNullOrWhiteSpace(statePath))
         {
@@ -447,7 +591,191 @@ public sealed class VstAccess : DynamicObject
         return instrument;
     }
 
-    private Vst3Effect CreateEffectInstance(string name)
+    private void CleanupInactiveAliases()
+    {
+        if (_instanceAliases.Count > 0)
+        {
+            var toRemove = new List<string>();
+            foreach (var entry in _instanceAliases)
+            {
+                if (_activeAliases.Contains(entry.Key)) continue;
+                if (_activeNames.Contains(entry.Value.Name)) continue;
+                toRemove.Add(entry.Key);
+            }
+
+            foreach (var alias in toRemove)
+            {
+                if (_instanceAliases.TryGetValue(alias, out var instance))
+                {
+                    RemoveInstance(instance);
+                    _instanceAliases.Remove(alias);
+                }
+            }
+        }
+
+        if (_effectAliases.Count > 0)
+        {
+            var toRemove = new List<string>();
+            foreach (var entry in _effectAliases)
+            {
+                if (_activeAliases.Contains(entry.Key)) continue;
+                toRemove.Add(entry.Key);
+            }
+
+            foreach (var alias in toRemove)
+            {
+                if (_effectAliases.TryGetValue(alias, out var effect))
+                {
+                    RemoveEffect(effect);
+                    _effectAliases.Remove(alias);
+                }
+            }
+        }
+    }
+
+    private void RemoveInstance(IVstInstrument instance)
+    {
+        for (int i = _allInstances.Count - 1; i >= 0; i--)
+        {
+            if (ReferenceEquals(_allInstances[i], instance))
+            {
+                _allInstances.RemoveAt(i);
+            }
+        }
+
+        var keys = new List<string>();
+        foreach (var entry in _instances)
+        {
+            if (ReferenceEquals(entry.Value, instance))
+            {
+                keys.Add(entry.Key);
+            }
+        }
+
+        foreach (var key in keys)
+        {
+            _instances.Remove(key);
+        }
+
+        if (instance is IDisposable disposable)
+        {
+            if (instance is Vst3Instrument vst)
+            {
+                vst.SaveStateNow();
+            }
+            disposable.Dispose();
+        }
+    }
+
+    private void RemoveEffect(Vst3Effect effect)
+    {
+        for (int i = _allEffects.Count - 1; i >= 0; i--)
+        {
+            if (ReferenceEquals(_allEffects[i], effect))
+            {
+                _allEffects.RemoveAt(i);
+            }
+        }
+
+        var keys = new List<string>();
+        foreach (var entry in _effects)
+        {
+            if (ReferenceEquals(entry.Value, effect))
+            {
+                keys.Add(entry.Key);
+            }
+        }
+
+        foreach (var key in keys)
+        {
+            _effects.Remove(key);
+        }
+
+        SaveEffectState(effect);
+        _effectStatePaths.Remove(effect);
+        effect.Dispose();
+    }
+
+    private static void TryLoadEffectState(Vst3Effect effect, string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || effect == null) return;
+        if (!File.Exists(path)) return;
+        try
+        {
+            var data = File.ReadAllBytes(path);
+            if (data.Length > 0)
+            {
+                effect.SetState(data);
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    private void SaveEffectState(Vst3Effect effect)
+    {
+        if (effect == null) return;
+        if (!_effectStatePaths.TryGetValue(effect, out var path)) return;
+        if (string.IsNullOrWhiteSpace(path)) return;
+        try
+        {
+            var data = effect.GetState();
+            if (data.Length == 0) return;
+            var dir = Path.GetDirectoryName(path);
+            if (!string.IsNullOrWhiteSpace(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+            File.WriteAllBytes(path, data);
+        }
+        catch
+        {
+        }
+    }
+
+    private string GetStateKeyForInstance(IVstInstrument instrument)
+    {
+        if (instrument == null) return string.Empty;
+        foreach (var entry in _instanceAliases)
+        {
+            if (ReferenceEquals(entry.Value, instrument))
+            {
+                return entry.Key;
+            }
+        }
+        return instrument.Name;
+    }
+
+    private void AddKeepStatePath(HashSet<string> keep, string key)
+    {
+        if (string.IsNullOrWhiteSpace(key)) return;
+        var path = Vst3Instrument.GetScriptStatePath(key, _globals.ScriptFilePath);
+        if (string.IsNullOrWhiteSpace(path)) return;
+        keep.Add(Path.GetFullPath(path));
+    }
+
+    private static void TryMigrateLegacyState(string? statePath, string? legacyStatePath)
+    {
+        if (string.IsNullOrWhiteSpace(statePath) || string.IsNullOrWhiteSpace(legacyStatePath)) return;
+        if (File.Exists(statePath) || !File.Exists(legacyStatePath)) return;
+
+        try
+        {
+            var dir = Path.GetDirectoryName(statePath);
+            if (!string.IsNullOrWhiteSpace(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+
+            File.Copy(legacyStatePath, statePath, overwrite: true);
+        }
+        catch
+        {
+        }
+    }
+
+    private Vst3Effect CreateEffectInstance(string name, string? alias)
     {
         var registry = _globals.VstRegistry;
         if (registry == null)
@@ -461,6 +789,14 @@ public sealed class VstAccess : DynamicObject
             throw new InvalidOperationException($"VST not found: {name}");
         }
 
-        return new Vst3Effect(plugin.Path, plugin.Name);
+        var effect = new Vst3Effect(plugin.Path, plugin.Name);
+        var stateKey = !string.IsNullOrWhiteSpace(alias) ? alias : name;
+        var statePath = Vst3Instrument.GetScriptStatePath(stateKey, _globals.ScriptFilePath);
+        if (!string.IsNullOrWhiteSpace(statePath))
+        {
+            TryLoadEffectState(effect, statePath);
+            _effectStatePaths[effect] = statePath;
+        }
+        return effect;
     }
 }

@@ -23,6 +23,12 @@
 
     <ItemGroup>
       <Compile Remove="MusicEngine.Installer\**\*.cs" />
+      <Compile Remove="Scripts\**\*.cs" />
+      <Compile Remove="**\Scripts\**\*.cs" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <None Include="Scripts\**\*.cs" />
     </ItemGroup>
 
     <ItemGroup>

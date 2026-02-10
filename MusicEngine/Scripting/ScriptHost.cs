@@ -1,7 +1,7 @@
 // MusicEngine License (MEL) - Honor-Based Commercial Support
 // Copyright (c) 2025-2026 Yannis Watermann (watermann420, nullonebinary)
 // https://github.com/watermann420/MusicEngine
-// Description: Script host for test_script.csx.
+// Description: Script host for test_script.cs.
 
 using System;
 using System.IO;
@@ -49,6 +49,7 @@ public sealed class ScriptHost
     private readonly HashSet<string> _masterScripts = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<string> _masterScriptOrder = new();
     private readonly Dictionary<string, string> _scriptAliases = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, VstBinding> _vstBindings = new(StringComparer.OrdinalIgnoreCase);
     private HashSet<string>? _modulesExecutedThisRun;
     private string? _currentScriptFilePath;
 
@@ -174,6 +175,7 @@ public sealed class ScriptHost
     private async Task<bool> RunScriptAsync(string code, bool skipIfUnchanged, bool clearState, string? filePath,
         string? cacheKey)
     {
+        var rawCode = code;
         code = PreprocessCode(code);
         if (skipIfUnchanged)
         {
@@ -213,6 +215,7 @@ public sealed class ScriptHost
             {
                 _moduleCodeCache[cacheKey] = code;
             }
+            UpdateVstBindings(rawCode);
             _globalsCache?.vst.PruneUnusedStates();
             TryUpdateScriptStateSnapshots();
             return true;
@@ -288,6 +291,16 @@ public sealed class ScriptHost
         return _scriptAliases.TryGetValue(scriptName, out var alias) ? alias : null;
     }
 
+    internal bool TryResolveVstInstrument(string variableName, out IVstInstrument instrument)
+    {
+        instrument = null!;
+        if (string.IsNullOrWhiteSpace(variableName)) return false;
+        if (_globalsCache == null) return false;
+        if (!_vstBindings.TryGetValue(variableName, out var binding)) return false;
+        if (binding.IsEffect) return false;
+        return _globalsCache.vst.TryGetInstrument(binding.PluginName, out instrument);
+    }
+
     internal void RegisterScriptAlias(string alias, string scriptName)
     {
         if (string.IsNullOrWhiteSpace(alias) || string.IsNullOrWhiteSpace(scriptName)) return;
@@ -337,7 +350,9 @@ public sealed class ScriptHost
         }
 
         var results = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var files = Directory.GetFiles(scriptsDir, "*.csx", SearchOption.TopDirectoryOnly);
+        var files = Directory.GetFiles(scriptsDir, "*.*", SearchOption.TopDirectoryOnly)
+            .Where(path => path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) ||
+                           path.EndsWith(".csx", StringComparison.OrdinalIgnoreCase));
         foreach (var file in files)
         {
             var code = File.ReadAllText(file);
@@ -382,6 +397,9 @@ public sealed class ScriptHost
         code = FileTwoArgsRegex.Replace(code, "File(\"$1\", \"$2\")");
         code = FileOneArgRegex.Replace(code, "File(\"$1\")");
         code = PreprocessFileNameCalls(code);
+        code = PreprocessVstAliasCalls(code);
+        code = PreprocessNoteNameCalls(code);
+        code = PreprocessFriendlyNoteArgs(code);
         return code;
     }
 
@@ -390,7 +408,9 @@ public sealed class ScriptHost
         var scriptsDir = ResolveScriptsDirectory();
         if (!string.IsNullOrWhiteSpace(scriptsDir) && Directory.Exists(scriptsDir))
         {
-            foreach (var path in Directory.GetFiles(scriptsDir, "*.csx", SearchOption.TopDirectoryOnly))
+            foreach (var path in Directory.GetFiles(scriptsDir, "*.*", SearchOption.TopDirectoryOnly)
+                         .Where(file => file.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) ||
+                                        file.EndsWith(".csx", StringComparison.OrdinalIgnoreCase)))
             {
                 var name = Path.GetFileNameWithoutExtension(path);
                 if (string.IsNullOrWhiteSpace(name)) continue;
@@ -421,6 +441,183 @@ public sealed class ScriptHost
         return code;
     }
 
+    private static string PreprocessVstAliasCalls(string code)
+    {
+        if (string.IsNullOrWhiteSpace(code)) return code;
+
+        const string callPattern =
+            @"(?:[A-Za-z_]\w*\.)*(?:CreateVstEffect|VstEffect|VstFx|CreateVst|Vst)";
+        var regex = new Regex(
+            $@"\bvar\s+(?<var>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?<call>{callPattern})\s*\(\s*""(?<name>[^""]+)""\s*\)",
+            RegexOptions.IgnoreCase);
+
+        return regex.Replace(code, @"var ${var} = ${call}(""${name}"", ""${var}"")");
+    }
+
+    private static string PreprocessNoteNameCalls(string code)
+    {
+        if (string.IsNullOrWhiteSpace(code)) return code;
+
+        var regex = new Regex(@"\bNote(?:Ms)?\s*\(\s*(?<note>[A-Ga-g])(?<accidental>[bBsS]?)(?<octave>-?\d+)",
+            RegexOptions.Compiled);
+
+        return regex.Replace(code, match =>
+        {
+            var noteChar = char.ToUpperInvariant(match.Groups["note"].Value[0]);
+            var accidental = match.Groups["accidental"].Value;
+            var octaveText = match.Groups["octave"].Value;
+            if (!int.TryParse(octaveText, out var octave))
+            {
+                return match.Value;
+            }
+
+            int baseNote = noteChar switch
+            {
+                'C' => 0,
+                'D' => 2,
+                'E' => 4,
+                'F' => 5,
+                'G' => 7,
+                'A' => 9,
+                'B' => 11,
+                _ => 0
+            };
+
+            int offset = 0;
+            if (!string.IsNullOrWhiteSpace(accidental))
+            {
+                var acc = char.ToUpperInvariant(accidental[0]);
+                if (acc == 'B')
+                {
+                    offset = -1;
+                }
+                else if (acc == 'S')
+                {
+                    offset = 1;
+                }
+            }
+
+            var midi = (octave + 1) * 12 + baseNote + offset;
+            return match.Value.Replace(match.Groups["note"].Value + accidental + octaveText, midi.ToString());
+        });
+    }
+
+    private static string PreprocessFriendlyNoteArgs(string code)
+    {
+        if (string.IsNullOrWhiteSpace(code)) return code;
+
+        code = Regex.Replace(
+            code,
+            @"\bNoteMs\s*\((?<args>[^\)]*)\)",
+            match =>
+            {
+                var args = match.Groups["args"].Value;
+                args = ExpandNoteShorthand(args);
+                args = Regex.Replace(
+                    args,
+                    @"(^|,)\s*time\s+(?<value>-?\d+(?:\.\d+)?)",
+                    "$1 timeMs: ${value}",
+                    RegexOptions.IgnoreCase);
+                args = Regex.Replace(
+                    args,
+                    @"(^|,)\s*duration\s+(?<value>-?\d+(?:\.\d+)?)",
+                    "$1 durationMs: ${value}",
+                    RegexOptions.IgnoreCase);
+                return $"NoteMs({args})";
+            },
+            RegexOptions.IgnoreCase);
+
+        code = Regex.Replace(
+            code,
+            @"\bNote\s*\((?<args>[^\)]*)\)",
+            match =>
+            {
+                var args = match.Groups["args"].Value;
+                args = ExpandNoteShorthand(args);
+                return $"Note({args})";
+            },
+            RegexOptions.IgnoreCase);
+
+        code = Regex.Replace(
+            code,
+            @"(?<=\()\s*Note\s+(?<value>-?\d+(?:\.\d+)?)",
+            "note: ${value}",
+            RegexOptions.IgnoreCase);
+
+        code = Regex.Replace(
+            code,
+            @"(?<=\(|,)\s*(?<name>note|beat|duration|speed|velocity|slideto|slidetime|slidetimems)\s+(?<value>-?\d+(?:\.\d+)?)",
+            match =>
+            {
+                var name = match.Groups["name"].Value;
+                var value = match.Groups["value"].Value;
+                string mapped = name.ToLowerInvariant() switch
+                {
+                    "speed" => "velocity",
+                    "slideto" => "slideTo",
+                    "slidetime" => "slideTimeMs",
+                    "slidetimems" => "slideTimeMs",
+                    _ => name
+                };
+                return $"{mapped}: {value}";
+            },
+            RegexOptions.IgnoreCase);
+
+        return code;
+    }
+
+    private static string ExpandNoteShorthand(string args)
+    {
+        if (string.IsNullOrWhiteSpace(args)) return args;
+
+        args = Regex.Replace(
+            args,
+            @"(?<=^|,)\s*(?<token>Note|N)\s*(?<value>-?\d+(?:\.\d+)?)\b",
+            " note ${value}",
+            RegexOptions.IgnoreCase);
+
+        args = Regex.Replace(
+            args,
+            @"(?<=^|,)\s*(?<token>Note|N)\s*(?<name>[A-Ga-g][bBsS]?-?\d+)\b",
+            " note ${name}",
+            RegexOptions.IgnoreCase);
+
+        args = Regex.Replace(
+            args,
+            @"(?<=^|,)\s*(?<token>Note|N)(?<value>-?\d+(?:\.\d+)?)\b",
+            " note ${value}",
+            RegexOptions.IgnoreCase);
+
+        args = Regex.Replace(
+            args,
+            @"(?<=^|,)\s*(?<token>Note|N)(?<name>[A-Ga-g][bBsS]?-?\d+)\b",
+            " note ${name}",
+            RegexOptions.IgnoreCase);
+
+        args = Regex.Replace(
+            args,
+            @"(?<=^|,)\s*(?<name>vel|velocity|speed|len|length|dur|duration|start|beat|time)\s+(?<value>-?\d+(?:\.\d+)?)",
+            match =>
+            {
+                var name = match.Groups["name"].Value;
+                var value = match.Groups["value"].Value;
+                string mapped = name.ToLowerInvariant() switch
+                {
+                    "vel" => "velocity",
+                    "speed" => "velocity",
+                    "len" => "duration",
+                    "length" => "duration",
+                    "dur" => "duration",
+                    "start" => "beat",
+                    _ => name
+                };
+                return $" {mapped} {value}";
+            },
+            RegexOptions.IgnoreCase);
+
+        return args;
+    }
+
     /// <summary>
     /// Clear script state, routing, and mappings.
     /// </summary>
@@ -432,6 +629,7 @@ public sealed class ScriptHost
         _engine.ClearMixer();
         _activeSynths.Clear();
         _moduleCodeCache.Clear();
+        _vstBindings.Clear();
         _library.Clear();
         if (_globalsCache != null)
         {
@@ -543,7 +741,8 @@ public sealed class ScriptHost
         var bindings = new List<VstBinding>();
         if (string.IsNullOrWhiteSpace(code)) return bindings;
 
-        var pattern = @"\bvar\s+(?<var>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?<call>[A-Za-z0-9_\.]+)\s*\(\s*""(?<name>[^""]+)""\s*\)";
+        var pattern =
+            @"\bvar\s+(?<var>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?<call>[A-Za-z0-9_\.]+)\s*\(\s*""(?<name>[^""]+)""\s*(?:,\s*[^)]*)?\)";
         var regex = new Regex(pattern, RegexOptions.IgnoreCase);
         var matches = regex.Matches(code);
         foreach (Match match in matches)
@@ -557,7 +756,9 @@ public sealed class ScriptHost
                 continue;
             }
 
-            var isEffect = call.EndsWith("CreateVstEffect", StringComparison.OrdinalIgnoreCase);
+            var isEffect = call.EndsWith("CreateVstEffect", StringComparison.OrdinalIgnoreCase) ||
+                call.EndsWith("VstEffect", StringComparison.OrdinalIgnoreCase) ||
+                call.EndsWith("VstFx", StringComparison.OrdinalIgnoreCase);
             if (!isEffect && !call.EndsWith("CreateVst", StringComparison.OrdinalIgnoreCase) &&
                 !call.EndsWith("Vst", StringComparison.OrdinalIgnoreCase))
             {
@@ -572,12 +773,75 @@ public sealed class ScriptHost
 
     private readonly record struct VstBinding(string Variable, string PluginName, bool IsEffect);
 
+    private void UpdateVstBindings(string code)
+    {
+        if (string.IsNullOrWhiteSpace(code)) return;
+        var bindings = ParseVstBindings(code);
+        if (bindings.Count == 0)
+        {
+            _vstBindings.Clear();
+            _globalsCache?.vst.UpdateDeclaredStateKeys(Array.Empty<string>());
+            return;
+        }
+
+        _vstBindings.Clear();
+        var declaredKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var binding in bindings)
+        {
+            _vstBindings[binding.Variable] = binding;
+            if (!string.IsNullOrWhiteSpace(binding.Variable))
+            {
+                declaredKeys.Add(binding.Variable);
+            }
+        }
+
+        _globalsCache?.vst.UpdateDeclaredStateKeys(declaredKeys);
+    }
+
+    private bool TryResolveVstBinding(string name, out VstBinding binding)
+    {
+        if (_vstBindings.TryGetValue(name, out binding))
+        {
+            return true;
+        }
+
+        binding = default;
+        return false;
+    }
+
+    private static bool TryOpenVstBinding(VstBinding binding, VstAccess vstAccess)
+    {
+        if (binding.IsEffect)
+        {
+            if (vstAccess.TryGetEffect(binding.PluginName, out var effect))
+            {
+                effect.OpenEditor();
+                return true;
+            }
+            return false;
+        }
+
+        if (vstAccess.TryGetInstrument(binding.PluginName, out var instrument))
+        {
+            instrument.OpenEditor();
+            return true;
+        }
+
+        return false;
+    }
+
     /// <summary>
     /// Try to open a VST editor by name if already loaded.
     /// </summary>
     public bool TryOpenVstEditor(string name)
     {
         if (_globalsCache == null) return false;
+        if (TryResolveVstBinding(name, out var binding) &&
+            TryOpenVstBinding(binding, _globalsCache.vst))
+        {
+            return true;
+        }
+
         return _globalsCache.vst.TryOpenEditor(name);
     }
 
@@ -659,10 +923,13 @@ public sealed class ScriptHost
 
     internal string? ResolveScriptPath(string name)
     {
-        var fileName = name.EndsWith(".csx", StringComparison.OrdinalIgnoreCase) ? name : $"{name}.csx";
-        if (Path.IsPathRooted(fileName))
+        if (string.IsNullOrWhiteSpace(name)) return null;
+        if (Path.IsPathRooted(name))
         {
-            return File.Exists(fileName) ? fileName : null;
+            if (File.Exists(name)) return name;
+            if (File.Exists($"{name}.cs")) return $"{name}.cs";
+            if (File.Exists($"{name}.csx")) return $"{name}.csx";
+            return null;
         }
 
         string? baseDir;
@@ -689,14 +956,32 @@ public sealed class ScriptHost
         }
 
         var scriptsDir = Path.Combine(baseDir, "Scripts");
-        var scriptPath = Path.Combine(scriptsDir, fileName);
-        if (File.Exists(scriptPath))
+        var candidates = new[]
         {
-            return scriptPath;
+            name,
+            $"{name}.cs",
+            $"{name}.csx"
+        };
+
+        foreach (var candidate in candidates)
+        {
+            var scriptPath = Path.Combine(scriptsDir, candidate);
+            if (File.Exists(scriptPath))
+            {
+                return scriptPath;
+            }
         }
 
-        scriptPath = Path.Combine(baseDir, fileName);
-        return File.Exists(scriptPath) ? scriptPath : null;
+        foreach (var candidate in candidates)
+        {
+            var scriptPath = Path.Combine(baseDir, candidate);
+            if (File.Exists(scriptPath))
+            {
+                return scriptPath;
+            }
+        }
+
+        return null;
     }
 
     private void LogCompilationErrors(CompilationErrorException error)
@@ -778,6 +1063,8 @@ public sealed class ScriptGlobals
       private AudioDeck? _lastDeck;
       private AudioClip? _lastClip;
       private ScriptLibrary? _library;
+      private ActivityController? _activity;
+      private MasterBus? _masterBus;
 
     /// <summary>
     /// Create and route a SimpleSynth instance.
@@ -963,12 +1250,27 @@ public sealed class ScriptGlobals
         return pattern;
     }
 
+    /// <summary>
+    /// Create a note binding helper for direct note triggering.
+    /// </summary>
+    public NoteBuilder Note(int note) => new NoteBuilder(this, note);
+
+    /// <summary>
+    /// Create a note binding helper for direct note triggering.
+    /// </summary>
+    public NoteBuilder note(int note) => Note(note);
+
+    /// <summary>
+    /// Create a note binding helper for direct note triggering.
+    /// </summary>
+    public NoteBuilder NOTE(int note) => Note(note);
+
       /// <summary>
       /// Create a new VST3 instrument by name.
       /// </summary>
-      public IVstInstrument CreateVst(string name)
+      public IVstInstrument CreateVst(string name, string? alias = null)
       {
-          var instrument = vst.Create(name);
+          var instrument = alias == null ? vst.Create(name) : vst.Create(name, alias);
           _lastVstInstrument = instrument;
           _lastInstrument = instrument;
           return instrument;
@@ -976,7 +1278,7 @@ public sealed class ScriptGlobals
       /// <summary>
       /// Create a new VST3 instrument by name.
       /// </summary>
-      public IVstInstrument Vst(string name) => CreateVst(name);
+      public IVstInstrument Vst(string name, string? alias = null) => CreateVst(name, alias);
       /// <summary>
       /// Default VST instrument (last created).
       /// </summary>
@@ -1032,9 +1334,9 @@ public sealed class ScriptGlobals
       /// <summary>
       /// Create a new VST3 effect by name.
       /// </summary>
-      public Vst3Effect CreateVstEffect(string name)
+      public Vst3Effect CreateVstEffect(string name, string? alias = null)
       {
-          var effect = vst.CreateEffect(name);
+          var effect = alias == null ? vst.CreateEffect(name) : vst.CreateEffect(name, alias);
           _lastVstEffect = effect;
           return effect;
       }
@@ -1079,6 +1381,29 @@ public sealed class ScriptGlobals
     public ScriptLibrary Library => _library ??= new ScriptLibrary(Host ?? throw new InvalidOperationException("Host missing."));
 
     /// <summary>
+    /// Master bus marker for routing.
+    /// </summary>
+    public MasterBus Master => _masterBus ??= new MasterBus();
+    /// <summary>
+    /// Master bus marker for routing.
+    /// </summary>
+    public MasterBus master => Master;
+    /// <summary>
+    /// Master bus marker for routing.
+    /// </summary>
+    public MasterBus MASTER => Master;
+
+    /// <summary>
+    /// Global activity controller.
+    /// </summary>
+    public ActivityController Activity => _activity ??= new ActivityController(this);
+
+    /// <summary>
+    /// Global activity controller.
+    /// </summary>
+    public ActivityController activity => Activity;
+
+    /// <summary>
     /// Load and run a module script by name.
     /// </summary>
     public Task<bool> Use(string name)
@@ -1100,17 +1425,17 @@ public sealed class ScriptGlobals
     /// </summary>
     public dynamic AUDIO => audio;
     /// <summary>
-    /// Fluent MIDI control API (case-insensitive proxy).
+    /// Fluent MIDI control API.
     /// </summary>
-    public dynamic midi => _midiProxy ??= new CaseInsensitiveProxy(_midiControl ??= new MidiControl(this));
+    public MidiControl midi => _midiControl ??= new MidiControl(this);
     /// <summary>
-    /// Fluent MIDI control API (case-insensitive proxy).
+    /// Fluent MIDI control API.
     /// </summary>
-    public dynamic Midi => midi;
+    public MidiControl Midi => midi;
     /// <summary>
-    /// Fluent MIDI control API (case-insensitive proxy).
+    /// Fluent MIDI control API.
     /// </summary>
-    public dynamic MIDI => midi;
+    public MidiControl MIDI => midi;
     /// <summary>
     /// Dynamic VST access API.
     /// </summary>
@@ -1212,7 +1537,6 @@ public sealed class ScriptGlobals
     private AudioControl? _audioControl;
     private MidiControl? _midiControl;
     private CaseInsensitiveProxy? _audioProxy;
-    private CaseInsensitiveProxy? _midiProxy;
     private CaseInsensitiveProxy? _musicProxy;
 
     internal VstAccess? VstAccessInstance => _vstAccess;

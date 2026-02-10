@@ -7,6 +7,7 @@ using System;
 using System.IO;
 using System.Threading.Tasks;
 using MusicEngine.Core;
+using NAudio.Midi;
 using MusicEngine.Vst;
 
 namespace MusicEngine.Scripting;
@@ -74,6 +75,21 @@ public static class EngineLauncher
             }
         }
 
+        Console.WriteLine();
+        Console.WriteLine("MIDI Inputs:");
+        if (MidiIn.NumberOfDevices == 0)
+        {
+            Console.WriteLine("  (none)");
+        }
+        else
+        {
+            for (int i = 0; i < MidiIn.NumberOfDevices; i++)
+            {
+                var info = MidiIn.DeviceInfo(i);
+                Console.WriteLine($"  [{i}] {info.ProductName}");
+            }
+        }
+
         if (VstSystem.TryScan(out var scannedRegistry, out var scanMessage))
         {
             registry = scannedRegistry;
@@ -90,8 +106,7 @@ public static class EngineLauncher
             Console.WriteLine(scanMessage);
         }
 
-        string scriptFileName = "test_script.csx";
-        string scriptPath = Path.Combine(AppContext.BaseDirectory, "Scripts", scriptFileName);
+        string scriptPath = Path.Combine(AppContext.BaseDirectory, "Scripts", "test_script.cs");
 
         string? projectDir = AppContext.BaseDirectory;
         while (projectDir != null && !File.Exists(Path.Combine(projectDir, "MusicEngine.csproj")))
@@ -101,7 +116,16 @@ public static class EngineLauncher
 
         if (projectDir != null)
         {
-            scriptPath = Path.Combine(projectDir, "Scripts", scriptFileName);
+            scriptPath = Path.Combine(projectDir, "Scripts", "test_script.cs");
+        }
+
+        if (!File.Exists(scriptPath))
+        {
+            var fallback = Path.ChangeExtension(scriptPath, ".csx");
+            if (File.Exists(fallback))
+            {
+                scriptPath = fallback;
+            }
         }
 
         var host = new ScriptHost(engine, sequencer, registry, scriptPath);

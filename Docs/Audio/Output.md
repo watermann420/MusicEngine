@@ -3,6 +3,10 @@
 Output devices are listed at engine startup and can be used as routing targets for channels.
 This enables multi-output setups (e.g., audience vs. headphones).
 
+Default routing behavior:
+- Sources with no channel assignment are routed to the master output.
+- Channels are not routed anywhere until you explicitly route them (e.g. to Master or an output device).
+
 ## List Devices
 
 ```csharp
@@ -14,6 +18,13 @@ Audio.Output.List(); // "0: Speakers ... (2ch @ 48000Hz)" etc.
 ```csharp
 var ch1 = Audio.CreateChannel(1);
 Audio.Output.Route(1, 0); // channel 1 -> output device 0
+```
+
+To hear a channel in the main mix, route it to the master:
+
+```csharp
+var ch1 = Audio.CreateChannel(1);
+ch1.Route(Master); // or ch1.To(Master)
 ```
 
 ## Multi-Output Soundcards (Channel Offsets)
@@ -34,6 +45,14 @@ You can also route directly from the channel:
 ```csharp
 var ch1 = Audio.CreateChannel(1);
 ch1.VirtualOut(0);
+```
+
+If you want a channel to feed another channel:
+
+```csharp
+var ch1 = Audio.CreateChannel(1);
+var ch2 = Audio.CreateChannel(2);
+ch1.Channel = ch2; // output ch1 into ch2
 ```
 
 ## DJ-Style Monitoring Example

@@ -59,6 +59,21 @@ public sealed class Vst3Effect : IAudioEffect
     public string Name { get; }
 
     /// <summary>
+    /// When enabled, processing sleeps after silence to save CPU.
+    /// </summary>
+    public bool SleepWhenIdle { get; set; } = Settings.VstEffectSleepWhenIdle;
+
+    /// <summary>
+    /// Silence threshold for idle detection.
+    /// </summary>
+    public float IdleThreshold { get; set; } = Settings.VstIdleThreshold;
+
+    /// <summary>
+    /// Seconds of silence before sleeping.
+    /// </summary>
+    public double IdleTimeoutSeconds { get; set; } = Settings.VstIdleTimeoutSeconds;
+
+    /// <summary>
     /// Attach the effect to an input stream.
     /// </summary>
     public ISampleProvider Attach(ISampleProvider input, WaveFormat targetFormat)
@@ -96,6 +111,7 @@ public sealed class Vst3Effect : IAudioEffect
         }
 
         var normalized = Math.Clamp(value, 0f, 1f);
+        _processor?.Wake();
         Vst3Native.Vst3Host_SetParameter(_hostHandle, id, normalized);
     }
 
@@ -272,6 +288,8 @@ public sealed class Vst3Effect : IAudioEffect
         private float[]? _outputBuffer;
         private bool _inputBufferFromPool;
         private bool _outputBufferFromPool;
+        private bool _isSleeping;
+        private long _lastActivityTick;
 
         public Vst3EffectProcessor(Vst3Effect owner, ISampleProvider input, WaveFormat targetFormat)
         {
@@ -280,6 +298,7 @@ public sealed class Vst3Effect : IAudioEffect
             _outputChannels = owner._outputChannels > 0 ? owner._outputChannels : targetFormat.Channels;
             _input = AudioFormatAdapter.EnsureFormat(input, targetFormat.SampleRate, _inputChannels);
             _waveFormat = WaveFormat.CreateIeeeFloatWaveFormat(targetFormat.SampleRate, targetFormat.Channels);
+            _lastActivityTick = Environment.TickCount64;
         }
 
         public WaveFormat WaveFormat => _waveFormat;
@@ -306,11 +325,27 @@ public sealed class Vst3Effect : IAudioEffect
                 Array.Clear(inputTemp, read, inputCount - read);
             }
 
+            if (!Settings.VstEffectsEnabled)
+            {
+                CopyInputAsOutput(inputTemp, buffer, offset, frames);
+                return count;
+            }
+
+            var inputSilent = AudioSilence.IsSilent(inputTemp, 0, inputCount, _owner.IdleThreshold);
+            if (_owner.SleepWhenIdle && _isSleeping && inputSilent)
+            {
+                Array.Clear(buffer, offset, count);
+                return count;
+            }
+
             var ok = Process(inputTemp, outputTemp, frames);
             if (!ok)
             {
                 Array.Clear(outputTemp, 0, outputCount);
             }
+
+            var outputSilent = AudioSilence.IsSilent(outputTemp, 0, outputCount, _owner.IdleThreshold);
+            UpdateSleepState(inputSilent, outputSilent);
 
             CopyOutput(outputTemp, buffer, offset, frames);
             return count;
@@ -337,6 +372,12 @@ public sealed class Vst3Effect : IAudioEffect
             if (frames == _lastBlockSize) return;
             Vst3Native.Vst3Host_SetupAudio(_owner._hostHandle, Settings.SampleRate, frames);
             _lastBlockSize = frames;
+        }
+
+        public void Wake()
+        {
+            _isSleeping = false;
+            _lastActivityTick = Environment.TickCount64;
         }
 
         private bool Process(float[] input, float[] output, int frames)
@@ -413,5 +454,59 @@ public sealed class Vst3Effect : IAudioEffect
             return _outputBuffer;
         }
 
+        private void UpdateSleepState(bool inputSilent, bool outputSilent)
+        {
+            if (!_owner.SleepWhenIdle) return;
+            if (!inputSilent || !outputSilent)
+            {
+                _isSleeping = false;
+                _lastActivityTick = Environment.TickCount64;
+                return;
+            }
+
+            if (_owner.IdleTimeoutSeconds <= 0)
+            {
+                _isSleeping = true;
+                return;
+            }
+
+            var elapsed = TimeSpan.FromMilliseconds(Environment.TickCount64 - _lastActivityTick);
+            if (elapsed.TotalSeconds >= _owner.IdleTimeoutSeconds)
+            {
+                _isSleeping = true;
+            }
+        }
+
+        private void CopyInputAsOutput(float[] input, float[] target, int offset, int frames)
+        {
+            var targetChannels = _waveFormat.Channels;
+            if (_inputChannels == targetChannels)
+            {
+                Array.Copy(input, 0, target, offset, frames * targetChannels);
+                return;
+            }
+
+            for (int frame = 0; frame < frames; frame++)
+            {
+                for (int ch = 0; ch < targetChannels; ch++)
+                {
+                    float sample = 0f;
+                    if (_inputChannels == 1)
+                    {
+                        sample = input[frame];
+                    }
+                    else if (_inputChannels == 2 && targetChannels == 1)
+                    {
+                        sample = 0.5f * (input[frame * 2] + input[frame * 2 + 1]);
+                    }
+                    else if (ch < _inputChannels)
+                    {
+                        sample = input[frame * _inputChannels + ch];
+                    }
+
+                    target[offset + frame * targetChannels + ch] = sample;
+                }
+            }
+        }
     }
 }

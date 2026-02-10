@@ -139,15 +139,28 @@ public sealed class Sequencer : IDisposable
 
         while (_running)
         {
+            if (!Settings.SequencerEnabled)
+            {
+                Thread.Sleep(4);
+                continue;
+            }
             double now = sw.Elapsed.TotalSeconds;
             double delta = now - lastTime;
             lastTime = now;
 
             Pattern[] snapshot;
+            bool hasPatterns;
             lock (_lock)
             {
                 _currentTimeSeconds += delta;
-                snapshot = _patterns.ToArray();
+                hasPatterns = _patterns.Count > 0;
+                snapshot = hasPatterns ? _patterns.ToArray() : Array.Empty<Pattern>();
+            }
+
+            if (!hasPatterns)
+            {
+                Thread.Sleep(4);
+                continue;
             }
 
             foreach (var pattern in snapshot)

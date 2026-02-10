@@ -22,14 +22,17 @@ public sealed class AudioEngine : IDisposable
     private readonly WaveFormat _waveFormat;
     private readonly MixingSampleProvider _mixer;
     private readonly AudioEffectChain _masterEffects;
+    private readonly VolumeSampleProvider _allGainVolume;
     private readonly VolumeSampleProvider _masterVolume;
     private readonly VolumeSampleProvider _transportVolume;
     private readonly RecordingTap _masterTap;
     private readonly ISampleProvider _masterChain;
     private readonly Dictionary<int, AudioChannel> _channels = new();
     private readonly Dictionary<ISampleProvider, AudioChannel> _routing = new();
+    private readonly Dictionary<ISampleProvider, ISampleProvider> _masterRouting = new();
     private readonly Dictionary<ISampleProvider, ISampleProvider> _normalizedProviders = new();
     private readonly Dictionary<(int Source, int Target), ChannelSend> _channelSends = new();
+    private readonly HashSet<int> _masterChannelRoutes = new();
     private readonly object _routingLock = new();
     private readonly Dictionary<int, MidiIn> _midiInputs = new();
     private readonly List<AudioInput> _audioInputs = new();
@@ -41,6 +44,7 @@ public sealed class AudioEngine : IDisposable
     private bool _initialized;
     private bool _outputRunning;
     private bool _editorModeEnabled;
+    private float _allChannelsGain = 1f;
 
     /// <summary>
     /// Raised when a pattern note is triggered in editor mode.
@@ -67,7 +71,8 @@ public sealed class AudioEngine : IDisposable
         _waveFormat = WaveFormat.CreateIeeeFloatWaveFormat(rate, Settings.Channels);
         _mixer = new MixingSampleProvider(_waveFormat) { ReadFully = true };
         _masterEffects = new AudioEffectChain(_mixer, _waveFormat);
-        _masterVolume = new VolumeSampleProvider(_masterEffects) { Volume = 1.0f };
+        _allGainVolume = new VolumeSampleProvider(_masterEffects) { Volume = 1.0f };
+        _masterVolume = new VolumeSampleProvider(_allGainVolume) { Volume = 1.0f };
         _transportVolume = new VolumeSampleProvider(_masterVolume) { Volume = 1.0f };
         var dcBlock = new DcBlockingSampleProvider(_transportVolume, 1f, _waveFormat.SampleRate);
         var limiter = new LimiterSampleProvider(dcBlock, 0.95f, _waveFormat.SampleRate, attackMs: 2f, releaseMs: 60f);
@@ -87,6 +92,16 @@ public sealed class AudioEngine : IDisposable
     /// Whether editor mode is currently enabled.
     /// </summary>
     public bool EditorModeEnabled => _editorModeEnabled;
+
+    /// <summary>
+    /// Whether the audio output device is currently running.
+    /// </summary>
+    public bool OutputRunning => _outputRunning;
+
+    /// <summary>
+    /// Whether MIDI input routing is currently enabled.
+    /// </summary>
+    public bool MidiEnabled => _midiRouter.Enabled;
 
     /// <summary>
     /// Initialize the audio output and start playback.
@@ -145,12 +160,38 @@ public sealed class AudioEngine : IDisposable
     }
 
     /// <summary>
-    /// Route a provider to channel 1.
+    /// Route a provider directly to the master output.
     /// </summary>
     /// <param name="provider">Sample provider to route.</param>
     public void AddSampleProvider(ISampleProvider provider)
     {
-        RouteToChannel(provider, 1);
+        RouteToMaster(provider);
+    }
+
+    /// <summary>
+    /// Route a provider directly to the master output.
+    /// </summary>
+    /// <param name="provider">Sample provider to route.</param>
+    public void RouteToMaster(ISampleProvider provider)
+    {
+        if (provider == null) return;
+        var normalized = GetOrCreateNormalized(provider);
+        lock (_routingLock)
+        {
+            if (_routing.TryGetValue(provider, out var existing))
+            {
+                existing.Mixer.RemoveMixerInput(normalized);
+                _routing.Remove(provider);
+            }
+
+            if (_masterRouting.ContainsKey(provider))
+            {
+                return;
+            }
+
+            _mixer.AddMixerInput(normalized);
+            _masterRouting[provider] = normalized;
+        }
     }
 
     /// <summary>
@@ -166,6 +207,12 @@ public sealed class AudioEngine : IDisposable
         var normalized = GetOrCreateNormalized(provider);
         lock (_routingLock)
         {
+            if (_masterRouting.TryGetValue(provider, out var masterInput))
+            {
+                _mixer.RemoveMixerInput(masterInput);
+                _masterRouting.Remove(provider);
+            }
+
             if (_routing.TryGetValue(provider, out var existing))
             {
                 existing.Mixer.RemoveMixerInput(normalized);
@@ -179,12 +226,63 @@ public sealed class AudioEngine : IDisposable
     }
 
     /// <summary>
-    /// Set master gain for all channels.
+    /// Set gain for all channel strips.
     /// </summary>
     /// <param name="value">Gain in [0, 1].</param>
     public void SetAllChannelsGain(float value)
     {
-        MasterGain = value;
+        var gain = Math.Max(0f, value);
+        _allChannelsGain = gain;
+        _allGainVolume.Volume = gain;
+    }
+
+    /// <summary>
+    /// Set pan for all channel strips.
+    /// </summary>
+    /// <param name="value">Pan in [-1, 1].</param>
+    public void SetAllChannelsPan(float value)
+    {
+        var pan = Math.Clamp(value, -1f, 1f);
+        foreach (var channel in _channels.Values)
+        {
+            channel.Pan.Pan = pan;
+        }
+    }
+
+    /// <summary>
+    /// Route a channel output into the master mix.
+    /// </summary>
+    /// <param name="index">1-based channel index.</param>
+    public void RouteChannelToMaster(int index)
+    {
+        if (index < 1) return;
+        var channel = GetOrCreateChannel(index);
+        lock (_routingLock)
+        {
+            if (_masterChannelRoutes.Contains(index))
+            {
+                return;
+            }
+            _mixer.AddMixerInput(channel.Tap);
+            _masterChannelRoutes.Add(index);
+        }
+    }
+
+    /// <summary>
+    /// Remove a channel from the master mix.
+    /// </summary>
+    /// <param name="index">1-based channel index.</param>
+    public void UnrouteChannelFromMaster(int index)
+    {
+        if (index < 1) return;
+        if (!_channels.TryGetValue(index, out var channel)) return;
+        lock (_routingLock)
+        {
+            if (_masterChannelRoutes.Remove(index))
+            {
+                _mixer.RemoveMixerInput(channel.Tap);
+            }
+        }
     }
 
     /// <summary>
@@ -193,8 +291,13 @@ public sealed class AudioEngine : IDisposable
     public float MasterGain
     {
         get => _masterVolume.Volume;
-        set => _masterVolume.Volume = Math.Clamp(value, 0f, 1f);
+        set => _masterVolume.Volume = Math.Max(0f, value);
     }
+
+    /// <summary>
+    /// Set master output gain in [0, 1].
+    /// </summary>
+    public void SetMasterGain(float value) => MasterGain = value;
 
     /// <summary>
     /// Mute or unmute the transport output.
@@ -369,6 +472,10 @@ public sealed class AudioEngine : IDisposable
 
             Action<float[], int, int> handler = (data, offset, count) =>
             {
+                if (AudioSilence.IsSilent(data, offset, count, Settings.AudioSilenceThreshold))
+                {
+                    return;
+                }
                 WriteToBuffer(buffer, data, offset, count);
             };
 
@@ -537,7 +644,22 @@ public sealed class AudioEngine : IDisposable
         if (index < 1) return;
         if (_channels.TryGetValue(index, out var channel))
         {
-            channel.Volume.Volume = Math.Clamp(value, 0f, 1f);
+            channel.ChannelGain = Math.Max(0f, value);
+            channel.Volume.Volume = channel.ChannelGain;
+        }
+    }
+
+    /// <summary>
+    /// Set the pan for a specific channel.
+    /// </summary>
+    /// <param name="index">1-based channel index.</param>
+    /// <param name="value">Pan in [-1, 1].</param>
+    public void SetChannelPan(int index, float value)
+    {
+        if (index < 1) return;
+        if (_channels.TryGetValue(index, out var channel))
+        {
+            channel.Pan.Pan = value;
         }
     }
 
@@ -665,6 +787,8 @@ public sealed class AudioEngine : IDisposable
         _mixer.RemoveAllMixerInputs();
         _channels.Clear();
         _routing.Clear();
+        _masterRouting.Clear();
+        _masterChannelRoutes.Clear();
         _normalizedProviders.Clear();
         _masterEffects.ClearEffects();
         _masterTap.StopAll();
@@ -748,12 +872,16 @@ public sealed class AudioEngine : IDisposable
 
         var mixer = new MixingSampleProvider(_waveFormat) { ReadFully = true };
         var effects = new AudioEffectChain(mixer, _waveFormat);
-        var volume = new VolumeSampleProvider(effects) { Volume = 1.0f };
+        var pan = new PanSampleProvider(effects);
+        var volume = new VolumeSampleProvider(pan) { Volume = 1f };
         var tap = new RecordingTap(volume);
         tap.SamplesAvailable += (buffer, offset, count) => OnChannelSamples(index, buffer, offset, count);
-        _mixer.AddMixerInput(tap);
 
-        var channel = new AudioChannel(index, mixer, effects, volume, tap);
+        var channel = new AudioChannel(index, mixer, effects, pan, volume, tap)
+        {
+            ChannelGain = 1f
+        };
+        channel.Volume.Volume = channel.ChannelGain;
         _channels[index] = channel;
         return channel;
     }
@@ -813,15 +941,18 @@ public sealed class AudioEngine : IDisposable
         public int Index { get; }
         public MixingSampleProvider Mixer { get; }
         public AudioEffectChain Effects { get; }
+        public PanSampleProvider Pan { get; }
         public VolumeSampleProvider Volume { get; }
         public RecordingTap Tap { get; }
+        public float ChannelGain { get; set; } = 1f;
 
-        public AudioChannel(int index, MixingSampleProvider mixer, AudioEffectChain effects, VolumeSampleProvider volume,
-            RecordingTap tap)
+        public AudioChannel(int index, MixingSampleProvider mixer, AudioEffectChain effects, PanSampleProvider pan,
+            VolumeSampleProvider volume, RecordingTap tap)
         {
             Index = index;
             Mixer = mixer;
             Effects = effects;
+            Pan = pan;
             Volume = volume;
             Tap = tap;
         }
@@ -896,6 +1027,10 @@ public sealed class AudioEngine : IDisposable
 
     private void OnMasterSamples(float[] buffer, int offset, int count)
     {
+        if (AudioSilence.IsSilent(buffer, offset, count, Settings.AudioSilenceThreshold))
+        {
+            return;
+        }
         List<AudioVirtualOutput> outputs;
         lock (_virtualOutputLock)
         {
@@ -911,6 +1046,10 @@ public sealed class AudioEngine : IDisposable
 
     private void OnChannelSamples(int channelIndex, float[] buffer, int offset, int count)
     {
+        if (AudioSilence.IsSilent(buffer, offset, count, Settings.AudioSilenceThreshold))
+        {
+            return;
+        }
         List<AudioVirtualOutput>? outputs;
         lock (_virtualOutputLock)
         {

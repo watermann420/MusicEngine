@@ -95,7 +95,8 @@ public sealed class ConsoleInterface
             }
 
             string[] parts = trimmed.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
-            string command = parts[0].TrimStart('/').ToUpperInvariant();
+            string rawCommand = parts[0].TrimStart('/');
+            string command = rawCommand.ToUpperInvariant();
             string args = parts.Length > 1 ? parts[1].Trim() : string.Empty;
 
             if (command == "S" || command == "REFRESH")
@@ -123,6 +124,10 @@ public sealed class ConsoleInterface
             else if (command == "OPEN")
             {
                 OpenVst(args);
+            }
+            else if (parts.Length == 1 && _host.TryOpenVstEditor(rawCommand))
+            {
+                Console.WriteLine($"Opening VST3 editor (existing instance): {rawCommand}");
             }
             else
             {
@@ -298,21 +303,6 @@ public sealed class ConsoleInterface
             Console.WriteLine($"Opening VST3 editor (existing instance): {name}");
             return;
         }
-
-        if (_vst3Registry == null)
-        {
-            Console.WriteLine("VST disabled (native host not available).");
-            return;
-        }
-
-        var plugin = _vst3Registry.FindByName(name);
-        if (plugin == null)
-        {
-            Console.WriteLine($"VST3 not found: {name}");
-            return;
-        }
-
-        Vst3EditorWindow.Open(plugin.Path, plugin.Name);
-        Console.WriteLine($"Opening VST3 editor: {plugin.Name}");
+        Console.WriteLine($"No VST variable found: {name}");
     }
 }

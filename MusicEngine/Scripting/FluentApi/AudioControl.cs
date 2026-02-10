@@ -108,6 +108,23 @@ public sealed class AllChannelsControl
     /// Set gain for all channels (double overload).
     /// </summary>
     public void Gain(double value) => gain(value);
+
+    /// <summary>
+    /// Set pan for all channels.
+    /// </summary>
+    public void pan(float value) => _engine.SetAllChannelsPan(value);
+    /// <summary>
+    /// Set pan for all channels.
+    /// </summary>
+    public void Pan(float value) => _engine.SetAllChannelsPan(value);
+    /// <summary>
+    /// Set pan for all channels (double overload).
+    /// </summary>
+    public void pan(double value) => pan((float)value);
+    /// <summary>
+    /// Set pan for all channels (double overload).
+    /// </summary>
+    public void Pan(double value) => pan(value);
 }
 
 /// <summary>
@@ -122,11 +139,11 @@ public sealed class MasterAudioControl
     /// <summary>
     /// Set master gain.
     /// </summary>
-    public void gain(float value) => _engine.SetAllChannelsGain(value);
+    public void gain(float value) => _engine.SetMasterGain(value);
     /// <summary>
     /// Set master gain.
     /// </summary>
-    public void Gain(float value) => _engine.SetAllChannelsGain(value);
+    public void Gain(float value) => _engine.SetMasterGain(value);
     /// <summary>
     /// Set master gain (double overload).
     /// </summary>
@@ -232,6 +249,8 @@ public sealed class AudioChannelControl
         _index = index < 1 ? 1 : index;
     }
 
+    internal int Index => _index;
+
     /// <summary>
     /// Set gain for the channel.
     /// </summary>
@@ -248,6 +267,23 @@ public sealed class AudioChannelControl
     /// Set gain for the channel (double overload).
     /// </summary>
     public void Gain(double value) => gain(value);
+
+    /// <summary>
+    /// Set pan for the channel.
+    /// </summary>
+    public void pan(float value) => _globals.Engine.SetChannelPan(_index, value);
+    /// <summary>
+    /// Set pan for the channel.
+    /// </summary>
+    public void Pan(float value) => _globals.Engine.SetChannelPan(_index, value);
+    /// <summary>
+    /// Set pan for the channel (double overload).
+    /// </summary>
+    public void pan(double value) => pan((float)value);
+    /// <summary>
+    /// Set pan for the channel (double overload).
+    /// </summary>
+    public void Pan(double value) => pan(value);
 
     /// <summary>
     /// Route a synth to this channel.
@@ -281,6 +317,88 @@ public sealed class AudioChannelControl
     /// Route this channel into another channel (send).
     /// </summary>
     public void Route(int targetIndex) => route(targetIndex);
+
+    /// <summary>
+    /// Route this channel into the master mix.
+    /// </summary>
+    public void route(MasterBus master) => _globals.Engine.RouteChannelToMaster(_index);
+    /// <summary>
+    /// Route this channel into the master mix.
+    /// </summary>
+    public void Route(MasterBus master) => route(master);
+
+    /// <summary>
+    /// Route this channel into another channel (output-style).
+    /// </summary>
+    public void route(AudioChannelControl target)
+    {
+        if (target == null) return;
+        _globals.Engine.UnrouteChannelFromMaster(_index);
+        _globals.Engine.RouteChannelToChannel(_index, target.Index);
+    }
+    /// <summary>
+    /// Route this channel into another channel (output-style).
+    /// </summary>
+    public void Route(AudioChannelControl target) => route(target);
+
+    /// <summary>
+    /// Route this channel into the master mix.
+    /// </summary>
+    public void to(MasterBus master) => route(master);
+    /// <summary>
+    /// Route this channel into the master mix.
+    /// </summary>
+    public void To(MasterBus master) => route(master);
+
+    /// <summary>
+    /// Route this channel into another channel (output-style).
+    /// </summary>
+    public void to(AudioChannelControl target) => route(target);
+    /// <summary>
+    /// Route this channel into another channel (output-style).
+    /// </summary>
+    public void To(AudioChannelControl target) => route(target);
+
+    /// <summary>
+    /// Output routing target (master or another channel).
+    /// </summary>
+    public object channel
+    {
+        set => RouteOutput(value);
+    }
+    /// <summary>
+    /// Output routing target (master or another channel).
+    /// </summary>
+    public object Channel
+    {
+        set => RouteOutput(value);
+    }
+
+    private void RouteOutput(object? target)
+    {
+        if (target == null) return;
+        switch (target)
+        {
+            case MasterBus:
+                _globals.Engine.RouteChannelToMaster(_index);
+                return;
+            case AudioChannelControl channel:
+                _globals.Engine.UnrouteChannelFromMaster(_index);
+                _globals.Engine.RouteChannelToChannel(_index, channel.Index);
+                return;
+            case int index:
+                if (index <= 0)
+                {
+                    _globals.Engine.RouteChannelToMaster(_index);
+                }
+                else
+                {
+                    _globals.Engine.UnrouteChannelFromMaster(_index);
+                    _globals.Engine.RouteChannelToChannel(_index, index);
+                }
+                return;
+        }
+    }
 
     /// <summary>
     /// Create a send to another channel with gain control.

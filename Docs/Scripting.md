@@ -1,6 +1,6 @@
 # Multi-Script Scripting
 
-You can split logic into multiple `.csx` files and share objects between them.
+You can split logic into multiple `.cs` or `.csx` files and share objects between them.
 
 ## Script Locations
 
@@ -13,10 +13,10 @@ Example structure:
 
 ```
 MusicEngine/
-  test_script.csx
+  test_script.cs
   Scripts/
-    instruments.csx
-    patterns.csx
+    instruments.cs
+    patterns.cs
 ```
 
 ## Load Another Script
@@ -28,18 +28,19 @@ await Use("instruments");
 await Use("patterns");
 ```
 
-This loads `Scripts/instruments.csx` and `Scripts/patterns.csx` (or the same directory as the main script).
+This loads `Scripts/instruments.cs` and `Scripts/patterns.cs` (or the same directory as the main script).
+`.csx` is also supported.
 
 ## Share Objects Between Scripts
 
 Use the shared library to store and retrieve objects:
 
 ```csharp
-// instruments.csx
+// instruments.cs
 var lead = CreateSynth();
 File.Lead(lead); // dynamic store
 
-// patterns.csx
+// patterns.cs
 var lead = File.Lead() as SimpleSynth;
 var pattern = CreatePattern(lead);
 pattern.Note(60, 0.0, 0.5, 110);
@@ -62,12 +63,12 @@ var bass = Library.Get<SimpleSynth>("Bass");
 ## Multi-File Scripts (File / Master)
 
 ```csharp
-// MainScript.csx
+// MainScript.cs
 File.Main().Name(MainScript); // register main script
-File.Name(Instruments);       // load Instruments.csx (not main)
+File.Name(Instruments);       // load Instruments.cs / Instruments.csx (not main)
 midi.Device(0).to(File.Instruments.Synth1);
 
-// Instruments.csx
+// Instruments.cs
 var file = File(); // uses file name (Instruments) and exposes File.Instruments
 file.Synth1 = CreateSynth();
 ```

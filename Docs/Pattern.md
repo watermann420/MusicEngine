@@ -18,6 +18,21 @@ pattern.Note(64, 0.5, 0.5, 100);
 pattern.Note(67, 1.0, 1.0, 100);
 ```
 
+You can also use note names:
+
+```csharp
+pattern.Note(C4, 0.0, 0.5, 100);
+pattern.Note(Db4, 0.5, 0.5, 100);
+pattern.Note(G4, 1.0, 1.0, 100);
+```
+
+Friendly named arguments (no colons) are supported too:
+
+```csharp
+pattern.Note(Note 60, beat 0.0, duration 0.5, speed 100);
+pattern.Note(note 64, duration 0.5, velocity 90);
+```
+
 ## Notes (Milliseconds)
 
 ```csharp

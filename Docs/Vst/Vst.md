@@ -32,6 +32,10 @@ var drive = vst.Param("Drive", 0f, 1f);
 drive(0.7f);
 ```
 
+Console shortcuts:
+- `open vital` opens the editor for the VST variable `vital`.
+- Typing `vital` alone does the same (as long as it is not a console command).
+
 ## Save / Load State
 
 ```csharp
@@ -41,8 +45,9 @@ vital.State(); // on /S or exit, writes base64 into the ()
 
 Notes:
 - The inline `State()` call is updated on refresh or exit, so you can copy/share the script.
-- States are stored per script under `.musicengine/states/<script>/<name>.state`.
+- States are stored per script under `%LocalAppData%/MusicEngine/States/<Project>/<Script>/<Name>.state`.
 - Missing VSTs warn and stay silent instead of crashing.
+- Commenting out a VST line keeps the state cached; removing the line deletes it.
 
 Manual overrides still work:
 ```csharp

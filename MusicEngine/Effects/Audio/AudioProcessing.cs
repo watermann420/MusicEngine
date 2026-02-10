@@ -4,6 +4,7 @@
 // Description: Simple audio processing helpers.
 
 using System.Collections.Generic;
+using MusicEngine.Core;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
 
@@ -160,12 +161,14 @@ internal sealed class AudioEffectChain : ISampleProvider
     private readonly List<IAudioEffect> _effects = new();
     private readonly object _lock = new();
     private ISampleProvider _current;
+    private ISampleProvider _bypass;
 
     public AudioEffectChain(ISampleProvider input, WaveFormat targetFormat)
     {
         _input = input;
         _targetFormat = targetFormat;
         _current = AudioFormatAdapter.EnsureFormat(input, _targetFormat.SampleRate, _targetFormat.Channels);
+        _bypass = _current;
     }
 
     public WaveFormat WaveFormat => _targetFormat;
@@ -195,6 +198,10 @@ internal sealed class AudioEffectChain : ISampleProvider
 
     public int Read(float[] buffer, int offset, int count)
     {
+        if (!Settings.AudioEffectsEnabled)
+        {
+            return _bypass.Read(buffer, offset, count);
+        }
         var current = _current;
         return current.Read(buffer, offset, count);
     }
@@ -213,6 +220,7 @@ internal sealed class AudioEffectChain : ISampleProvider
             current = AudioFormatAdapter.EnsureFormat(current, _targetFormat.SampleRate, _targetFormat.Channels);
         }
         _current = current;
+        _bypass = AudioFormatAdapter.EnsureFormat(_input, _targetFormat.SampleRate, _targetFormat.Channels);
     }
 }
 
@@ -234,5 +242,66 @@ internal static class AudioFormatAdapter
         }
 
         return current;
+    }
+}
+
+internal sealed class PanSampleProvider : ISampleProvider
+{
+    private readonly ISampleProvider _source;
+    private float _pan;
+
+    public PanSampleProvider(ISampleProvider source)
+    {
+        _source = source;
+        WaveFormat = source.WaveFormat;
+    }
+
+    public WaveFormat WaveFormat { get; }
+
+    public float Pan
+    {
+        get => _pan;
+        set => _pan = Math.Clamp(value, -1f, 1f);
+    }
+
+    public int Read(float[] buffer, int offset, int count)
+    {
+        int read = _source.Read(buffer, offset, count);
+        if (read == 0) return 0;
+
+        int channels = WaveFormat.Channels;
+        if (channels < 2)
+        {
+            return read;
+        }
+
+        float panL = Math.Min(1f, 1f - _pan);
+        float panR = Math.Min(1f, 1f + _pan);
+        int frames = read / channels;
+        for (int i = 0; i < frames; i++)
+        {
+            int idx = offset + i * channels;
+            buffer[idx] *= panL;
+            buffer[idx + 1] *= panR;
+        }
+        return read;
+    }
+}
+
+internal static class AudioSilence
+{
+    public static bool IsSilent(float[] buffer, int offset, int count, float threshold)
+    {
+        if (buffer == null || count <= 0) return true;
+        float limit = Math.Abs(threshold);
+        int end = offset + count;
+        for (int i = offset; i < end; i++)
+        {
+            if (Math.Abs(buffer[i]) > limit)
+            {
+                return false;
+            }
+        }
+        return true;
     }
 }
