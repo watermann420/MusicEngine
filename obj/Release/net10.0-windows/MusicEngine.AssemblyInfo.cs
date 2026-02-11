@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("MusicEngine")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+12090ffd8e894bde4754a7fdffece0ca16ddc2dd")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+bb1243cb9485fdc1a5eb2fc7437a15c9f19ea350")]
 [assembly: System.Reflection.AssemblyProductAttribute("MusicEngine")]
 [assembly: System.Reflection.AssemblyTitleAttribute("MusicEngine")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

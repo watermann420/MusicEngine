@@ -287,6 +287,24 @@ pattern.Play();
 
 - The project uses NAudio for audio/MIDI and provides its own instrument wrappers.
 - VST3 scanning can be configured via `MUSICENGINE_VST3_PATHS` (semicolon-separated).
+- Extra free instruments, kits, and tools live in the companion library:
+- [MusicEngine.Library](https://github.com/watermann420/MusicEngine.Library)
+
+## MusicEngine.Library (Optional Content)
+
+MusicEngine.Library is a separate, community-driven repository of free instruments, kits, and utilities.
+It is optional: the engine runs without it. When present, you can load instruments with:
+
+```csharp
+var speech = LibraryApi("MusicEngine.Instruments.SpeechInstrument");
+```
+
+Use cases:
+- Sample-based kits (drums, one-shots, multisamples).
+- Procedural instruments (speech, drones, generators).
+- Utility helpers to build instruments from local folders.
+
+Missing library instruments are skipped and stay silent (no crash), similar to missing VSTs.
 
 ## Install
 
@@ -323,14 +341,14 @@ The native build copies `MusicEngine.CppLayer.Native.dll` into `MusicEngine\` au
 
 ## Mentions
 
-- NAudio: https://github.com/naudio/NAudio
-- Steinberg VST3 format: https://www.steinberg.net/en/company/technologies/vst3.html
+- [NAudio](https://github.com/naudio/NAudio)
+- [Steinberg VST3 format](https://www.steinberg.net/en/company/technologies/vst3.html)
 
 
 ## Links
 
-- License: https://github.com/watermann420/MusicEngine/blob/master/LICENSE
-- Contributing: https://github.com/watermann420/MusicEngine/blob/master/CONTRIBUTING
+- [License](https://github.com/watermann420/MusicEngine/blob/master/LICENSE)
+- [Contributing](https://github.com/watermann420/MusicEngine/blob/master/CONTRIBUTING)
 
 Copyright 2026 watermann429 and contributers.
 
