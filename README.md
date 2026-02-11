@@ -314,6 +314,18 @@ Missing library instruments are skipped and stay silent (no crash), similar to m
 
 Settings reference: `Docs/Settings.md`
 
+## Script Location
+
+The engine scans the default project folder:
+
+```
+Test Project/
+```
+
+Any `.cs` or `.csx` file can be a main script if it calls `File.Main();` or `File(Main, "Name");`.
+To use a different project folder, set `MUSICENGINE_PROJECT_DIR` (or pass `--project-dir <path>`).
+The engine looks for `Test Project/` first and then the legacy `Scripts/` folder inside that project directory.
+
 ## Build
 
 **Managed build (C#):**

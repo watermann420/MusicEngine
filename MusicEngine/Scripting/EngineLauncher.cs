@@ -33,25 +33,46 @@ public static class EngineLauncher
         Console.WriteLine("MusicEngine minimal mode");
         Console.WriteLine("Initializing audio engine...");
 
-        string scriptPath = Path.Combine(AppContext.BaseDirectory, "Scripts", "test_script.cs");
+        const string projectDirEnv = "MUSICENGINE_PROJECT_DIR";
+        string scriptPath = Path.Combine(AppContext.BaseDirectory, "Test Project", "test_script.cs");
 
-        string? projectDir = AppContext.BaseDirectory;
-        while (projectDir != null && !File.Exists(Path.Combine(projectDir, "MusicEngine.csproj")))
+        string? projectDir = Environment.GetEnvironmentVariable(projectDirEnv);
+        if (string.IsNullOrWhiteSpace(projectDir))
         {
-            projectDir = Path.GetDirectoryName(projectDir);
+            projectDir = AppContext.BaseDirectory;
+            while (projectDir != null && !File.Exists(Path.Combine(projectDir, "MusicEngine.csproj")))
+            {
+                projectDir = Path.GetDirectoryName(projectDir);
+            }
         }
 
         if (projectDir != null)
         {
-            scriptPath = Path.Combine(projectDir, "Scripts", "test_script.cs");
+            scriptPath = Path.Combine(projectDir, "Test Project", "test_script.cs");
         }
 
         if (!File.Exists(scriptPath))
         {
-            var fallback = Path.ChangeExtension(scriptPath, ".csx");
-            if (File.Exists(fallback))
+            var legacyPath = Path.Combine(projectDir ?? AppContext.BaseDirectory, "Scripts", "test_script.cs");
+            if (File.Exists(legacyPath))
             {
-                scriptPath = fallback;
+                scriptPath = legacyPath;
+            }
+            else
+            {
+                var fallback = Path.ChangeExtension(scriptPath, ".csx");
+                if (File.Exists(fallback))
+                {
+                    scriptPath = fallback;
+                }
+                else
+                {
+                    var legacyFallback = Path.ChangeExtension(legacyPath, ".csx");
+                    if (File.Exists(legacyFallback))
+                    {
+                        scriptPath = legacyFallback;
+                    }
+                }
             }
         }
 

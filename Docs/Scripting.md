@@ -6,15 +6,20 @@ You can split logic into multiple `.cs` or `.csx` files and share objects betwee
 
 By default scripts are resolved relative to the main script:
 
-- `Scripts/` subfolder (preferred)
+- `Test Project/` subfolder (preferred)
+- `Scripts/` subfolder (legacy)
 - Same folder as the main script
+
+You can point to a different project folder by setting `MUSICENGINE_PROJECT_DIR`.
+The engine looks for `Test Project/` first, then `Scripts/`.
+You can also pass `--project-dir <path>` to set the same override.
 
 Example structure:
 
 ```
 MusicEngine/
   test_script.cs
-  Scripts/
+  Test Project/
     instruments.cs
     patterns.cs
 ```
@@ -29,7 +34,7 @@ await Use("patterns");
 include instruments; // forces a reload each refresh
 ```
 
-This loads `Scripts/instruments.cs` and `Scripts/patterns.cs` (or the same directory as the main script).
+This loads `Test Project/instruments.cs` and `Test Project/patterns.cs` (or the same directory as the main script).
 `.csx` is also supported.
 
 ## Share Objects Between Scripts

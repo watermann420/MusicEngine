@@ -4,19 +4,23 @@ This short guide shows where the default script lives and the basic workflow to 
 
 ## 1) Script Location
 
-The engine loads the default script from:
+The engine scans the default project folder:
 
 ```
-Scripts/test_script.cs
+Test Project/
 ```
 
-If the file does not exist, it is created on first launch. You can also use `Scripts/test_script.csx`.
+Any `.cs` or `.csx` file can be a main script if it calls `File.Main();` or `File(Main, "Name");`.
+If you want a starter file, create `Test Project/test_script.cs` and add `File.Main();` at the top.
+
+To use a different project folder, set `MUSICENGINE_PROJECT_DIR`.
+The engine will look for `Test Project/` (and the legacy `Scripts/`) inside that folder.
 
 ## 2) Basic Workflow
 
 1. Start the engine (debug or release).
-2. Edit `Scripts/test_script.cs` (or `Scripts/test_script.csx`).
-3. In the console, use `S` to reload and run the script.
+2. Create or edit a main script in `Test Project/` (add `File.Main();`).
+3. In the console, press `S` to refresh and run all main scripts.
 4. Use `exit` to quit and persist VST state.
 5. Open VST editors by variable name: `open vital` or just `vital`.
 
@@ -33,18 +37,6 @@ pattern.Note(64, 0.5, 0.5, 110);
 pattern.Note(67, 1.0, 1.0, 110);
 pattern.Play();
 ```
-
-## 3b) Speech (Text-to-Speech)
-
-```csharp
-var speech = CreateSpeech();
-speech.Phrase("hello", note: 60);
-speech.Phrase("world", note: 62);
-
-midi.Device(0).to(speech);
-```
-
-Note: `CreateSpeech()` requires the optional `MusicEngine.Library` build (it loads `MusicEngine.Library.dll`). It uses Windows TTS when available and falls back to offline synthesis.
 
 ## 4) VST Example
 

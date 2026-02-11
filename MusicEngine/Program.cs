@@ -3,7 +3,19 @@
 // https://github.com/watermann420/MusicEngine
 // Description: Minimal entry point.
 
+using System.Collections.Generic;
 using MusicEngine.Scripting;
+
+var argList = new List<string>(args);
+var projectDirIndex = argList.FindIndex(arg => arg.Equals("--project-dir", StringComparison.OrdinalIgnoreCase));
+if (projectDirIndex >= 0 && projectDirIndex < argList.Count - 1)
+{
+    var projectDir = argList[projectDirIndex + 1];
+    Environment.SetEnvironmentVariable("MUSICENGINE_PROJECT_DIR", projectDir);
+    argList.RemoveAt(projectDirIndex + 1);
+    argList.RemoveAt(projectDirIndex);
+}
+args = argList.ToArray();
 
 if (args.Length > 0 && args[0].Equals("--play-note", StringComparison.OrdinalIgnoreCase))
 {

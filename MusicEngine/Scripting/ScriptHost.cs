@@ -30,6 +30,7 @@ public sealed class ScriptHost
 {
     private const string ScriptsFolderName = "Test Project";
     private const string LegacyScriptsFolderName = "Scripts";
+    private const string ProjectDirectoryEnvVar = "MUSICENGINE_PROJECT_DIR";
     /// <summary>
     /// When true, VST instances are disposed when clearing script state.
     /// </summary>
@@ -363,7 +364,12 @@ public sealed class ScriptHost
     private string? ResolveScriptsDirectory()
     {
         string? baseDir;
-        if (!string.IsNullOrWhiteSpace(_scriptFilePath))
+        var projectOverride = Environment.GetEnvironmentVariable(ProjectDirectoryEnvVar);
+        if (!string.IsNullOrWhiteSpace(projectOverride))
+        {
+            baseDir = projectOverride;
+        }
+        else if (!string.IsNullOrWhiteSpace(_scriptFilePath))
         {
             var scriptDir = Path.GetDirectoryName(_scriptFilePath);
             if (!string.IsNullOrWhiteSpace(scriptDir) &&
@@ -1317,7 +1323,12 @@ public sealed class ScriptHost
         }
 
         string? baseDir;
-        if (!string.IsNullOrWhiteSpace(_scriptFilePath))
+        var projectOverride = Environment.GetEnvironmentVariable(ProjectDirectoryEnvVar);
+        if (!string.IsNullOrWhiteSpace(projectOverride))
+        {
+            baseDir = projectOverride;
+        }
+        else if (!string.IsNullOrWhiteSpace(_scriptFilePath))
         {
             var scriptDir = Path.GetDirectoryName(_scriptFilePath);
             if (!string.IsNullOrWhiteSpace(scriptDir) &&
