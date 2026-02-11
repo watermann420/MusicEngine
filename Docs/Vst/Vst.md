@@ -43,6 +43,25 @@ var vital = CreateVst("Vital");
 vital.State(); // on /S or exit, writes base64 into the ()
 ```
 
+## Scriptable Presets
+
+```csharp
+var vital = CreateVst("Vital");
+
+var presets = new List<VstPreset>
+{
+    vital.Preset("Init"),
+    vital.Preset("Bright Lead"),
+};
+
+int index = 0;
+Action NextPreset = () =>
+{
+    index = (index + 1) % presets.Count;
+    vital.ApplyPreset(presets[index]);
+};
+```
+
 Notes:
 - The inline `State()` call is updated on refresh or exit, so you can copy/share the script.
 - States are stored per script under `%LocalAppData%/MusicEngine/States/<Project>/<Script>/<Name>.state`.

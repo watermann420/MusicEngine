@@ -130,6 +130,41 @@
             Initialize the audio output and start playback.
             </summary>
         </member>
+        <member name="M:MusicEngine.Core.AudioEngine.SetOutputRenderer(System.String,System.String)">
+            <summary>
+            Set the output renderer backend (e.g. waveout/asio).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.SetOutputRenderer(System.String,System.Int32)">
+            <summary>
+            Set the output renderer with an ASIO driver index.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.SetOutputRenderer(System.String,System.Int32,System.Int32)">
+            <summary>
+            Set the output renderer with an ASIO driver index and master output pair.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.SetAsioMasterOutputPair(System.Int32)">
+            <summary>
+            Set ASIO master output pair (0 = outputs 1/2).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.RouteChannelToAsioOutput(System.Int32,System.Int32,System.Boolean)">
+            <summary>
+            Route a channel to an ASIO output pair (0 = outputs 1/2, 1 = 3/4, ...).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.ClearChannelAsioOutput(System.Int32)">
+            <summary>
+            Remove a channel ASIO output route.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.ListAsioDrivers">
+            <summary>
+            List available ASIO driver names.
+            </summary>
+        </member>
         <member name="M:MusicEngine.Core.AudioEngine.SuspendOutput">
             <summary>
             Stop audio output without tearing down routing state.
@@ -392,6 +427,14 @@
             <param name="deviceIndex">MIDI device index.</param>
             <param name="synth">Target synth.</param>
         </member>
+        <member name="M:MusicEngine.Core.AudioEngine.UnrouteMidiInput(System.Int32,MusicEngine.Core.ISynth,System.Boolean)">
+            <summary>
+            Unroute a MIDI input device from a synth.
+            </summary>
+            <param name="deviceIndex">MIDI device index.</param>
+            <param name="synth">Target synth.</param>
+            <param name="sendAllNotesOff">Send all-notes-off when removing.</param>
+        </member>
         <member name="M:MusicEngine.Core.AudioEngine.RouteMidiInput(System.Int32,System.Int32,MusicEngine.Core.ISynth)">
             <summary>
             Route a MIDI input device channel to a synth.
@@ -399,6 +442,25 @@
             <param name="deviceIndex">MIDI device index.</param>
             <param name="channel">MIDI channel (0-15) or -1 for all.</param>
             <param name="synth">Target synth.</param>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.CreateMidiPriorityGroup(System.Int32,System.Int32,MusicEngine.Core.ISynth[])">
+            <summary>
+            Create an exclusive priority MIDI group (first enabled target wins).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.RemoveMidiPriorityGroup(System.Int32,System.Int32,MusicEngine.Core.MidiPriorityGroup)">
+            <summary>
+            Remove an exclusive priority MIDI group.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.UnrouteMidiInput(System.Int32,System.Int32,MusicEngine.Core.ISynth,System.Boolean)">
+            <summary>
+            Unroute a MIDI input device channel from a synth.
+            </summary>
+            <param name="deviceIndex">MIDI device index.</param>
+            <param name="channel">MIDI channel (0-15) or -1 for all.</param>
+            <param name="synth">Target synth.</param>
+            <param name="sendAllNotesOff">Send all-notes-off when removing.</param>
         </member>
         <member name="M:MusicEngine.Core.AudioEngine.MapControlAction(System.Int32,System.Int32,System.Action{System.Single})">
             <summary>
@@ -613,6 +675,26 @@
             <param name="name">Parameter name.</param>
             <param name="value">Normalized or raw value (implementation-specific).</param>
         </member>
+        <member name="T:MusicEngine.Core.MidiPriorityGroup">
+            <summary>
+            Ordered MIDI route group where only the first enabled target receives notes.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Core.MidiPriorityRoute">
+            <summary>
+            Route entry for priority groups.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.MidiPriorityRoute.Synth">
+            <summary>
+            Target synth.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.MidiPriorityRoute.Enabled">
+            <summary>
+            Whether this target is enabled.
+            </summary>
+        </member>
         <member name="T:MusicEngine.Core.MidiRouter">
             <summary>
             Shared MIDI routing and control mapping for instruments.
@@ -647,6 +729,25 @@
             <param name="deviceIndex">MIDI device index.</param>
             <param name="channel">MIDI channel (0-15) or -1 for all.</param>
             <param name="synth">Target synth.</param>
+        </member>
+        <member name="M:MusicEngine.Core.MidiRouter.CreatePriorityGroup(System.Int32,System.Int32,MusicEngine.Core.ISynth[])">
+            <summary>
+            Create an exclusive priority group (first enabled target wins).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.MidiRouter.RemovePriorityGroup(System.Int32,System.Int32,MusicEngine.Core.MidiPriorityGroup)">
+            <summary>
+            Remove a priority group.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.MidiRouter.Unroute(System.Int32,System.Int32,MusicEngine.Core.ISynth,System.Boolean)">
+            <summary>
+            Remove a MIDI route.
+            </summary>
+            <param name="deviceIndex">MIDI device index.</param>
+            <param name="channel">MIDI channel (0-15) or -1 for all.</param>
+            <param name="synth">Target synth.</param>
+            <param name="sendAllNotesOff">Send all-notes-off when removing.</param>
         </member>
         <member name="M:MusicEngine.Core.MidiRouter.MapControlAction(System.Int32,System.Int32,System.Action{System.Single})">
             <summary>
@@ -945,6 +1046,11 @@
             Synths targeted by this pattern (includes <see cref="P:MusicEngine.Core.Pattern.Synth"/>).
             </summary>
         </member>
+        <member name="P:MusicEngine.Core.Pattern.PriorityGroups">
+            <summary>
+            Priority fallback groups for pattern playback.
+            </summary>
+        </member>
         <member name="P:MusicEngine.Core.Pattern.Events">
             <summary>
             List of note events in the pattern.
@@ -1029,6 +1135,29 @@
             </summary>
             <param name="synth">Primary synth.</param>
             <param name="moreSynths">Additional synth targets.</param>
+        </member>
+        <member name="M:MusicEngine.Core.Pattern.#ctor(MusicEngine.Core.ISynth,System.Boolean,MusicEngine.Core.ISynth[])">
+            <summary>
+            Create a new pattern targeting one or more synths.
+            </summary>
+            <param name="synth">Primary synth.</param>
+            <param name="includePrimary">Include primary in layered targets.</param>
+            <param name="moreSynths">Additional synth targets.</param>
+        </member>
+        <member name="M:MusicEngine.Core.Pattern.AddPriorityGroup(MusicEngine.Core.ISynth[])">
+            <summary>
+            Add a priority fallback group (first enabled target wins).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Pattern.Active(MusicEngine.Core.ISynth,System.Boolean,System.Boolean)">
+            <summary>
+            Enable or disable a synth inside any priority group.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Pattern.active(MusicEngine.Core.ISynth,System.Boolean,System.Boolean)">
+            <summary>
+            Enable or disable a synth inside any priority group.
+            </summary>
         </member>
         <member name="M:MusicEngine.Core.Pattern.Note(System.Int32,System.Double,System.Double,System.Int32,System.Nullable{System.Int32},System.Nullable{System.Double})">
             <summary>
@@ -1120,6 +1249,26 @@
         <member name="M:MusicEngine.Core.PatternNoteEventInfo.#ctor(System.Guid,System.Int32,System.Int32,System.Boolean,System.DateTime)">
             <summary>
             Create a new pattern note event info record.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Core.PatternPriorityGroup">
+            <summary>
+            Ordered pattern group where only the first enabled target receives notes.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Core.PatternPriorityRoute">
+            <summary>
+            Route entry for priority pattern groups.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.PatternPriorityRoute.Synth">
+            <summary>
+            Target synth.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.PatternPriorityRoute.Enabled">
+            <summary>
+            Whether this target is enabled.
             </summary>
         </member>
         <member name="T:MusicEngine.Core.Sequencer">
@@ -1225,6 +1374,26 @@
         <member name="P:MusicEngine.Core.Settings.OutputBufferCount">
             <summary>
             Output buffer count for the main audio device.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Settings.OutputRenderer">
+            <summary>
+            Output renderer backend (e.g. "waveout" or "asio").
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Settings.AsioDeviceName">
+            <summary>
+            Preferred ASIO driver name (empty = first available).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Settings.AsioOutputChannels">
+            <summary>
+            ASIO output channel count (must be >= 2).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Settings.AsioOutputChannelOffset">
+            <summary>
+            ASIO master output channel offset (0 = outputs 1/2).
             </summary>
         </member>
         <member name="P:MusicEngine.Core.Settings.WavBitDepth">
@@ -1850,6 +2019,16 @@
         <member name="M:MusicEngine.Effects.Vst.Vst3Effect.State(System.String)">
             <summary>
             Get or set the state as base64.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Effects.Vst.Vst3Effect.Preset(System.String)">
+            <summary>
+            Capture the current state as a reusable preset.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Effects.Vst.Vst3Effect.ApplyPreset(MusicEngine.Vst.VstPreset)">
+            <summary>
+            Apply a preset state.
             </summary>
         </member>
         <member name="M:MusicEngine.Effects.Vst.Vst3Effect.Dispose">
@@ -3041,6 +3220,46 @@
             DJ cue helper (A/B monitor switch).
             </summary>
         </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AudioControl.setrenderer(System.String)">
+            <summary>
+            Set the output renderer (e.g. waveout/asio).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AudioControl.SetRenderer(System.String)">
+            <summary>
+            Set the output renderer (e.g. waveout/asio).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AudioControl.setrenderer(System.String,System.String)">
+            <summary>
+            Set the output renderer with a driver name (for ASIO).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AudioControl.SetRenderer(System.String,System.String)">
+            <summary>
+            Set the output renderer with a driver name (for ASIO).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AudioControl.setrenderer(System.String,System.Int32)">
+            <summary>
+            Set the output renderer with a driver index (for ASIO).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AudioControl.SetRenderer(System.String,System.Int32)">
+            <summary>
+            Set the output renderer with a driver index (for ASIO).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AudioControl.setrenderer(System.String,System.Int32,System.Int32)">
+            <summary>
+            Set the output renderer with a driver index and master output pair (for ASIO).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AudioControl.SetRenderer(System.String,System.Int32,System.Int32)">
+            <summary>
+            Set the output renderer with a driver index and master output pair (for ASIO).
+            </summary>
+        </member>
         <member name="T:MusicEngine.Scripting.FluentApi.AllChannelsControl">
             <summary>
             Controls that apply to all channels.
@@ -3306,6 +3525,26 @@
             Route this channel into another channel (output-style).
             </summary>
         </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AudioChannelControl.setrenderer(System.String,System.Int32)">
+            <summary>
+            Set output renderer routing for this channel (waveout/asio).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AudioChannelControl.SetRenderer(System.String,System.Int32)">
+            <summary>
+            Set output renderer routing for this channel (waveout/asio).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AudioChannelControl.setrenderer(System.String)">
+            <summary>
+            Route this channel back to the master mix (default output).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AudioChannelControl.SetRenderer(System.String)">
+            <summary>
+            Route this channel back to the master mix (default output).
+            </summary>
+        </member>
         <member name="P:MusicEngine.Scripting.FluentApi.AudioChannelControl.channel">
             <summary>
             Output routing target (master or another channel).
@@ -3459,6 +3698,16 @@
         <member name="M:MusicEngine.Scripting.FluentApi.OutputDeviceControl.List">
             <summary>
             List available output devices.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.OutputDeviceControl.listasio">
+            <summary>
+            List available ASIO drivers.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.OutputDeviceControl.ListAsio">
+            <summary>
+            List available ASIO drivers.
             </summary>
         </member>
         <member name="M:MusicEngine.Scripting.FluentApi.OutputDeviceControl.route(System.Int32,System.Int32)">
@@ -3762,6 +4011,26 @@
             Route the device to a synth.
             </summary>
         </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.DeviceControl.to(MusicEngine.Core.ISynth,MusicEngine.Core.ISynth[])">
+            <summary>
+            Route the device to multiple synths.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.DeviceControl.To(MusicEngine.Core.ISynth,MusicEngine.Core.ISynth[])">
+            <summary>
+            Route the device to multiple synths.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.DeviceControl.to(MusicEngine.Core.ISynth,MusicEngine.Scripting.FluentApi.FallbackTarget,MusicEngine.Scripting.FluentApi.FallbackTarget[])">
+            <summary>
+            Route the device to a priority/fallback stack.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.DeviceControl.To(MusicEngine.Core.ISynth,MusicEngine.Scripting.FluentApi.FallbackTarget,MusicEngine.Scripting.FluentApi.FallbackTarget[])">
+            <summary>
+            Route the device to a priority/fallback stack.
+            </summary>
+        </member>
         <member name="M:MusicEngine.Scripting.FluentApi.DeviceControl.channel(System.Int32)">
             <summary>
             Access a specific MIDI channel on this device.
@@ -3867,6 +4136,26 @@
             Route the device channel to a synth.
             </summary>
         </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.ChannelControl.to(MusicEngine.Core.ISynth,MusicEngine.Core.ISynth[])">
+            <summary>
+            Route the device channel to multiple synths.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.ChannelControl.To(MusicEngine.Core.ISynth,MusicEngine.Core.ISynth[])">
+            <summary>
+            Route the device channel to multiple synths.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.ChannelControl.to(MusicEngine.Core.ISynth,MusicEngine.Scripting.FluentApi.FallbackTarget,MusicEngine.Scripting.FluentApi.FallbackTarget[])">
+            <summary>
+            Route the device channel to a priority/fallback stack.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.ChannelControl.To(MusicEngine.Core.ISynth,MusicEngine.Scripting.FluentApi.FallbackTarget,MusicEngine.Scripting.FluentApi.FallbackTarget[])">
+            <summary>
+            Route the device channel to a priority/fallback stack.
+            </summary>
+        </member>
         <member name="M:MusicEngine.Scripting.FluentApi.ChannelControl.pitchbend">
             <summary>
             Map pitch bend to a control action.
@@ -3942,6 +4231,136 @@
             Disable this device channel.
             </summary>
         </member>
+        <member name="T:MusicEngine.Scripting.FluentApi.MidiLayerGroup">
+            <summary>
+            MIDI routing helper for layered synth stacks.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MidiLayerGroup.Add(MusicEngine.Core.ISynth)">
+            <summary>
+            Add a synth to this route stack.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MidiLayerGroup.Add(MusicEngine.Core.ISynth[])">
+            <summary>
+            Add multiple synths to this route stack.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MidiLayerGroup.Remove(MusicEngine.Core.ISynth,System.Boolean)">
+            <summary>
+            Remove a specific synth from this route stack.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MidiLayerGroup.Remove(System.Boolean)">
+            <summary>
+            Remove the most recently added synth.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MidiLayerGroup.RemoveAll(System.Boolean)">
+            <summary>
+            Remove all synths from this route stack.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MidiLayerGroup.add(MusicEngine.Core.ISynth)">
+            <summary>
+            Alias for Add.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MidiLayerGroup.add(MusicEngine.Core.ISynth[])">
+            <summary>
+            Alias for Add.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MidiLayerGroup.remove(MusicEngine.Core.ISynth,System.Boolean)">
+            <summary>
+            Alias for Remove.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MidiLayerGroup.remove(System.Boolean)">
+            <summary>
+            Alias for Remove.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MidiLayerGroup.removeall(System.Boolean)">
+            <summary>
+            Alias for RemoveAll.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MidiLayerGroup.removeAll(System.Boolean)">
+            <summary>
+            Alias for RemoveAll.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Scripting.FluentApi.FallbackTarget">
+            <summary>
+            Marker for fallback routing in priority groups.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Scripting.FluentApi.MidiPriorityGroup">
+            <summary>
+            MIDI routing helper for priority/fallback stacks.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MidiPriorityGroup.Add(MusicEngine.Core.ISynth)">
+            <summary>
+            Add a synth as the next fallback.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MidiPriorityGroup.Add(MusicEngine.Core.ISynth[])">
+            <summary>
+            Add multiple synths as fallbacks.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MidiPriorityGroup.Remove(MusicEngine.Core.ISynth,System.Boolean)">
+            <summary>
+            Remove a specific synth from the stack.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MidiPriorityGroup.Remove(System.Boolean)">
+            <summary>
+            Remove the most recently added synth.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MidiPriorityGroup.RemoveAll(System.Boolean)">
+            <summary>
+            Remove all synths from the stack.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MidiPriorityGroup.Active(MusicEngine.Core.ISynth,System.Boolean,System.Boolean)">
+            <summary>
+            Enable or disable a synth in the stack.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MidiPriorityGroup.add(MusicEngine.Core.ISynth)">
+            <summary>
+            Alias for Add.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MidiPriorityGroup.add(MusicEngine.Core.ISynth[])">
+            <summary>
+            Alias for Add.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MidiPriorityGroup.remove(MusicEngine.Core.ISynth,System.Boolean)">
+            <summary>
+            Alias for Remove.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MidiPriorityGroup.remove(System.Boolean)">
+            <summary>
+            Alias for Remove.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MidiPriorityGroup.removeall(System.Boolean)">
+            <summary>
+            Alias for RemoveAll.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MidiPriorityGroup.active(MusicEngine.Core.ISynth,System.Boolean,System.Boolean)">
+            <summary>
+            Alias for Active.
+            </summary>
+        </member>
         <member name="T:MusicEngine.Scripting.FluentApi.JogMode">
             <summary>
             Jog wheel message interpretation.
@@ -3975,6 +4394,21 @@
         <member name="M:MusicEngine.Scripting.FluentApi.ControlMapping.TO(System.Action{System.Single})">
             <summary>
             Map the control to an action.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.LibraryAccess.Instrument(System.String)">
+            <summary>
+            Create and route a library instrument by full type name.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.LibraryAccess.Has(System.String)">
+            <summary>
+            Check if a library instrument type exists.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.LibraryAccess.List">
+            <summary>
+            List all available library instrument types.
             </summary>
         </member>
         <member name="T:MusicEngine.Scripting.MasterBus">
@@ -4343,6 +4777,16 @@
             Timing master from the sequencer.
             </summary>
         </member>
+        <member name="P:MusicEngine.Scripting.ScriptGlobals.LibraryTools">
+            <summary>
+            Access instruments and helpers from the optional MusicEngine.Library assembly.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.LibraryApi(System.String)">
+            <summary>
+            Create and route a library instrument by full type name.
+            </summary>
+        </member>
         <member name="M:MusicEngine.Scripting.ScriptGlobals.CreateSynth">
             <summary>
             Create and route a SimpleSynth instance.
@@ -4356,6 +4800,16 @@
         <member name="M:MusicEngine.Scripting.ScriptGlobals.CreateSampler">
             <summary>
             Create and route a sampler instrument.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.CreateSpeech">
+            <summary>
+            Create and route a speech (TTS) instrument.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.Speech">
+            <summary>
+            Create and route a speech (TTS) instrument.
             </summary>
         </member>
         <member name="P:MusicEngine.Scripting.ScriptGlobals.piano">
@@ -4466,6 +4920,21 @@
         <member name="M:MusicEngine.Scripting.ScriptGlobals.CreatePattern(MusicEngine.Core.ISynth)">
             <summary>
             Create a pattern targeting a specific synth.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.CreatePattern(MusicEngine.Core.ISynth,MusicEngine.Core.ISynth[])">
+            <summary>
+            Create a pattern targeting multiple synths.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.CreatePattern(MusicEngine.Core.ISynth,MusicEngine.Scripting.FluentApi.FallbackTarget,MusicEngine.Scripting.FluentApi.FallbackTarget[])">
+            <summary>
+            Create a pattern with priority/fallback targets.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.GetSamples(System.String,System.String,System.Boolean,System.Boolean)">
+            <summary>
+            Load a folder of samples for easy access by name.
             </summary>
         </member>
         <member name="M:MusicEngine.Scripting.ScriptGlobals.Note(System.Int32)">
@@ -4641,6 +5110,41 @@
         <member name="P:MusicEngine.Scripting.ScriptGlobals.activity">
             <summary>
             Global activity controller.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.ScriptGlobals.asio">
+            <summary>
+            Audio renderer keyword for ASIO output.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.ScriptGlobals.Asio">
+            <summary>
+            Audio renderer keyword for ASIO output.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.ScriptGlobals.waveout">
+            <summary>
+            Audio renderer keyword for WaveOut/MME output.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.ScriptGlobals.WaveOut">
+            <summary>
+            Audio renderer keyword for WaveOut/MME output.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.ScriptGlobals.mme">
+            <summary>
+            Audio renderer keyword for WaveOut/MME output.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.ScriptGlobals.MME">
+            <summary>
+            Audio renderer keyword for WaveOut/MME output.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.Fallback(MusicEngine.Core.ISynth)">
+            <summary>
+            Create a fallback target for priority MIDI routing.
             </summary>
         </member>
         <member name="M:MusicEngine.Scripting.ScriptGlobals.Use(System.String)">
@@ -5313,6 +5817,16 @@
             Get or set the state as base64.
             </summary>
         </member>
+        <member name="M:MusicEngine.Vst.Vst3Instrument.Preset(System.String)">
+            <summary>
+            Capture the current state as a reusable preset.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Vst.Vst3Instrument.ApplyPreset(MusicEngine.Vst.VstPreset)">
+            <summary>
+            Apply a preset state.
+            </summary>
+        </member>
         <member name="M:MusicEngine.Vst.Vst3Instrument.GetState">
             <summary>
             Get the plugin state as a binary blob.
@@ -5396,6 +5910,21 @@
             Scan for VST3 plugins on disk.
             </summary>
             <returns>List of discovered VST3 plugins.</returns>
+        </member>
+        <member name="T:MusicEngine.Vst.VstPreset">
+            <summary>
+            Simple VST preset container (name + base64 state).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Vst.VstPreset.Name">
+            <summary>
+            Preset name for UI/debug use.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Vst.VstPreset.State">
+            <summary>
+            Base64 state blob.
+            </summary>
         </member>
         <member name="T:MusicEngine.Vst.VstSystem">
             <summary>

@@ -13,6 +13,42 @@ Default routing behavior:
 Audio.Output.List(); // "0: Speakers ... (2ch @ 48000Hz)" etc.
 ```
 
+## Output Renderer (WaveOut / ASIO)
+
+```csharp
+Audio.SetRenderer(waveout); // default
+
+Audio.Output.ListAsio();    // "0: Focusrite USB ASIO" etc.
+Audio.SetRenderer(asio, "Focusrite USB ASIO");
+Audio.SetRenderer(asio, 0); // by index from ListAsio
+Audio.SetRenderer(asio, 0, 1); // driver index + master output pair (3/4)
+```
+
+## Per-Channel Outputs (Multiple Devices)
+
+```csharp
+var ch1 = Audio.CreateChannel(1);
+var ch2 = Audio.CreateChannel(2);
+
+ch1.SetRenderer(waveout, 0); // channel 1 -> output device 0
+ch2.SetRenderer(waveout, 1); // channel 2 -> output device 1
+```
+
+## Per-Channel Outputs (ASIO Multi-Out)
+
+```csharp
+Audio.SetRenderer(asio, 0); // enable ASIO renderer first
+Settings.AsioOutputChannels = 6; // outputs 1/2, 3/4, 5/6
+
+var ch1 = Audio.CreateChannel(1);
+var ch2 = Audio.CreateChannel(2);
+var ch3 = Audio.CreateChannel(3);
+
+ch1.SetRenderer(asio, 0); // outputs 1/2
+ch2.SetRenderer(asio, 1); // outputs 3/4
+ch3.SetRenderer(asio, 2); // outputs 5/6
+```
+
 ## Route a Channel to an Output
 
 ```csharp

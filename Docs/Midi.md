@@ -10,11 +10,54 @@ var synth = CreateSynth();
 midi.Device(0).to(synth); // all channels from device 0
 ```
 
+Layer multiple synths:
+
+```csharp
+var synth = CreateSynth();
+var piano = CreateGeneralMidi();
+var pad = CreateSynth();
+
+var stack = midi.Device(0).to(synth, piano, pad);
+stack.add(CreateSampler());
+stack.remove(piano);
+stack.remove();    // removes last added
+stack.removeAll(); // clears all routes
+```
+
+Notes:
+- Missing VSTs are ignored in layered routes, so fallbacks still play.
+
+Priority / fallback routing:
+
+```csharp
+var vital = CreateVst("Vital");
+var synth = CreateSynth();
+var piano = CreateGeneralMidi();
+
+var stack = midi.Device(0).to(vital, < synth, < piano);
+stack.active(vital, true);  // only vital plays
+stack.active(vital, false); // fallback to synth
+```
+
+Notes:
+- If the VST plugin is missing, the fallback synth is used automatically.
+
 Route a specific channel:
 
 ```csharp
 var synth = CreateSynth();
 midi.Device(0).Channel(1).to(synth); // channel 2 (0-based)
+```
+
+Layer multiple synths on a specific channel:
+
+```csharp
+var lead = CreateSynth();
+var bass = CreateSynth();
+
+var stack = midi.Device(0).Channel(1).to(lead, bass);
+stack.add(CreateSampler());
+stack.remove(); // removes last added
 ```
 
 ## Controller Mapping

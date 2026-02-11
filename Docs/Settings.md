@@ -16,6 +16,10 @@ Settings.AutoBufferEnabled = true;
 Settings.AutoBufferExtraLatencyMs = 50;
 Settings.AutoBufferExtraBuffers = 1;
 Settings.VirtualOutputLatencyMs = 80;
+Settings.OutputRenderer = "waveout"; // or "asio"
+Settings.AsioDeviceName = "Focusrite USB ASIO"; // optional
+Settings.AsioOutputChannels = 2;
+Settings.AsioOutputChannelOffset = 0; // 0 = outputs 1/2
 ```
 
 Buffer helper:

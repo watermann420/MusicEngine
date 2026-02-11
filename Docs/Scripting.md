@@ -87,6 +87,38 @@ osc.Wavetable = wt;
 osc.Enabled = true;
 ```
 
+## Speech Instrument (TTS)
+
+```csharp
+var speech = CreateSpeech();
+speech.Phrase("hello", note: 60);
+midi.Device(0).to(speech);
+```
+
+Note: `CreateSpeech()` loads `MusicEngine.Library.dll` (optional content project). It uses Windows TTS when available and falls back to offline synthesis.
+
+## Sample Folder Helper (GetSamples)
+
+```csharp
+var samples = GetSamples("Samples/Drums");
+var kick = samples.Kick;
+var clap = samples["Clap-01"];
+```
+
+## VST Presets (State Snapshots)
+
+```csharp
+var vital = CreateVst("Vital");
+
+var presets = new List<VstPreset>
+{
+    vital.Preset("Init"),
+    vital.Preset("Bright Lead")
+};
+
+vital.ApplyPreset(presets[0]);
+```
+
 ## Notes
 
 - Shared objects live until you clear state or restart the engine.

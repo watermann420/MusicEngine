@@ -10,6 +10,29 @@ var pattern = CreatePattern(synth);
 pattern.LoopLength = 4.0;
 ```
 
+Layer multiple synths:
+
+```csharp
+var synth = CreateSynth();
+var piano = CreateGeneralMidi();
+var pattern = CreatePattern(synth, piano);
+```
+
+Priority / fallback:
+
+```csharp
+var synth = CreateSynth();
+var piano = CreateGeneralMidi();
+var pattern = CreatePattern(synth, < piano);
+pattern.Active(synth, false); // fallback to piano
+```
+
+Higher priority:
+
+```csharp
+var pattern = CreatePattern(synth, > piano);
+```
+
 ## Notes (Beats)
 
 ```csharp

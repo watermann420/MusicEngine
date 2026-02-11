@@ -7,6 +7,7 @@ using System;
 using MusicEngine.Core;
 using MusicEngine.Effects.Midi;
 using MusicEngine.Scripting;
+using MusicEngine.Vst;
 
 namespace MusicEngine.Scripting.FluentApi;
 
@@ -74,6 +75,29 @@ public sealed class DeviceControl
     /// Route the device to a synth.
     /// </summary>
     public MidiSend TO(ISynth synth) => to(synth);
+
+    /// <summary>
+    /// Route the device to multiple synths.
+    /// </summary>
+    public MidiLayerGroup to(ISynth synth, params ISynth[] layers)
+        => new MidiLayerGroup(_globals.Engine, _deviceIndex, -1, synth, layers);
+
+    /// <summary>
+    /// Route the device to multiple synths.
+    /// </summary>
+    public MidiLayerGroup To(ISynth synth, params ISynth[] layers) => to(synth, layers);
+
+    /// <summary>
+    /// Route the device to a priority/fallback stack.
+    /// </summary>
+    public MidiPriorityGroup to(ISynth primary, FallbackTarget fallback, params FallbackTarget[] fallbacks)
+        => new MidiPriorityGroup(_globals.Engine, _deviceIndex, -1, primary, fallback, fallbacks);
+
+    /// <summary>
+    /// Route the device to a priority/fallback stack.
+    /// </summary>
+    public MidiPriorityGroup To(ISynth primary, FallbackTarget fallback, params FallbackTarget[] fallbacks)
+        => to(primary, fallback, fallbacks);
 
     /// <summary>
     /// Access a specific MIDI channel on this device.
@@ -207,6 +231,29 @@ public sealed class ChannelControl
     public MidiSend TO(ISynth synth) => to(synth);
 
     /// <summary>
+    /// Route the device channel to multiple synths.
+    /// </summary>
+    public MidiLayerGroup to(ISynth synth, params ISynth[] layers)
+        => new MidiLayerGroup(_globals.Engine, _deviceIndex, _channel, synth, layers);
+
+    /// <summary>
+    /// Route the device channel to multiple synths.
+    /// </summary>
+    public MidiLayerGroup To(ISynth synth, params ISynth[] layers) => to(synth, layers);
+
+    /// <summary>
+    /// Route the device channel to a priority/fallback stack.
+    /// </summary>
+    public MidiPriorityGroup to(ISynth primary, FallbackTarget fallback, params FallbackTarget[] fallbacks)
+        => new MidiPriorityGroup(_globals.Engine, _deviceIndex, _channel, primary, fallback, fallbacks);
+
+    /// <summary>
+    /// Route the device channel to a priority/fallback stack.
+    /// </summary>
+    public MidiPriorityGroup To(ISynth primary, FallbackTarget fallback, params FallbackTarget[] fallbacks)
+        => to(primary, fallback, fallbacks);
+
+    /// <summary>
     /// Map pitch bend to a control action.
     /// </summary>
     public ControlMapping pitchbend() => new ControlMapping(_globals, _deviceIndex, -1, _channel);
@@ -292,6 +339,302 @@ public sealed class ChannelControl
     /// Disable this device channel.
     /// </summary>
     public void Disable(bool sendAllNotesOff = true) => Active(false, sendAllNotesOff);
+}
+
+/// <summary>
+/// MIDI routing helper for layered synth stacks.
+/// </summary>
+public sealed class MidiLayerGroup
+{
+    private readonly AudioEngine _engine;
+    private readonly int _deviceIndex;
+    private readonly int _channel;
+    private readonly System.Collections.Generic.List<ISynth> _layers = new();
+
+    public MidiLayerGroup(AudioEngine engine, int deviceIndex, int channel, ISynth first, params ISynth[] layers)
+    {
+        _engine = engine;
+        _deviceIndex = deviceIndex;
+        _channel = channel;
+        Add(first);
+        Add(layers);
+    }
+
+    /// <summary>
+    /// Add a synth to this route stack.
+    /// </summary>
+    public MidiLayerGroup Add(ISynth synth)
+    {
+        if (synth == null) return this;
+        if (synth is MissingVstInstrument) return this;
+        if (_layers.Contains(synth)) return this;
+        _engine.RouteMidiInput(_deviceIndex, _channel, synth);
+        _layers.Add(synth);
+        return this;
+    }
+
+    /// <summary>
+    /// Add multiple synths to this route stack.
+    /// </summary>
+    public MidiLayerGroup Add(params ISynth[] synths)
+    {
+        if (synths == null) return this;
+        foreach (var synth in synths)
+        {
+            Add(synth);
+        }
+        return this;
+    }
+
+    /// <summary>
+    /// Remove a specific synth from this route stack.
+    /// </summary>
+    public bool Remove(ISynth synth, bool sendAllNotesOff = true)
+    {
+        if (synth == null) return false;
+        for (int i = _layers.Count - 1; i >= 0; i--)
+        {
+            if (!ReferenceEquals(_layers[i], synth)) continue;
+            _layers.RemoveAt(i);
+            return _engine.UnrouteMidiInput(_deviceIndex, _channel, synth, sendAllNotesOff);
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Remove the most recently added synth.
+    /// </summary>
+    public bool Remove(bool sendAllNotesOff = true)
+    {
+        if (_layers.Count == 0) return false;
+        var synth = _layers[^1];
+        _layers.RemoveAt(_layers.Count - 1);
+        return _engine.UnrouteMidiInput(_deviceIndex, _channel, synth, sendAllNotesOff);
+    }
+
+    /// <summary>
+    /// Remove all synths from this route stack.
+    /// </summary>
+    public void RemoveAll(bool sendAllNotesOff = true)
+    {
+        for (int i = _layers.Count - 1; i >= 0; i--)
+        {
+            var synth = _layers[i];
+            _engine.UnrouteMidiInput(_deviceIndex, _channel, synth, sendAllNotesOff);
+        }
+        _layers.Clear();
+    }
+
+    /// <summary>
+    /// Alias for Add.
+    /// </summary>
+    public MidiLayerGroup add(ISynth synth) => Add(synth);
+    /// <summary>
+    /// Alias for Add.
+    /// </summary>
+    public MidiLayerGroup add(params ISynth[] synths) => Add(synths);
+    /// <summary>
+    /// Alias for Remove.
+    /// </summary>
+    public bool remove(ISynth synth, bool sendAllNotesOff = true) => Remove(synth, sendAllNotesOff);
+    /// <summary>
+    /// Alias for Remove.
+    /// </summary>
+    public bool remove(bool sendAllNotesOff = true) => Remove(sendAllNotesOff);
+    /// <summary>
+    /// Alias for RemoveAll.
+    /// </summary>
+    public void removeall(bool sendAllNotesOff = true) => RemoveAll(sendAllNotesOff);
+    /// <summary>
+    /// Alias for RemoveAll.
+    /// </summary>
+    public void removeAll(bool sendAllNotesOff = true) => RemoveAll(sendAllNotesOff);
+}
+
+/// <summary>
+/// Marker for fallback routing in priority groups.
+/// </summary>
+public sealed class FallbackTarget
+{
+    public FallbackTarget(ISynth synth)
+    {
+        Synth = synth;
+    }
+
+    public ISynth Synth { get; }
+}
+
+/// <summary>
+/// MIDI routing helper for priority/fallback stacks.
+/// </summary>
+public sealed class MidiPriorityGroup
+{
+    private readonly AudioEngine _engine;
+    private readonly int _deviceIndex;
+    private readonly int _channel;
+    private readonly MusicEngine.Core.MidiPriorityGroup _group;
+
+    public MidiPriorityGroup(AudioEngine engine, int deviceIndex, int channel, ISynth primary,
+        FallbackTarget fallback, params FallbackTarget[] fallbacks)
+    {
+        _engine = engine;
+        _deviceIndex = deviceIndex;
+        _channel = channel;
+
+        var synths = CollectSynths(primary, fallback, fallbacks);
+        _group = _engine.CreateMidiPriorityGroup(deviceIndex, channel, synths);
+    }
+
+    private static ISynth[] CollectSynths(ISynth primary, FallbackTarget fallback, FallbackTarget[] fallbacks)
+    {
+        var list = new System.Collections.Generic.List<ISynth> { primary };
+        if (fallback?.Synth != null)
+        {
+            list.Add(fallback.Synth);
+        }
+        if (fallbacks != null)
+        {
+            foreach (var target in fallbacks)
+            {
+                if (target?.Synth != null)
+                {
+                    list.Add(target.Synth);
+                }
+            }
+        }
+        return list.ToArray();
+    }
+
+    /// <summary>
+    /// Add a synth as the next fallback.
+    /// </summary>
+    public MidiPriorityGroup Add(ISynth synth)
+    {
+        if (synth == null) return this;
+        if (ContainsSynth(synth)) return this;
+        _group.Routes.Add(new MidiPriorityRoute(synth));
+        return this;
+    }
+
+    /// <summary>
+    /// Add multiple synths as fallbacks.
+    /// </summary>
+    public MidiPriorityGroup Add(params ISynth[] synths)
+    {
+        if (synths == null) return this;
+        foreach (var synth in synths)
+        {
+            Add(synth);
+        }
+        return this;
+    }
+
+    /// <summary>
+    /// Remove a specific synth from the stack.
+    /// </summary>
+    public bool Remove(ISynth synth, bool sendAllNotesOff = true)
+    {
+        if (synth == null) return false;
+        for (int i = _group.Routes.Count - 1; i >= 0; i--)
+        {
+            if (!ReferenceEquals(_group.Routes[i].Synth, synth)) continue;
+            _group.Routes.RemoveAt(i);
+            if (sendAllNotesOff)
+            {
+                synth.AllNotesOff();
+            }
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Remove the most recently added synth.
+    /// </summary>
+    public bool Remove(bool sendAllNotesOff = true)
+    {
+        if (_group.Routes.Count == 0) return false;
+        var route = _group.Routes[^1];
+        _group.Routes.RemoveAt(_group.Routes.Count - 1);
+        if (sendAllNotesOff)
+        {
+            route.Synth.AllNotesOff();
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Remove all synths from the stack.
+    /// </summary>
+    public void RemoveAll(bool sendAllNotesOff = true)
+    {
+        if (sendAllNotesOff)
+        {
+            foreach (var route in _group.Routes)
+            {
+                route.Synth.AllNotesOff();
+            }
+        }
+        _group.Routes.Clear();
+        _engine.RemoveMidiPriorityGroup(_deviceIndex, _channel, _group);
+    }
+
+    /// <summary>
+    /// Enable or disable a synth in the stack.
+    /// </summary>
+    public bool Active(ISynth synth, bool enabled, bool sendAllNotesOff = true)
+    {
+        if (synth == null) return false;
+        foreach (var route in _group.Routes)
+        {
+            if (!ReferenceEquals(route.Synth, synth)) continue;
+            route.Enabled = enabled;
+            if (!enabled && sendAllNotesOff)
+            {
+                synth.AllNotesOff();
+            }
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Alias for Add.
+    /// </summary>
+    public MidiPriorityGroup add(ISynth synth) => Add(synth);
+    /// <summary>
+    /// Alias for Add.
+    /// </summary>
+    public MidiPriorityGroup add(params ISynth[] synths) => Add(synths);
+    /// <summary>
+    /// Alias for Remove.
+    /// </summary>
+    public bool remove(ISynth synth, bool sendAllNotesOff = true) => Remove(synth, sendAllNotesOff);
+    /// <summary>
+    /// Alias for Remove.
+    /// </summary>
+    public bool remove(bool sendAllNotesOff = true) => Remove(sendAllNotesOff);
+    /// <summary>
+    /// Alias for RemoveAll.
+    /// </summary>
+    public void removeall(bool sendAllNotesOff = true) => RemoveAll(sendAllNotesOff);
+    /// <summary>
+    /// Alias for Active.
+    /// </summary>
+    public bool active(ISynth synth, bool enabled, bool sendAllNotesOff = true)
+        => Active(synth, enabled, sendAllNotesOff);
+
+    private bool ContainsSynth(ISynth synth)
+    {
+        foreach (var route in _group.Routes)
+        {
+            if (ReferenceEquals(route.Synth, synth))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
 }
 
 /// <summary>

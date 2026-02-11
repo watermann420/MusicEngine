@@ -82,6 +82,43 @@ public sealed class AudioControl
     /// DJ cue helper (A/B monitor switch).
     /// </summary>
     public DjCueControl Cue => new DjCueControl(_globals.Engine);
+
+    /// <summary>
+    /// Set the output renderer (e.g. waveout/asio).
+    /// </summary>
+    public bool setrenderer(string renderer) => _globals.Engine.SetOutputRenderer(renderer);
+    /// <summary>
+    /// Set the output renderer (e.g. waveout/asio).
+    /// </summary>
+    public bool SetRenderer(string renderer) => setrenderer(renderer);
+    /// <summary>
+    /// Set the output renderer with a driver name (for ASIO).
+    /// </summary>
+    public bool setrenderer(string renderer, string deviceName)
+        => _globals.Engine.SetOutputRenderer(renderer, deviceName);
+    /// <summary>
+    /// Set the output renderer with a driver name (for ASIO).
+    /// </summary>
+    public bool SetRenderer(string renderer, string deviceName) => setrenderer(renderer, deviceName);
+    /// <summary>
+    /// Set the output renderer with a driver index (for ASIO).
+    /// </summary>
+    public bool setrenderer(string renderer, int deviceIndex)
+        => _globals.Engine.SetOutputRenderer(renderer, deviceIndex);
+    /// <summary>
+    /// Set the output renderer with a driver index (for ASIO).
+    /// </summary>
+    public bool SetRenderer(string renderer, int deviceIndex) => setrenderer(renderer, deviceIndex);
+    /// <summary>
+    /// Set the output renderer with a driver index and master output pair (for ASIO).
+    /// </summary>
+    public bool setrenderer(string renderer, int deviceIndex, int outputPairIndex)
+        => _globals.Engine.SetOutputRenderer(renderer, deviceIndex, outputPairIndex);
+    /// <summary>
+    /// Set the output renderer with a driver index and master output pair (for ASIO).
+    /// </summary>
+    public bool SetRenderer(string renderer, int deviceIndex, int outputPairIndex)
+        => setrenderer(renderer, deviceIndex, outputPairIndex);
 }
 
 /// <summary>
@@ -360,6 +397,58 @@ public sealed class AudioChannelControl
     public void To(AudioChannelControl target) => route(target);
 
     /// <summary>
+    /// Set output renderer routing for this channel (waveout/asio).
+    /// </summary>
+    public bool setrenderer(string renderer, int index)
+    {
+        if (string.IsNullOrWhiteSpace(renderer)) return false;
+        if (renderer.Equals("asio", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!string.Equals(Settings.OutputRenderer, "asio", StringComparison.OrdinalIgnoreCase))
+            {
+                _globals.Engine.SetOutputRenderer("asio");
+            }
+            return _globals.Engine.RouteChannelToAsioOutput(_index, index, unrouteFromMaster: true);
+        }
+
+        if (renderer.Equals("waveout", StringComparison.OrdinalIgnoreCase) ||
+            renderer.Equals("wave", StringComparison.OrdinalIgnoreCase) ||
+            renderer.Equals("mme", StringComparison.OrdinalIgnoreCase) ||
+            renderer.Equals("wasapi", StringComparison.OrdinalIgnoreCase))
+        {
+            _globals.Engine.UnrouteChannelFromMaster(_index);
+            return _globals.Engine.StartChannelVirtualOutput(_index, index);
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Set output renderer routing for this channel (waveout/asio).
+    /// </summary>
+    public bool SetRenderer(string renderer, int index) => setrenderer(renderer, index);
+
+    /// <summary>
+    /// Route this channel back to the master mix (default output).
+    /// </summary>
+    public void setrenderer(string renderer)
+    {
+        if (string.IsNullOrWhiteSpace(renderer)) return;
+        if (renderer.Equals("master", StringComparison.OrdinalIgnoreCase) ||
+            renderer.Equals("waveout", StringComparison.OrdinalIgnoreCase) ||
+            renderer.Equals("wave", StringComparison.OrdinalIgnoreCase) ||
+            renderer.Equals("default", StringComparison.OrdinalIgnoreCase))
+        {
+            _globals.Engine.RouteChannelToMaster(_index);
+        }
+    }
+
+    /// <summary>
+    /// Route this channel back to the master mix (default output).
+    /// </summary>
+    public void SetRenderer(string renderer) => setrenderer(renderer);
+
+    /// <summary>
     /// Output routing target (master or another channel).
     /// </summary>
     public object channel
@@ -580,6 +669,25 @@ public sealed class OutputDeviceControl
     /// List available output devices.
     /// </summary>
     public string[] List() => list();
+
+    /// <summary>
+    /// List available ASIO drivers.
+    /// </summary>
+    public string[] listasio()
+    {
+        var drivers = _engine.ListAsioDrivers();
+        var list = new string[drivers.Count];
+        for (int i = 0; i < drivers.Count; i++)
+        {
+            list[i] = $"{i}: {drivers[i]}";
+        }
+        return list;
+    }
+
+    /// <summary>
+    /// List available ASIO drivers.
+    /// </summary>
+    public string[] ListAsio() => listasio();
 
     /// <summary>
     /// Route a channel to an output device index (virtual output).

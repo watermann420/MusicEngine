@@ -49,6 +49,26 @@ public static class Settings
     public static int OutputBufferCount { get; set; } = 3;
 
     /// <summary>
+    /// Output renderer backend (e.g. "waveout" or "asio").
+    /// </summary>
+    public static string OutputRenderer { get; set; } = "waveout";
+
+    /// <summary>
+    /// Preferred ASIO driver name (empty = first available).
+    /// </summary>
+    public static string AsioDeviceName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// ASIO output channel count (must be >= 2).
+    /// </summary>
+    public static int AsioOutputChannels { get; set; } = 2;
+
+    /// <summary>
+    /// ASIO master output channel offset (0 = outputs 1/2).
+    /// </summary>
+    public static int AsioOutputChannelOffset { get; set; } = 0;
+
+    /// <summary>
     /// Default WAV bit depth for recordings.
     /// </summary>
     public static int WavBitDepth { get; set; } = 32;

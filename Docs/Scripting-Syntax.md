@@ -18,6 +18,12 @@ var time = Music.CREATETIMEMASTER();
 time.START();
 ```
 
+Pattern priority/fallback:
+
+```csharp
+var p = Music.CREATEPATTERN(v1, < s1);
+```
+
 ## Important Notes
 
 - Case-insensitive calls are available through the dynamic root: `Music` / `music` / `MUSIC`.
@@ -92,6 +98,9 @@ All of these are case-insensitive when accessed via `Music.MIDI` / `Music.Midi` 
 Music.MIDI.DIVICE(0).PITCHBEND().TO(val => v1.PitchBend(val * 2f - 1f));
 Music.MIDI.DEVICE(0).CONTROL(1).TO(val => s1.SetParameter("cutoff", val));
 Music.MIDI.DEVICE(0).CHANNEL(0).TO(v1);
+Music.MIDI.DEVICE(0).TO(v1, < s1); // priority/fallback
+Music.MIDI.DEVICE(0).TO(v1, > s1); // s1 higher priority
+Music.MIDI.DEVICE(0).TO(v1, < s1, < p1); // multiple fallbacks
 ```
 
 Supported MIDI members (case-insensitive):
@@ -102,6 +111,9 @@ Supported MIDI members (case-insensitive):
 - `Device.Pitchbend()` (alias: `PitchBend`)
 - `Device.Control(int)`
 - `Device.To(ISynth)` (alias: `To`, `TO`) -> returns `MidiSend`
+- `Device.To(ISynth, < ISynth)` -> returns priority group
+- `Device.To(ISynth, > ISynth)` -> higher priority first
+- `Device.To(ISynth, < ISynth, < ISynth)` -> multiple fallbacks
 - `ControlMapping.To(Action<float>)` (alias: `To`, `TO`)
 - `Device.Jog(int, JogMode, int)`
 

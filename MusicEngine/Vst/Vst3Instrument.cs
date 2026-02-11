@@ -381,6 +381,24 @@ public sealed class Vst3Instrument : IVstInstrument, IDisposable
     }
 
     /// <summary>
+    /// Capture the current state as a reusable preset.
+    /// </summary>
+    public VstPreset Preset(string name)
+    {
+        var state = GetStateBase64();
+        return new VstPreset(name, state);
+    }
+
+    /// <summary>
+    /// Apply a preset state.
+    /// </summary>
+    public void ApplyPreset(VstPreset preset)
+    {
+        if (preset == null) return;
+        SetStateBase64(preset.State);
+    }
+
+    /// <summary>
     /// Get the plugin state as a binary blob.
     /// </summary>
     public byte[] GetState()

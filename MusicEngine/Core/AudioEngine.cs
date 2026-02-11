@@ -40,7 +40,13 @@ public sealed class AudioEngine : IDisposable
     private readonly List<AudioVirtualOutput> _masterVirtualOutputs = new();
     private readonly Dictionary<int, List<AudioVirtualOutput>> _channelVirtualOutputs = new();
     private readonly object _virtualOutputLock = new();
+    private readonly object _asioLock = new();
+    private MixingSampleProvider? _asioMixer;
+    private ISampleProvider? _asioMasterMapping;
+    private int _asioMasterOffset;
+    private readonly Dictionary<int, ISampleProvider> _asioChannelMappings = new();
     private IWavePlayer? _output;
+    private string _activeRenderer = Settings.OutputRenderer;
     private bool _initialized;
     private bool _outputRunning;
     private bool _editorModeEnabled;
@@ -109,22 +115,151 @@ public sealed class AudioEngine : IDisposable
     public void Initialize()
     {
         if (_initialized) return;
-        var latencyMs = Math.Max(1, Settings.OutputLatencyMs);
-        var bufferCount = Math.Max(1, Settings.OutputBufferCount);
-        if (Settings.AutoBufferEnabled)
+        InitializeOutput(startPlayback: true);
+    }
+
+    /// <summary>
+    /// Set the output renderer backend (e.g. waveout/asio).
+    /// </summary>
+    public bool SetOutputRenderer(string renderer, string? deviceName = null)
+    {
+        if (string.IsNullOrWhiteSpace(renderer)) return false;
+        var normalized = NormalizeRenderer(renderer);
+        if (string.IsNullOrWhiteSpace(normalized)) return false;
+
+        var previousRenderer = Settings.OutputRenderer;
+        var previousAsio = Settings.AsioDeviceName;
+        var wasRunning = _outputRunning;
+
+        if (!string.IsNullOrWhiteSpace(deviceName))
         {
-            latencyMs = Math.Max(1, latencyMs + Math.Max(0, Settings.AutoBufferExtraLatencyMs));
-            bufferCount = Math.Max(1, bufferCount + Math.Max(0, Settings.AutoBufferExtraBuffers));
+            Settings.AsioDeviceName = deviceName.Trim();
         }
-        _output = new WaveOutEvent
+        Settings.OutputRenderer = normalized;
+
+        DisposeOutput();
+        try
         {
-            DesiredLatency = latencyMs,
-            NumberOfBuffers = bufferCount
-        };
-        _output.Init(_masterTap);
-        _output.Play();
-        _initialized = true;
-        _outputRunning = true;
+            InitializeOutput(wasRunning);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Audio Error: failed to switch renderer ({ex.Message}).");
+            Settings.OutputRenderer = previousRenderer;
+            Settings.AsioDeviceName = previousAsio;
+            try
+            {
+                InitializeOutput(wasRunning);
+            }
+            catch
+            {
+            }
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Set the output renderer with an ASIO driver index.
+    /// </summary>
+    public bool SetOutputRenderer(string renderer, int deviceIndex)
+    {
+        var driver = GetAsioDriverName(deviceIndex);
+        if (driver == null) return false;
+        return SetOutputRenderer(renderer, driver);
+    }
+
+    /// <summary>
+    /// Set the output renderer with an ASIO driver index and master output pair.
+    /// </summary>
+    public bool SetOutputRenderer(string renderer, int driverIndex, int outputPairIndex)
+    {
+        var driver = GetAsioDriverName(driverIndex);
+        if (driver == null) return false;
+        Settings.AsioOutputChannelOffset = Math.Max(0, outputPairIndex * 2);
+        UpdateAsioMasterMapping();
+        return SetOutputRenderer(renderer, driver);
+    }
+
+    /// <summary>
+    /// Set ASIO master output pair (0 = outputs 1/2).
+    /// </summary>
+    public void SetAsioMasterOutputPair(int outputPairIndex)
+    {
+        Settings.AsioOutputChannelOffset = Math.Max(0, outputPairIndex * 2);
+        UpdateAsioMasterMapping();
+    }
+
+    /// <summary>
+    /// Route a channel to an ASIO output pair (0 = outputs 1/2, 1 = 3/4, ...).
+    /// </summary>
+    public bool RouteChannelToAsioOutput(int channelIndex, int outputPairIndex, bool unrouteFromMaster = true)
+    {
+        if (channelIndex < 1) return false;
+        if (outputPairIndex < 0) return false;
+
+        var outputOffset = outputPairIndex * 2;
+        lock (_asioLock)
+        {
+            EnsureAsioMixerLocked();
+            var outputChannels = _asioMixer!.WaveFormat.Channels;
+            var sourceChannels = _waveFormat.Channels;
+            if (outputOffset >= outputChannels) return false;
+            if (outputOffset + sourceChannels > outputChannels)
+            {
+                outputOffset = Math.Max(0, outputChannels - sourceChannels);
+            }
+
+            if (_asioChannelMappings.TryGetValue(channelIndex, out var existing))
+            {
+                _asioMixer.RemoveMixerInput(existing);
+                _asioChannelMappings.Remove(channelIndex);
+            }
+
+            var channel = GetOrCreateChannel(channelIndex);
+            var mapping = new ChannelMappingSampleProvider(channel.Tap, outputChannels, outputOffset);
+            _asioMixer.AddMixerInput(mapping);
+            _asioChannelMappings[channelIndex] = mapping;
+        }
+
+        if (unrouteFromMaster)
+        {
+            UnrouteChannelFromMaster(channelIndex);
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Remove a channel ASIO output route.
+    /// </summary>
+    public void ClearChannelAsioOutput(int channelIndex)
+    {
+        if (channelIndex < 1) return;
+        lock (_asioLock)
+        {
+            if (_asioMixer == null) return;
+            if (_asioChannelMappings.TryGetValue(channelIndex, out var existing))
+            {
+                _asioMixer.RemoveMixerInput(existing);
+                _asioChannelMappings.Remove(channelIndex);
+            }
+        }
+    }
+
+    /// <summary>
+    /// List available ASIO driver names.
+    /// </summary>
+    public IReadOnlyList<string> ListAsioDrivers()
+    {
+        try
+        {
+            return AsioOut.GetDriverNames();
+        }
+        catch
+        {
+            return Array.Empty<string>();
+        }
     }
 
     /// <summary>
@@ -164,6 +299,175 @@ public sealed class AudioEngine : IDisposable
         if (_outputRunning) return;
         _output.Play();
         _outputRunning = true;
+    }
+
+    private void InitializeOutput(bool startPlayback)
+    {
+        var output = CreateOutput();
+        if (output is AsioOut)
+        {
+            var asioProvider = GetAsioOutputProvider();
+            output.Init(new SampleToWaveProvider(asioProvider));
+        }
+        else
+        {
+            output.Init(_masterTap);
+        }
+
+        _output = output;
+        _initialized = true;
+        _outputRunning = false;
+        _activeRenderer = Settings.OutputRenderer;
+
+        if (startPlayback)
+        {
+            _output.Play();
+            _outputRunning = true;
+        }
+    }
+
+    private void DisposeOutput()
+    {
+        if (_output == null)
+        {
+            _initialized = false;
+            _outputRunning = false;
+            return;
+        }
+
+        try
+        {
+            _output.Stop();
+        }
+        catch
+        {
+        }
+
+        _output.Dispose();
+        _output = null;
+        _initialized = false;
+        _outputRunning = false;
+    }
+
+    private IWavePlayer CreateOutput()
+    {
+        var renderer = NormalizeRenderer(Settings.OutputRenderer);
+        if (renderer == "asio")
+        {
+            var driver = Settings.AsioDeviceName?.Trim();
+            if (string.IsNullOrWhiteSpace(driver))
+            {
+                var drivers = AsioOut.GetDriverNames();
+                if (drivers == null || drivers.Length == 0)
+                {
+                    throw new InvalidOperationException("No ASIO drivers found.");
+                }
+                driver = drivers[0];
+            }
+
+            var asio = new AsioOut(driver);
+            if (!asio.IsSampleRateSupported(_waveFormat.SampleRate))
+            {
+                asio.Dispose();
+                throw new InvalidOperationException($"ASIO driver does not support {_waveFormat.SampleRate}Hz.");
+            }
+            return asio;
+        }
+
+        var latencyMs = Math.Max(1, Settings.OutputLatencyMs);
+        var bufferCount = Math.Max(1, Settings.OutputBufferCount);
+        if (Settings.AutoBufferEnabled)
+        {
+            latencyMs = Math.Max(1, latencyMs + Math.Max(0, Settings.AutoBufferExtraLatencyMs));
+            bufferCount = Math.Max(1, bufferCount + Math.Max(0, Settings.AutoBufferExtraBuffers));
+        }
+        return new WaveOutEvent
+        {
+            DesiredLatency = latencyMs,
+            NumberOfBuffers = bufferCount
+        };
+    }
+
+    private static string NormalizeRenderer(string renderer)
+    {
+        var normalized = renderer.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "wave" => "waveout",
+            "waveout" => "waveout",
+            "mme" => "waveout",
+            "asio" => "asio",
+            _ => normalized
+        };
+    }
+
+    private string? GetAsioDriverName(int index)
+    {
+        if (index < 0) return null;
+        var drivers = ListAsioDrivers();
+        if (index >= drivers.Count) return null;
+        return drivers[index];
+    }
+
+    private ISampleProvider GetAsioOutputProvider()
+    {
+        lock (_asioLock)
+        {
+            EnsureAsioMixerLocked();
+            return _asioMixer!;
+        }
+    }
+
+    private void EnsureAsioMixerLocked()
+    {
+        var outputChannels = Math.Max(2, Settings.AsioOutputChannels);
+        if (_asioMixer != null && _asioMixer.WaveFormat.Channels == outputChannels)
+        {
+            UpdateAsioMasterMappingLocked(outputChannels);
+            return;
+        }
+
+        var format = WaveFormat.CreateIeeeFloatWaveFormat(_waveFormat.SampleRate, outputChannels);
+        var mixer = new MixingSampleProvider(format) { ReadFully = true };
+        _asioMixer = mixer;
+        _asioChannelMappings.Clear();
+        UpdateAsioMasterMappingLocked(outputChannels);
+    }
+
+    private void UpdateAsioMasterMapping()
+    {
+        lock (_asioLock)
+        {
+            if (_asioMixer == null)
+            {
+                return;
+            }
+            UpdateAsioMasterMappingLocked(_asioMixer.WaveFormat.Channels);
+        }
+    }
+
+    private void UpdateAsioMasterMappingLocked(int outputChannels)
+    {
+        int sourceChannels = _waveFormat.Channels;
+        int outputOffset = Math.Max(0, Settings.AsioOutputChannelOffset);
+        if (outputOffset >= outputChannels)
+        {
+            outputOffset = Math.Max(0, outputChannels - sourceChannels);
+        }
+        if (outputOffset + sourceChannels > outputChannels)
+        {
+            outputOffset = Math.Max(0, outputChannels - sourceChannels);
+        }
+
+        if (_asioMasterMapping != null)
+        {
+            _asioMixer!.RemoveMixerInput(_asioMasterMapping);
+            _asioMasterMapping = null;
+        }
+
+        _asioMasterOffset = outputOffset;
+        _asioMasterMapping = new ChannelMappingSampleProvider(_masterTap, outputChannels, outputOffset);
+        _asioMixer!.AddMixerInput(_asioMasterMapping);
     }
 
     /// <summary>
@@ -768,6 +1072,17 @@ public sealed class AudioEngine : IDisposable
     }
 
     /// <summary>
+    /// Unroute a MIDI input device from a synth.
+    /// </summary>
+    /// <param name="deviceIndex">MIDI device index.</param>
+    /// <param name="synth">Target synth.</param>
+    /// <param name="sendAllNotesOff">Send all-notes-off when removing.</param>
+    public bool UnrouteMidiInput(int deviceIndex, ISynth synth, bool sendAllNotesOff = true)
+    {
+        return UnrouteMidiInput(deviceIndex, -1, synth, sendAllNotesOff);
+    }
+
+    /// <summary>
     /// Route a MIDI input device channel to a synth.
     /// </summary>
     /// <param name="deviceIndex">MIDI device index.</param>
@@ -777,6 +1092,36 @@ public sealed class AudioEngine : IDisposable
     {
         _midiRouter.Route(deviceIndex, channel, synth);
         EnsureMidiInput(deviceIndex);
+    }
+
+    /// <summary>
+    /// Create an exclusive priority MIDI group (first enabled target wins).
+    /// </summary>
+    public MidiPriorityGroup CreateMidiPriorityGroup(int deviceIndex, int channel, params ISynth[] synths)
+    {
+        var group = _midiRouter.CreatePriorityGroup(deviceIndex, channel, synths);
+        EnsureMidiInput(deviceIndex);
+        return group;
+    }
+
+    /// <summary>
+    /// Remove an exclusive priority MIDI group.
+    /// </summary>
+    public bool RemoveMidiPriorityGroup(int deviceIndex, int channel, MidiPriorityGroup group)
+    {
+        return _midiRouter.RemovePriorityGroup(deviceIndex, channel, group);
+    }
+
+    /// <summary>
+    /// Unroute a MIDI input device channel from a synth.
+    /// </summary>
+    /// <param name="deviceIndex">MIDI device index.</param>
+    /// <param name="channel">MIDI channel (0-15) or -1 for all.</param>
+    /// <param name="synth">Target synth.</param>
+    /// <param name="sendAllNotesOff">Send all-notes-off when removing.</param>
+    public bool UnrouteMidiInput(int deviceIndex, int channel, ISynth synth, bool sendAllNotesOff = true)
+    {
+        return _midiRouter.Unroute(deviceIndex, channel, synth, sendAllNotesOff);
     }
 
     /// <summary>

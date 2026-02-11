@@ -6,6 +6,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using MusicEngine.Vst;
 using NAudio.Midi;
 
 namespace MusicEngine.Core;
@@ -21,6 +22,7 @@ public sealed class MidiRouter
     /// </summary>
     public bool Enabled { get; private set; } = true;
     private readonly Dictionary<int, Dictionary<int, Dictionary<ISynth, MidiRoute>>> _routing = new();
+    private readonly Dictionary<int, Dictionary<int, List<MidiPriorityGroup>>> _priorityRouting = new();
     private readonly List<MidiMapping> _mappings = new();
     private readonly object _activityLock = new();
     private readonly Dictionary<int, MidiDeviceActivitySnapshot> _activity = new();
@@ -100,6 +102,90 @@ public sealed class MidiRouter
     }
 
     /// <summary>
+    /// Create an exclusive priority group (first enabled target wins).
+    /// </summary>
+    public MidiPriorityGroup CreatePriorityGroup(int deviceIndex, int channel, params ISynth[] synths)
+    {
+        var group = new MidiPriorityGroup();
+        if (synths != null)
+        {
+            foreach (var synth in synths)
+            {
+                if (synth == null) continue;
+                group.Routes.Add(new MidiPriorityRoute(synth));
+            }
+        }
+
+        channel = NormalizeChannel(channel);
+        if (!_priorityRouting.TryGetValue(deviceIndex, out var perChannel))
+        {
+            perChannel = new Dictionary<int, List<MidiPriorityGroup>>();
+            _priorityRouting[deviceIndex] = perChannel;
+        }
+
+        if (!perChannel.TryGetValue(channel, out var groups))
+        {
+            groups = new List<MidiPriorityGroup>();
+            perChannel[channel] = groups;
+        }
+
+        groups.Add(group);
+        return group;
+    }
+
+    /// <summary>
+    /// Remove a priority group.
+    /// </summary>
+    public bool RemovePriorityGroup(int deviceIndex, int channel, MidiPriorityGroup group)
+    {
+        if (group == null) return false;
+        channel = NormalizeChannel(channel);
+        if (!_priorityRouting.TryGetValue(deviceIndex, out var perChannel)) return false;
+        if (!perChannel.TryGetValue(channel, out var groups)) return false;
+        if (!groups.Remove(group)) return false;
+        if (groups.Count == 0)
+        {
+            perChannel.Remove(channel);
+        }
+        if (perChannel.Count == 0)
+        {
+            _priorityRouting.Remove(deviceIndex);
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Remove a MIDI route.
+    /// </summary>
+    /// <param name="deviceIndex">MIDI device index.</param>
+    /// <param name="channel">MIDI channel (0-15) or -1 for all.</param>
+    /// <param name="synth">Target synth.</param>
+    /// <param name="sendAllNotesOff">Send all-notes-off when removing.</param>
+    public bool Unroute(int deviceIndex, int channel, ISynth synth, bool sendAllNotesOff = true)
+    {
+        if (synth == null) return false;
+        channel = NormalizeChannel(channel);
+        if (!_routing.TryGetValue(deviceIndex, out var perChannel)) return false;
+        if (!perChannel.TryGetValue(channel, out var targets)) return false;
+        if (!targets.Remove(synth)) return false;
+
+        if (targets.Count == 0)
+        {
+            perChannel.Remove(channel);
+        }
+        if (perChannel.Count == 0)
+        {
+            _routing.Remove(deviceIndex);
+        }
+
+        if (sendAllNotesOff)
+        {
+            synth.AllNotesOff();
+        }
+        return true;
+    }
+
+    /// <summary>
     /// Map a control change to a custom action.
     /// </summary>
     /// <param name="deviceIndex">MIDI device index.</param>
@@ -134,6 +220,7 @@ public sealed class MidiRouter
     public void Clear()
     {
         _routing.Clear();
+        _priorityRouting.Clear();
         _mappings.Clear();
     }
 
@@ -447,28 +534,79 @@ public sealed class MidiRouter
 
     private IEnumerable<ISynth> GetTargets(int deviceIndex, int channel, bool includeDisabledRoutes)
     {
-        if (!_routing.TryGetValue(deviceIndex, out var perChannel)) yield break;
-
         HashSet<ISynth>? any = null;
-        if (perChannel.TryGetValue(AllChannels, out var anyTargets))
+
+        if (_routing.TryGetValue(deviceIndex, out var perChannel))
         {
-            any = new HashSet<ISynth>();
-            foreach (var route in anyTargets.Values)
+            if (perChannel.TryGetValue(AllChannels, out var anyTargets))
             {
-                if (route.Enabled || includeDisabledRoutes)
+                any = new HashSet<ISynth>();
+                foreach (var route in anyTargets.Values)
                 {
-                    any.Add(route.Synth);
-                    yield return route.Synth;
+                    if (route.Enabled || includeDisabledRoutes)
+                    {
+                        any.Add(route.Synth);
+                        yield return route.Synth;
+                    }
+                }
+            }
+
+            if (perChannel.TryGetValue(channel, out var channelTargets))
+            {
+                foreach (var route in channelTargets.Values)
+                {
+                    if ((route.Enabled || includeDisabledRoutes) && (any == null || !any.Contains(route.Synth)))
+                    {
+                        yield return route.Synth;
+                    }
                 }
             }
         }
 
-        if (!perChannel.TryGetValue(channel, out var channelTargets)) yield break;
-        foreach (var route in channelTargets.Values)
+        if (!_priorityRouting.TryGetValue(deviceIndex, out var priorityPerChannel)) yield break;
+
+        if (priorityPerChannel.TryGetValue(AllChannels, out var anyGroups))
         {
-            if ((route.Enabled || includeDisabledRoutes) && (any == null || !any.Contains(route.Synth)))
+            foreach (var target in GetPriorityTargets(anyGroups, includeDisabledRoutes))
             {
-                yield return route.Synth;
+                if (any == null) any = new HashSet<ISynth>();
+                if (any.Add(target))
+                {
+                    yield return target;
+                }
+            }
+        }
+
+        if (priorityPerChannel.TryGetValue(channel, out var channelGroups))
+        {
+            foreach (var target in GetPriorityTargets(channelGroups, includeDisabledRoutes))
+            {
+                if (any == null || any.Add(target))
+                {
+                    yield return target;
+                }
+            }
+        }
+    }
+
+    private static IEnumerable<ISynth> GetPriorityTargets(List<MidiPriorityGroup> groups, bool includeDisabledRoutes)
+    {
+        foreach (var group in groups)
+        {
+            if (group == null) continue;
+            for (int i = 0; i < group.Routes.Count; i++)
+            {
+                var route = group.Routes[i];
+                if (route == null) continue;
+                if (route.Enabled || includeDisabledRoutes)
+                {
+                    if (route.Synth is MissingVstInstrument)
+                    {
+                        continue;
+                    }
+                    yield return route.Synth;
+                    break;
+                }
             }
         }
     }

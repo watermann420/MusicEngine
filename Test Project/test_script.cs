@@ -1,4 +1,6 @@
 File.Main();
+Audio.SetRenderer(asio, 1);
+
 
 Include synthInstance; // This includes the synthInstance.cs script which creates a basic synthesizer instance with default settings. You can customize it by editing that script.
 var synth = Include.synthInstance.synth; // The above line gives us access to the 'synth' variable defined in synthInstance.cs, which is our synthesizer instance with default settings. We can now route MIDI and effects to it, and play patterns on it.
@@ -9,6 +11,10 @@ Audio.master.Gain(0.1); // Set master gain to a safe level (adjust as needed)
 
 
 
+var speech = LibraryApi.Instrument("MusicEngine.Instruments.SpeechInstrument");
+speech.Phrase("Hallo MusicEngine", 60);
+speech.NoteOn(60, 100);
+Midi.Device(0).to(speech); 
 
 
 
@@ -24,22 +30,17 @@ ch1.Route(synth);
 // Create a VST effect instance (replace "Ozone 12 Equalizer" with your desired plugin name)
 var eq1 = CreateVstEffect("Ozone 12 Equalizer");
 ch1.Effect(eq1);
-
 var fx = CreateVstEffect("ValhallaSupermassive");
 ch1.Effect(fx);
 
 
 //midi setup
-midi.Device(0).to(vital); // MIDI channel 1 (0-based)
+//midi.Device(0).to(vital, < synth); // MIDI channel 1 (0-based)
 
 Midi.Device(0).Pitchbend().to((Action<float>)(val => synth.PitchBend(val * 2f - 1f))); // map wheel to -1..1
 Midi.Device(0).Pitchbend().to((Action<float>)(val => piano.PitchBend(val * 2f - 1f))); // map wheel to -1..1
 Midi.Device(0).Pitchbend().to((Action<float>)(val => vital.PitchBend(val * 2f - 1f))); // -1..1
 //midi.device(0).log.info(true); // Log MIDI input for debugging and mapping midi controls
-
-
-
-
 
 
 

@@ -38,6 +38,11 @@ public sealed class Pattern
     public List<ISynth> SynthTargets { get; } = new();
 
     /// <summary>
+    /// Priority fallback groups for pattern playback.
+    /// </summary>
+    public List<PatternPriorityGroup> PriorityGroups { get; } = new();
+
+    /// <summary>
     /// List of note events in the pattern.
     /// </summary>
     public List<NoteEvent> Events { get; } = new();
@@ -91,7 +96,7 @@ public sealed class Pattern
     {
         if (stopNotes)
         {
-            foreach (var target in SynthTargets)
+            foreach (var target in GetAllTargets())
             {
                 target.AllNotesOff();
             }
@@ -162,6 +167,72 @@ public sealed class Pattern
             SynthTargets.AddRange(moreSynths);
         }
     }
+
+    /// <summary>
+    /// Create a new pattern targeting one or more synths.
+    /// </summary>
+    /// <param name="synth">Primary synth.</param>
+    /// <param name="includePrimary">Include primary in layered targets.</param>
+    /// <param name="moreSynths">Additional synth targets.</param>
+    public Pattern(ISynth synth, bool includePrimary, params ISynth[] moreSynths)
+    {
+        Synth = synth;
+        if (includePrimary)
+        {
+            SynthTargets.Add(synth);
+        }
+        if (moreSynths != null && moreSynths.Length > 0)
+        {
+            SynthTargets.AddRange(moreSynths);
+        }
+    }
+
+    /// <summary>
+    /// Add a priority fallback group (first enabled target wins).
+    /// </summary>
+    public PatternPriorityGroup AddPriorityGroup(params ISynth[] synths)
+    {
+        var group = new PatternPriorityGroup();
+        if (synths != null)
+        {
+            foreach (var synth in synths)
+            {
+                if (synth == null || synth is MissingVstInstrument) continue;
+                group.Routes.Add(new PatternPriorityRoute(synth));
+            }
+        }
+        PriorityGroups.Add(group);
+        return group;
+    }
+
+    /// <summary>
+    /// Enable or disable a synth inside any priority group.
+    /// </summary>
+    public bool Active(ISynth synth, bool enabled, bool sendAllNotesOff = true)
+    {
+        if (synth == null) return false;
+        foreach (var group in PriorityGroups)
+        {
+            for (int i = 0; i < group.Routes.Count; i++)
+            {
+                var route = group.Routes[i];
+                if (!ReferenceEquals(route.Synth, synth)) continue;
+                route.Enabled = enabled;
+                if (!enabled && sendAllNotesOff)
+                {
+                    synth.AllNotesOff();
+                }
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Enable or disable a synth inside any priority group.
+    /// </summary>
+    public bool active(ISynth synth, bool enabled, bool sendAllNotesOff = true)
+        => Active(synth, enabled, sendAllNotesOff);
 
     /// <summary>
     /// Add a note event to the pattern.
@@ -274,7 +345,7 @@ public sealed class Pattern
     public void Stop()
     {
         Sequencer?.RemovePattern(this);
-        foreach (var target in SynthTargets)
+        foreach (var target in GetAllTargets())
         {
             target.AllNotesOff();
         }
@@ -405,12 +476,14 @@ public sealed class Pattern
             {
                 slideToken = new CancellationTokenSource();
             }
+            var noteTargets = GetPlaybackTargets();
             var activity = new NoteActivity
             {
                 Note = ev.Note,
                 Velocity = velocity,
                 StartedUtc = nowUtc,
-                SlideCancel = slideToken
+                SlideCancel = slideToken,
+                Targets = noteTargets
             };
             lock (_stateLock)
             {
@@ -429,7 +502,7 @@ public sealed class Pattern
             {
             }
 
-            foreach (var target in SynthTargets)
+            foreach (var target in noteTargets)
             {
                 target.NoteOn(ev.Note, velocity);
             }
@@ -440,12 +513,12 @@ public sealed class Pattern
                 var clampedMs = Math.Min(durationMs, Math.Max(0.0, slideTimeMs));
                 if (clampedMs > 0.0)
                 {
-                    _ = RunSlide(ev.Note, ev.SlideTo!.Value, clampedMs, slideToken.Token);
+                    _ = RunSlide(noteTargets, ev.Note, ev.SlideTo!.Value, clampedMs, slideToken.Token);
                 }
             }
 
             await Task.Delay(TimeSpan.FromMilliseconds(durationMs));
-            foreach (var target in SynthTargets)
+            foreach (var target in noteTargets)
             {
                 target.NoteOff(ev.Note);
             }
@@ -462,7 +535,7 @@ public sealed class Pattern
             slideToken?.Cancel();
             if (ev.SlideTo.HasValue && ev.SlideTo.Value != ev.Note)
             {
-                foreach (var target in SynthTargets)
+                foreach (var target in noteTargets)
                 {
                     ResetPitchBend(target);
                 }
@@ -512,14 +585,15 @@ public sealed class Pattern
                             velocity = (int)Math.Clamp(Math.Round(velocity + velDelta), 1, 127);
                         }
 
-                        foreach (var target in SynthTargets)
+                        var stepTargets = GetPlaybackTargets();
+                        foreach (var target in stepTargets)
                         {
                             target.NoteOn(note.Note, velocity);
                         }
 
                         await Task.Delay(TimeSpan.FromMilliseconds(stepDurationMs), token);
 
-                        foreach (var target in SynthTargets)
+                        foreach (var target in stepTargets)
                         {
                             target.NoteOff(note.Note);
                         }
@@ -544,21 +618,21 @@ public sealed class Pattern
         }
     }
 
-    private async Task RunSlide(int fromNote, int toNote, double slideTimeMs, CancellationToken token)
+    private async Task RunSlide(ISynth[] targets, int fromNote, int toNote, double slideTimeMs, CancellationToken token)
     {
         var diff = toNote - fromNote;
         if (diff == 0) return;
 
-        var targets = new List<(ISynth synth, float targetBend)>();
-        foreach (var synth in SynthTargets)
+        var bends = new List<(ISynth synth, float targetBend)>();
+        foreach (var synth in targets)
         {
             var range = GetPitchBendRangeSemitones(synth);
             if (range <= 0f) continue;
             var bend = Math.Clamp(diff / range, -1f, 1f);
-            targets.Add((synth, bend));
+            bends.Add((synth, bend));
         }
 
-        if (targets.Count == 0) return;
+        if (bends.Count == 0) return;
 
         var steps = (int)Math.Max(1, Math.Round(slideTimeMs / 20.0));
         var stepDelay = slideTimeMs / steps;
@@ -566,7 +640,7 @@ public sealed class Pattern
         {
             if (token.IsCancellationRequested) return;
             var progress = i / (float)steps;
-            foreach (var entry in targets)
+            foreach (var entry in bends)
             {
                 SendPitchBend(entry.synth, entry.targetBend * progress);
             }
@@ -689,6 +763,65 @@ public sealed class Pattern
                 entry.Cancel();
             }
             _activeSequences.Clear();
+        }
+    }
+
+    private ISynth[] GetPlaybackTargets()
+    {
+        var list = new List<ISynth>();
+        var seen = new HashSet<ISynth>();
+        foreach (var target in SynthTargets)
+        {
+            if (target == null || target is MissingVstInstrument) continue;
+            if (seen.Add(target))
+            {
+                list.Add(target);
+            }
+        }
+
+        foreach (var group in PriorityGroups)
+        {
+            if (group == null) continue;
+            for (int i = 0; i < group.Routes.Count; i++)
+            {
+                var route = group.Routes[i];
+                if (route == null) continue;
+                if (!route.Enabled) continue;
+                if (route.Synth is MissingVstInstrument) continue;
+                if (seen.Add(route.Synth))
+                {
+                    list.Add(route.Synth);
+                }
+                break;
+            }
+        }
+
+        return list.ToArray();
+    }
+
+    private IEnumerable<ISynth> GetAllTargets()
+    {
+        var seen = new HashSet<ISynth>();
+        foreach (var target in SynthTargets)
+        {
+            if (target == null || target is MissingVstInstrument) continue;
+            if (seen.Add(target))
+            {
+                yield return target;
+            }
+        }
+
+        foreach (var group in PriorityGroups)
+        {
+            if (group == null) continue;
+            foreach (var route in group.Routes)
+            {
+                if (route?.Synth == null || route.Synth is MissingVstInstrument) continue;
+                if (seen.Add(route.Synth))
+                {
+                    yield return route.Synth;
+                }
+            }
         }
     }
 

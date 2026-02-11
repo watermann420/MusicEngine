@@ -24,6 +24,22 @@ sampler.MapSample(42, "ClosedHat");
 sampler.MapSample(46, "OpenHat");
 ```
 
+## Sample Folder Helper (GetSamples)
+
+```csharp
+var samples = GetSamples("Samples/Drums");
+
+var sampler = CreateSampler();
+sampler.LoadSample("Kick", samples.Kick);
+sampler.LoadSample("Snare", samples.Snare);
+
+sampler.MapSample(36, "Kick");
+sampler.MapSample(38, "Snare");
+```
+
+File names are exposed as properties (invalid chars become `_`).
+Use `samples["Kick-01"]` when you need the raw file name.
+
 ## Sample Piano (Nearest Sample Mode)
 
 ```csharp

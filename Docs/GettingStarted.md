@@ -34,6 +34,18 @@ pattern.Note(67, 1.0, 1.0, 110);
 pattern.Play();
 ```
 
+## 3b) Speech (Text-to-Speech)
+
+```csharp
+var speech = CreateSpeech();
+speech.Phrase("hello", note: 60);
+speech.Phrase("world", note: 62);
+
+midi.Device(0).to(speech);
+```
+
+Note: `CreateSpeech()` requires the optional `MusicEngine.Library` build (it loads `MusicEngine.Library.dll`). It uses Windows TTS when available and falls back to offline synthesis.
+
 ## 4) VST Example
 
 ```csharp

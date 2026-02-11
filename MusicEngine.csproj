@@ -11,11 +11,11 @@
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     </PropertyGroup>
 
-    <ItemGroup>
-      <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="4.12.0" />
-      <PackageReference Include="NAudio" Version="2.2.1" />
-      <PackageReference Include="NAudio.Midi" Version="2.2.1" />
-    </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="4.12.0" />
+    <PackageReference Include="NAudio" Version="2.2.1" />
+    <PackageReference Include="NAudio.Midi" Version="2.2.1" />
+  </ItemGroup>
 
     <ItemGroup>
       <Folder Include="DevDocs\" />
@@ -24,6 +24,7 @@
 
     <ItemGroup>
       <Compile Remove="MusicEngine.Installer\**\*.cs" />
+      <Compile Remove="MusicEngine.Library\**\*.cs" />
       <Compile Remove="Scripts\**\*.cs" />
       <Compile Remove="**\Scripts\**\*.cs" />
       <Compile Remove="Test Project\**\*.cs" />
@@ -51,6 +52,20 @@
       <Copy SourceFiles="@(NativeVstHostFiles)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
     </Target>
 
+    <Target Name="CopyLibraryContent" AfterTargets="Build">
+      <PropertyGroup>
+        <LibraryOutputDir>$(MSBuildProjectDirectory)\..\MusicEngine.Library\bin\$(Configuration)\net10.0-windows10.0.19041.0</LibraryOutputDir>
+        <LibraryFallbackDir>$(MSBuildProjectDirectory)\..\MusicEngine.Library\bin\$(Configuration)\net10.0-windows</LibraryFallbackDir>
+        <LibraryDll>$(LibraryOutputDir)\MusicEngine.Library.dll</LibraryDll>
+      </PropertyGroup>
+      <ItemGroup>
+        <LibraryFiles Include="$(LibraryDll)" Condition="Exists('$(LibraryDll)')" />
+        <LibraryFiles Include="$(LibraryOutputDir)\*.dll" Condition="Exists('$(LibraryOutputDir)')" />
+        <LibraryFiles Include="$(LibraryFallbackDir)\*.dll" Condition="!Exists('$(LibraryOutputDir)') and Exists('$(LibraryFallbackDir)')" />
+      </ItemGroup>
+      <Copy SourceFiles="@(LibraryFiles)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
+    </Target>
+
     <!-- Code Quality (.NET 10 SDK includes built-in analyzers) -->
     <PropertyGroup>
       <EnableNETAnalyzers>true</EnableNETAnalyzers>
@@ -58,4 +73,3 @@
     </PropertyGroup>
 
 </Project>
-

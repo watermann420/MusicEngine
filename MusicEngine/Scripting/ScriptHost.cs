@@ -4,7 +4,9 @@
 // Description: Script host for test_script.cs.
 
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis.CSharp.Scripting;
@@ -54,6 +56,8 @@ public sealed class ScriptHost
     private readonly Dictionary<string, VstBinding> _vstBindings = new(StringComparer.OrdinalIgnoreCase);
     private HashSet<string>? _modulesExecutedThisRun;
     private string? _currentScriptFilePath;
+    private Assembly? _libraryAssembly;
+    private bool _libraryAssemblyLoaded;
 
     /// <summary>
     /// Create a script host bound to an engine and sequencer.
@@ -76,6 +80,10 @@ public sealed class ScriptHost
                 "MusicEngine.Effects.Vst", "MusicEngine.Effects.Modulation", "MusicEngine.Core.Modulation",
                 "MusicEngine.Timing",
                 "System.Collections.Generic");
+        if (TryLoadLibraryAssembly(out var libraryAssembly))
+        {
+            _options = _options.WithReferences(new[] { libraryAssembly });
+        }
         if (!string.IsNullOrWhiteSpace(_scriptFilePath))
         {
             _options = _options.WithFilePath(_scriptFilePath);
@@ -442,6 +450,8 @@ public sealed class ScriptHost
         code = PreprocessVstAliasCalls(code);
         code = PreprocessNoteNameCalls(code);
         code = PreprocessFriendlyNoteArgs(code);
+        code = PreprocessFallbackCalls(code);
+        code = PreprocessPatternFallbackCalls(code);
         code = PreprocessIncludeCalls(code);
         return code;
     }
@@ -618,6 +628,295 @@ public sealed class ScriptHost
             @"\binclude\s+(?<name>[A-Za-z_]\w*)\s*;",
             "Use(\"${name}\", true).GetAwaiter().GetResult();",
             RegexOptions.IgnoreCase);
+    }
+
+    private static string PreprocessFallbackCalls(string code)
+    {
+        if (string.IsNullOrWhiteSpace(code)) return code;
+
+        var sb = new System.Text.StringBuilder(code.Length);
+        int index = 0;
+        while (index < code.Length)
+        {
+            int callStart = FindToCall(code, index);
+            if (callStart < 0)
+            {
+                sb.Append(code, index, code.Length - index);
+                break;
+            }
+
+            sb.Append(code, index, callStart - index);
+
+            int parenStart = FindToParen(code, callStart);
+            if (parenStart < 0)
+            {
+                sb.Append(code, callStart, code.Length - callStart);
+                break;
+            }
+
+            int parenEnd = FindMatchingParen(code, parenStart);
+            if (parenEnd < 0)
+            {
+                sb.Append(code, callStart, code.Length - callStart);
+                break;
+            }
+
+            sb.Append(code, callStart, parenStart - callStart + 1);
+
+            string args = code.Substring(parenStart + 1, parenEnd - parenStart - 1);
+            if (!TryBuildFallbackArgs(args, out var rewritten))
+            {
+                sb.Append(args);
+            }
+            else
+            {
+                sb.Append(rewritten);
+            }
+
+            sb.Append(')');
+            index = parenEnd + 1;
+        }
+
+        return sb.ToString();
+    }
+
+    private static string PreprocessPatternFallbackCalls(string code)
+    {
+        if (string.IsNullOrWhiteSpace(code)) return code;
+        return ProcessNamedFallbackCall(code, "CreatePattern");
+    }
+
+    private static string ProcessNamedFallbackCall(string code, string name)
+    {
+        var sb = new System.Text.StringBuilder(code.Length);
+        int index = 0;
+        while (index < code.Length)
+        {
+            int callStart = FindNamedCall(code, name, index);
+            if (callStart < 0)
+            {
+                sb.Append(code, index, code.Length - index);
+                break;
+            }
+
+            sb.Append(code, index, callStart - index);
+
+            int parenStart = FindCallParen(code, callStart + name.Length);
+            if (parenStart < 0)
+            {
+                sb.Append(code, callStart, code.Length - callStart);
+                break;
+            }
+
+            int parenEnd = FindMatchingParen(code, parenStart);
+            if (parenEnd < 0)
+            {
+                sb.Append(code, callStart, code.Length - callStart);
+                break;
+            }
+
+            sb.Append(code, callStart, parenStart - callStart + 1);
+
+            string args = code.Substring(parenStart + 1, parenEnd - parenStart - 1);
+            if (!TryBuildFallbackArgs(args, out var rewritten))
+            {
+                sb.Append(args);
+            }
+            else
+            {
+                sb.Append(rewritten);
+            }
+
+            sb.Append(')');
+            index = parenEnd + 1;
+        }
+
+        return sb.ToString();
+    }
+
+    private static int FindNamedCall(string code, string name, int start)
+    {
+        int index = start;
+        while (index < code.Length)
+        {
+            int found = code.IndexOf(name, index, StringComparison.OrdinalIgnoreCase);
+            if (found < 0) return -1;
+            bool boundaryBefore = found == 0 || !(char.IsLetterOrDigit(code[found - 1]) || code[found - 1] == '_');
+            int after = found + name.Length;
+            bool boundaryAfter = after >= code.Length || !(char.IsLetterOrDigit(code[after]) || code[after] == '_');
+            if (boundaryBefore && boundaryAfter)
+            {
+                return found;
+            }
+            index = found + name.Length;
+        }
+        return -1;
+    }
+
+    private static int FindToCall(string code, int start)
+    {
+        for (int i = start; i < code.Length - 2; i++)
+        {
+            if (code[i] != '.') continue;
+            char t = code[i + 1];
+            char o = code[i + 2];
+            if (char.ToLowerInvariant(t) != 't' || char.ToLowerInvariant(o) != 'o') continue;
+
+            int j = i + 3;
+            while (j < code.Length && char.IsWhiteSpace(code[j]))
+            {
+                j++;
+            }
+            if (j < code.Length && code[j] == '(')
+            {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static int FindToParen(string code, int callStart)
+    {
+        int i = callStart + 3;
+        while (i < code.Length && char.IsWhiteSpace(code[i]))
+        {
+            i++;
+        }
+        return i < code.Length && code[i] == '(' ? i : -1;
+    }
+
+    private static int FindCallParen(string code, int start)
+    {
+        int i = start;
+        while (i < code.Length && char.IsWhiteSpace(code[i]))
+        {
+            i++;
+        }
+        return i < code.Length && code[i] == '(' ? i : -1;
+    }
+
+    private static int FindMatchingParen(string code, int openIndex)
+    {
+        int depth = 0;
+        for (int i = openIndex; i < code.Length; i++)
+        {
+            char c = code[i];
+            if (c == '(') depth++;
+            else if (c == ')')
+            {
+                depth--;
+                if (depth == 0) return i;
+            }
+        }
+        return -1;
+    }
+
+    private static bool TryBuildFallbackArgs(string args, out string rewritten)
+    {
+        rewritten = args;
+        if (string.IsNullOrWhiteSpace(args)) return false;
+
+        var parts = SplitArgs(args);
+        if (parts.Count == 0) return false;
+
+        bool hasMarkers = false;
+        var priority = new List<string>();
+        var primaryList = new List<string>();
+        var fallback = new List<string>();
+
+        foreach (var raw in parts)
+        {
+            var trimmed = raw.Trim();
+            if (trimmed.Length == 0) continue;
+
+            char marker = trimmed[0];
+            if (marker == '<' || marker == '>')
+            {
+                hasMarkers = true;
+                var expr = trimmed.Substring(1).Trim();
+                if (expr.Length == 0) continue;
+                if (marker == '>')
+                {
+                    priority.Add(expr);
+                }
+                else
+                {
+                    fallback.Add(expr);
+                }
+            }
+            else
+            {
+                primaryList.Add(trimmed);
+            }
+        }
+
+        if (!hasMarkers) return false;
+
+        var ordered = new List<string>();
+        ordered.AddRange(priority);
+        ordered.AddRange(primaryList);
+        ordered.AddRange(fallback);
+
+        if (ordered.Count <= 1) return false;
+
+        var output = new System.Text.StringBuilder();
+        output.Append(ordered[0]);
+        for (int i = 1; i < ordered.Count; i++)
+        {
+            output.Append(", Fallback(");
+            output.Append(ordered[i]);
+            output.Append(')');
+        }
+
+        rewritten = output.ToString();
+        return true;
+    }
+
+    private static List<string> SplitArgs(string args)
+    {
+        var parts = new List<string>();
+        int depthParen = 0;
+        int depthBracket = 0;
+        int depthBrace = 0;
+        int start = 0;
+        for (int i = 0; i < args.Length; i++)
+        {
+            char c = args[i];
+            switch (c)
+            {
+                case '(':
+                    depthParen++;
+                    break;
+                case ')':
+                    depthParen = Math.Max(0, depthParen - 1);
+                    break;
+                case '[':
+                    depthBracket++;
+                    break;
+                case ']':
+                    depthBracket = Math.Max(0, depthBracket - 1);
+                    break;
+                case '{':
+                    depthBrace++;
+                    break;
+                case '}':
+                    depthBrace = Math.Max(0, depthBrace - 1);
+                    break;
+                case ',':
+                    if (depthParen == 0 && depthBracket == 0 && depthBrace == 0)
+                    {
+                        parts.Add(args.Substring(start, i - start));
+                        start = i + 1;
+                    }
+                    break;
+            }
+        }
+
+        if (start <= args.Length)
+        {
+            parts.Add(args.Substring(start));
+        }
+        return parts;
     }
 
     private static string ExpandNoteShorthand(string args)
@@ -1084,6 +1383,84 @@ public sealed class ScriptHost
         var line = match.Groups[2].Value.Trim();
         return string.IsNullOrWhiteSpace(path) ? null : $"{path}:{line}";
     }
+
+    private bool TryLoadLibraryAssembly(out Assembly assembly)
+    {
+        assembly = _libraryAssembly ?? null!;
+        if (_libraryAssemblyLoaded)
+        {
+            return _libraryAssembly != null;
+        }
+
+        _libraryAssemblyLoaded = true;
+        var baseDir = AppContext.BaseDirectory;
+        var path = Path.Combine(baseDir, "MusicEngine.Library.dll");
+        if (!File.Exists(path))
+        {
+            return false;
+        }
+
+        try
+        {
+            _libraryAssembly = Assembly.LoadFrom(path);
+            assembly = _libraryAssembly;
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    internal ISynth? TryCreateLibraryInstrument(string typeName)
+    {
+        if (!TryLoadLibraryAssembly(out var assembly)) return null;
+        if (assembly == null) return null;
+        var type = assembly.GetType(typeName, throwOnError: false, ignoreCase: true);
+        if (type == null) return null;
+        if (!typeof(ISynth).IsAssignableFrom(type)) return null;
+        try
+        {
+            return Activator.CreateInstance(type) as ISynth;
+        }
+        catch (TargetInvocationException ex)
+        {
+            var inner = ex.InnerException?.Message ?? ex.Message;
+            Console.WriteLine($"Script Error: Failed to create {typeName}: {inner}");
+            return null;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Script Error: Failed to create {typeName}: {ex.Message}");
+            return null;
+        }
+    }
+
+    internal bool HasLibraryInstrument(string typeName)
+    {
+        if (!TryLoadLibraryAssembly(out var assembly)) return false;
+        if (assembly == null) return false;
+        var type = assembly.GetType(typeName, throwOnError: false, ignoreCase: true);
+        return type != null && typeof(ISynth).IsAssignableFrom(type);
+    }
+
+    internal IReadOnlyList<string> GetLibraryInstrumentTypeNames()
+    {
+        if (!TryLoadLibraryAssembly(out var assembly) || assembly == null)
+        {
+            return Array.Empty<string>();
+        }
+
+        var results = new List<string>();
+        foreach (var type in assembly.GetTypes())
+        {
+            if (type.IsAbstract) continue;
+            if (!typeof(ISynth).IsAssignableFrom(type)) continue;
+            results.Add(type.FullName ?? type.Name);
+        }
+        results.Sort(StringComparer.OrdinalIgnoreCase);
+        return results;
+    }
 }
 
 /// <summary>
@@ -1130,6 +1507,18 @@ public sealed class ScriptGlobals
       private ScriptLibrary? _library;
       private ActivityController? _activity;
       private MasterBus? _masterBus;
+      private LibraryAccess? _libraryAccess;
+
+    /// <summary>
+    /// Access instruments and helpers from the optional MusicEngine.Library assembly.
+    /// </summary>
+    public LibraryAccess LibraryTools => _libraryAccess ??= new LibraryAccess(this);
+
+    /// <summary>
+    /// Create and route a library instrument by full type name.
+    /// </summary>
+    public dynamic LibraryApi(string typeName)
+        => LibraryTools.Instrument(typeName);
 
     /// <summary>
     /// Create and route a SimpleSynth instance.
@@ -1171,6 +1560,19 @@ public sealed class ScriptGlobals
       }
 
       /// <summary>
+      /// Create and route a speech (TTS) instrument.
+      /// </summary>
+    public dynamic CreateSpeech()
+    {
+        return LibraryTools.Instrument("MusicEngine.Instruments.SpeechInstrument");
+    }
+
+      /// <summary>
+      /// Create and route a speech (TTS) instrument.
+      /// </summary>
+    public dynamic Speech() => CreateSpeech();
+
+      /// <summary>
       /// Default General MIDI instrument (last created).
       /// </summary>
       public GeneralMidiInstrument piano => _lastGeneralMidi ??= CreateGeneralMidi();
@@ -1198,6 +1600,11 @@ public sealed class ScriptGlobals
       /// Default instrument (last created).
       /// </summary>
       public ISynth Instrument => instrument;
+
+    internal void SetLastInstrument(ISynth synth)
+    {
+        _lastInstrument = synth;
+    }
 
       /// <summary>
       /// Create and route a live audio input (mic/line-in) by device index.
@@ -1313,6 +1720,63 @@ public sealed class ScriptGlobals
         pattern.Sequencer = Sequencer;
         Engine.RegisterPatternForEditor(pattern);
         return pattern;
+    }
+
+    /// <summary>
+    /// Create a pattern targeting multiple synths.
+    /// </summary>
+    public Pattern CreatePattern(ISynth synth, params ISynth[] moreSynths)
+    {
+        var pattern = new Pattern(synth, moreSynths);
+        pattern.Sequencer = Sequencer;
+        Engine.RegisterPatternForEditor(pattern);
+        return pattern;
+    }
+
+    /// <summary>
+    /// Create a pattern with priority/fallback targets.
+    /// </summary>
+    public Pattern CreatePattern(ISynth primary, FallbackTarget fallback, params FallbackTarget[] fallbacks)
+    {
+        var pattern = new Pattern(primary, includePrimary: false);
+        var list = new List<ISynth> { primary };
+        if (fallback?.Synth != null) list.Add(fallback.Synth);
+        if (fallbacks != null)
+        {
+            foreach (var target in fallbacks)
+            {
+                if (target?.Synth != null)
+                {
+                    list.Add(target.Synth);
+                }
+            }
+        }
+        pattern.AddPriorityGroup(list.ToArray());
+        pattern.Sequencer = Sequencer;
+        Engine.RegisterPatternForEditor(pattern);
+        return pattern;
+    }
+
+    /// <summary>
+    /// Load a folder of samples for easy access by name.
+    /// </summary>
+    public dynamic GetSamples(string folder, string searchPattern = "*.*", bool recursive = true, bool audioOnly = true)
+    {
+        var resolved = ResolvePath(folder);
+        var samples = new SampleFolder(resolved, searchPattern, recursive, audioOnly);
+        return new CaseInsensitiveProxy(samples);
+    }
+
+    private string ResolvePath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return string.Empty;
+        if (Path.IsPathRooted(path)) return path;
+
+        var baseDir = !string.IsNullOrWhiteSpace(ScriptFilePath)
+            ? Path.GetDirectoryName(ScriptFilePath)
+            : AppContext.BaseDirectory;
+
+        return string.IsNullOrWhiteSpace(baseDir) ? path : Path.Combine(baseDir, path);
     }
 
     /// <summary>
@@ -1480,6 +1944,36 @@ public sealed class ScriptGlobals
     /// Global activity controller.
     /// </summary>
     public ActivityController activity => Activity;
+
+    /// <summary>
+    /// Audio renderer keyword for ASIO output.
+    /// </summary>
+    public string asio => "asio";
+    /// <summary>
+    /// Audio renderer keyword for ASIO output.
+    /// </summary>
+    public string Asio => asio;
+    /// <summary>
+    /// Audio renderer keyword for WaveOut/MME output.
+    /// </summary>
+    public string waveout => "waveout";
+    /// <summary>
+    /// Audio renderer keyword for WaveOut/MME output.
+    /// </summary>
+    public string WaveOut => waveout;
+    /// <summary>
+    /// Audio renderer keyword for WaveOut/MME output.
+    /// </summary>
+    public string mme => "waveout";
+    /// <summary>
+    /// Audio renderer keyword for WaveOut/MME output.
+    /// </summary>
+    public string MME => waveout;
+
+    /// <summary>
+    /// Create a fallback target for priority MIDI routing.
+    /// </summary>
+    public FallbackTarget Fallback(ISynth synth) => new FallbackTarget(synth);
 
     /// <summary>
     /// Load and run a module script by name.

@@ -26,4 +26,6 @@ public sealed class NoteActivity
     public DateTime StartedUtc { get; init; }
 
     internal CancellationTokenSource? SlideCancel { get; init; }
+
+    internal ISynth[]? Targets { get; init; }
 }
