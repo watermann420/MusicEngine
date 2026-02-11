@@ -21,6 +21,9 @@ internal sealed class SampleFolder : DynamicObject
     private readonly Dictionary<string, string> _aliases = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<string> _names = new();
 
+    /// <summary>
+    /// Scan a folder for sample files and expose them by name.
+    /// </summary>
     public SampleFolder(string folder, string searchPattern, bool recursive, bool audioOnly)
     {
         Folder = folder ?? string.Empty;
@@ -50,13 +53,31 @@ internal sealed class SampleFolder : DynamicObject
         }
     }
 
+    /// <summary>
+    /// Source folder path.
+    /// </summary>
     public string Folder { get; }
+    /// <summary>
+    /// Search pattern used for file discovery.
+    /// </summary>
     public string SearchPattern { get; }
+    /// <summary>
+    /// True to scan subfolders.
+    /// </summary>
     public bool Recursive { get; }
+    /// <summary>
+    /// True to include only audio file extensions.
+    /// </summary>
     public bool AudioOnly { get; }
 
+    /// <summary>
+    /// All discovered sample names.
+    /// </summary>
     public IReadOnlyList<string> Names => _names;
 
+    /// <summary>
+    /// Get a sample path by name or alias.
+    /// </summary>
     public string Get(string name)
     {
         if (string.IsNullOrWhiteSpace(name)) return string.Empty;
@@ -66,8 +87,14 @@ internal sealed class SampleFolder : DynamicObject
         return _aliases.TryGetValue(alias, out path) ? path : string.Empty;
     }
 
+    /// <summary>
+    /// Indexer for sample paths by name.
+    /// </summary>
     public string this[string name] => Get(name);
 
+    /// <summary>
+    /// Dynamic member access for sample names.
+    /// </summary>
     public override bool TryGetMember(GetMemberBinder binder, out object? result)
     {
         var path = Get(binder.Name);
@@ -81,6 +108,9 @@ internal sealed class SampleFolder : DynamicObject
         return false;
     }
 
+    /// <summary>
+    /// List all dynamic member names for tooling.
+    /// </summary>
     public override IEnumerable<string> GetDynamicMemberNames()
         => _aliases.Keys.Concat(_paths.Keys);
 

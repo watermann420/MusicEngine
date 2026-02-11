@@ -15,11 +15,13 @@ Audio.master.Gain(0.1); // Set master gain to a safe level (adjust as needed)
 var vital = CreateVst("Vital");
 var ch1 = Audio.CreateChannel(1);
 ch1.to(master);
-ch1.Gain(1.0);
+ch1.Gain(1.0); 
 ch1.Pan(0.0); 
 ch1.Route(vital);
 ch1.Route(synth);
 ch1.Route(piano);
+
+
 
 // Create a VST effect instance (replace "Ozone 12 Equalizer" with your desired plugin name)
 var eq1 = CreateVstEffect("Ozone 12 Equalizer");
@@ -29,11 +31,8 @@ ch1.Effect(fx);
 
 
 //midi setup
-//midi.Device(0).to(vital, < synth); // MIDI channel 1 (0-based)
-
-Midi.Device(0).Pitchbend().to((Action<float>)(val => synth.PitchBend(val * 2f - 1f))); // map wheel to -1..1
-Midi.Device(0).Pitchbend().to((Action<float>)(val => piano.PitchBend(val * 2f - 1f))); // map wheel to -1..1
-Midi.Device(0).Pitchbend().to((Action<float>)(val => vital.PitchBend(val * 2f - 1f))); // -1..1
+midi.Device(0).to(vital, < synth); // MIDI channel 1 (0-based)
+Midi.Device(0).Pitchbend().to(val => synth.piano.vital.PitchBend(val * 2f - 1f));
 //midi.device(0).log.info(true); // Log MIDI input for debugging and mapping midi controls
 
 

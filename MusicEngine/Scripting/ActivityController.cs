@@ -16,6 +16,9 @@ public sealed class ActivityController
     private readonly AudioEngine _engine;
     private readonly Sequencer _sequencer;
 
+    /// <summary>
+    /// Create an activity controller for the current script context.
+    /// </summary>
     public ActivityController(ScriptGlobals globals)
     {
         _globals = globals ?? throw new ArgumentNullException(nameof(globals));

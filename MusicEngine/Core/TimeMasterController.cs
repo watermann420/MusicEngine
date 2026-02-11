@@ -292,6 +292,9 @@ public sealed class TimeMasterController : IDisposable
         }
     }
 
+    /// <summary>
+    /// Stop playback and clear registered targets.
+    /// </summary>
     public void Dispose()
     {
         Stop();

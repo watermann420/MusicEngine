@@ -9,6 +9,9 @@ namespace MusicEngine.Scripting;
 
 internal static class ActionBinder
 {
+    /// <summary>
+    /// Bind a rising-edge trigger to a parameterless method.
+    /// </summary>
     public static Action<float> Trigger(object target, string method)
     {
         if (target == null) throw new ArgumentNullException(nameof(target));
@@ -27,6 +30,9 @@ internal static class ActionBinder
         };
     }
 
+    /// <summary>
+    /// Bind a normalized value to a single-parameter method with min/max scaling.
+    /// </summary>
     public static Action<float> Call(object target, string method, float min, float max)
     {
         if (target == null) throw new ArgumentNullException(nameof(target));
@@ -40,6 +46,9 @@ internal static class ActionBinder
         };
     }
 
+    /// <summary>
+    /// Bind a normalized value to a single-parameter method with a custom mapper.
+    /// </summary>
     public static Action<float> Call(object target, string method, Func<float, float> map)
     {
         if (target == null) throw new ArgumentNullException(nameof(target));
@@ -54,6 +63,9 @@ internal static class ActionBinder
         };
     }
 
+    /// <summary>
+    /// Toggle a boolean property/field on rising edge.
+    /// </summary>
     public static Action<float> Toggle(object target, string member)
     {
         if (target == null) throw new ArgumentNullException(nameof(target));
@@ -73,6 +85,9 @@ internal static class ActionBinder
         };
     }
 
+    /// <summary>
+    /// Switch a boolean property/field based on the current value.
+    /// </summary>
     public static Action<float> Switch(object target, string member)
     {
         if (target == null) throw new ArgumentNullException(nameof(target));
@@ -86,6 +101,9 @@ internal static class ActionBinder
         };
     }
 
+    /// <summary>
+    /// Toggle a boolean getter/setter on rising edge.
+    /// </summary>
     public static Action<float> Toggle(Func<bool> getter, Action<bool> setter)
     {
         if (getter == null) throw new ArgumentNullException(nameof(getter));
@@ -103,6 +121,9 @@ internal static class ActionBinder
         };
     }
 
+    /// <summary>
+    /// Switch a boolean getter/setter based on the current value.
+    /// </summary>
     public static Action<float> Switch(Func<bool> getter, Action<bool> setter)
     {
         if (getter == null) throw new ArgumentNullException(nameof(getter));

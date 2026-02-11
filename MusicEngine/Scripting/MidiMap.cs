@@ -88,18 +88,27 @@ public static class MidiMapLibrary
 {
     private static readonly Dictionary<string, MidiMap> Maps = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Register a named MIDI map preset.
+    /// </summary>
     public static void Register(string name, MidiMap map)
     {
         if (string.IsNullOrWhiteSpace(name) || map == null) return;
         Maps[name] = map;
     }
 
+    /// <summary>
+    /// Get a registered MIDI map by name.
+    /// </summary>
     public static MidiMap? Get(string name)
     {
         if (string.IsNullOrWhiteSpace(name)) return null;
         return Maps.TryGetValue(name, out var map) ? map : null;
     }
 
+    /// <summary>
+    /// List all registered map names.
+    /// </summary>
     public static IReadOnlyList<string> List()
     {
         var keys = new List<string>(Maps.Keys);

@@ -8,6 +8,9 @@ using MusicEngine.Effects.Modulation;
 
 namespace MusicEngine.Core.Modulation;
 
+/// <summary>
+/// Modulated variable with chained modifiers (random/LFO/map/if).
+/// </summary>
 public sealed class ModVar : IModNode
 {
     private readonly Func<float> _get;
@@ -25,18 +28,27 @@ public sealed class ModVar : IModNode
         ModEngine.Shared.Register(this);
     }
 
+    /// <summary>
+    /// Enable or disable modulation updates.
+    /// </summary>
     public bool Enabled
     {
         get => _enabled;
         set => _enabled = value;
     }
 
+    /// <summary>
+    /// Enable or disable modulation updates (fluent).
+    /// </summary>
     public ModVar Enable(bool enabled)
     {
         _enabled = enabled;
         return this;
     }
 
+    /// <summary>
+    /// Base value before modulation.
+    /// </summary>
     public float Value
     {
         get => _baseValue;
@@ -47,42 +59,63 @@ public sealed class ModVar : IModNode
         }
     }
 
+    /// <summary>
+    /// Set the base value (fluent).
+    /// </summary>
     public ModVar Set(float value)
     {
         Value = value;
         return this;
     }
 
+    /// <summary>
+    /// Clear all modulators.
+    /// </summary>
     public ModVar Clear()
     {
         _modulators.Clear();
         return this;
     }
 
+    /// <summary>
+    /// Add a random value modulator.
+    /// </summary>
     public ModVar Random(float min, float max, double everyMs = 500)
     {
         _modulators.Add(new RandomModulator(min, max, everyMs));
         return this;
     }
 
+    /// <summary>
+    /// Add an LFO modulator.
+    /// </summary>
     public ModVar Lfo(float min, float max, float rateHz = 1f)
     {
         _modulators.Add(new LfoValueModulator(min, max, rateHz));
         return this;
     }
 
+    /// <summary>
+    /// Add a mapping transform modulator.
+    /// </summary>
     public ModVar Map(Func<float, float> transform)
     {
         _modulators.Add(new MapModulator(transform));
         return this;
     }
 
+    /// <summary>
+    /// Add a conditional modulator.
+    /// </summary>
     public ModVar If(Func<bool> predicate, float whenTrue, float whenFalse)
     {
         _modulators.Add(new IfModulator(predicate, whenTrue, whenFalse));
         return this;
     }
 
+    /// <summary>
+    /// Update the modulated value for this frame.
+    /// </summary>
     public void Update(double deltaSeconds)
     {
         if (!_enabled) return;
@@ -105,6 +138,9 @@ public sealed class ModVar : IModNode
         private double _elapsed;
         private float _current;
 
+        /// <summary>
+        /// Create a random modulator with a fixed interval.
+        /// </summary>
         public RandomModulator(float min, float max, double intervalMs)
         {
             _min = min;
@@ -113,6 +149,9 @@ public sealed class ModVar : IModNode
             _current = Next();
         }
 
+        /// <summary>
+        /// Return the current random value.
+        /// </summary>
         public float Apply(float value, double deltaSeconds)
         {
             _elapsed += deltaSeconds;
@@ -134,6 +173,9 @@ public sealed class ModVar : IModNode
     {
         private readonly LfoModulator _lfo;
 
+        /// <summary>
+        /// Create an LFO modulator.
+        /// </summary>
         public LfoValueModulator(float min, float max, float rateHz)
         {
             _lfo = new LfoModulator
@@ -144,6 +186,9 @@ public sealed class ModVar : IModNode
             };
         }
 
+        /// <summary>
+        /// Return the current LFO value.
+        /// </summary>
         public float Apply(float value, double deltaSeconds)
         {
             return _lfo.NextValue(deltaSeconds);
@@ -154,11 +199,17 @@ public sealed class ModVar : IModNode
     {
         private readonly Func<float, float> _map;
 
+        /// <summary>
+        /// Create a mapping modulator.
+        /// </summary>
         public MapModulator(Func<float, float> map)
         {
             _map = map ?? throw new ArgumentNullException(nameof(map));
         }
 
+        /// <summary>
+        /// Apply the mapping function.
+        /// </summary>
         public float Apply(float value, double deltaSeconds)
         {
             return _map(value);
@@ -171,6 +222,9 @@ public sealed class ModVar : IModNode
         private readonly float _trueValue;
         private readonly float _falseValue;
 
+        /// <summary>
+        /// Create a conditional modulator.
+        /// </summary>
         public IfModulator(Func<bool> predicate, float trueValue, float falseValue)
         {
             _predicate = predicate ?? throw new ArgumentNullException(nameof(predicate));
@@ -178,6 +232,9 @@ public sealed class ModVar : IModNode
             _falseValue = falseValue;
         }
 
+        /// <summary>
+        /// Choose between true/false values based on predicate.
+        /// </summary>
         public float Apply(float value, double deltaSeconds)
         {
             return _predicate() ? _trueValue : _falseValue;

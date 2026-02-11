@@ -141,6 +141,9 @@ public sealed class ScriptHost
         return await RefreshScriptAsync(code, skipIfUnchanged);
     }
 
+    /// <summary>
+    /// Clear state then execute all main scripts.
+    /// </summary>
     public async Task<bool> RefreshMainScriptsAsync()
     {
         ClearState();
@@ -452,6 +455,7 @@ public sealed class ScriptHost
         code = PreprocessFriendlyNoteArgs(code);
         code = PreprocessFallbackCalls(code);
         code = PreprocessPatternFallbackCalls(code);
+        code = PreprocessMultiTargetCalls(code);
         code = PreprocessIncludeCalls(code);
         return code;
     }
@@ -505,6 +509,33 @@ public sealed class ScriptHost
             RegexOptions.IgnoreCase);
 
         return regex.Replace(code, @"var ${var} = ${call}(""${name}"", ""${var}"")");
+    }
+
+    private static string PreprocessMultiTargetCalls(string code)
+    {
+        if (string.IsNullOrWhiteSpace(code)) return code;
+
+        var regex = new Regex(
+            @"\.to\s*\(\s*(?<arg>(?:\([^\)]*\)|[A-Za-z_]\w*))\s*=>\s*(?<chain>[A-Za-z_]\w*(?:\s*\.\s*[A-Za-z_]\w*)+)\s*\.\s*(?<method>[A-Za-z_]\w*)\s*\(",
+            RegexOptions.Compiled);
+
+        return regex.Replace(code, match =>
+        {
+            var arg = match.Groups["arg"].Value;
+            var chain = match.Groups["chain"].Value;
+            var method = match.Groups["method"].Value;
+            var parts = chain.Split('.')
+                .Select(part => part.Trim())
+                .Where(part => !string.IsNullOrWhiteSpace(part))
+                .ToArray();
+            if (parts.Length < 2)
+            {
+                return match.Value;
+            }
+
+            var targets = string.Join(", ", parts);
+            return $".to({arg} => Targets({targets}).{method}(";
+        });
     }
 
     private static string PreprocessNoteNameCalls(string code)
@@ -1519,6 +1550,12 @@ public sealed class ScriptGlobals
     /// </summary>
     public dynamic LibraryApi(string typeName)
         => LibraryTools.Instrument(typeName);
+
+    /// <summary>
+    /// Combine multiple targets into a single dynamic proxy that forwards method calls to each target.
+    /// </summary>
+    public dynamic Targets(params object?[] targets)
+        => new MultiTargetProxy(targets);
 
     /// <summary>
     /// Create and route a SimpleSynth instance.

@@ -19,6 +19,9 @@ namespace MusicEngine.Scripting.FluentApi;
 public sealed class AudioControl
 {
     private readonly ScriptGlobals _globals;
+    /// <summary>
+    /// Create a new audio control wrapper for the current script context.
+    /// </summary>
     public AudioControl(ScriptGlobals globals) => _globals = globals;
 
     /// <summary>
@@ -127,6 +130,9 @@ public sealed class AudioControl
 public sealed class AllChannelsControl
 {
     private readonly AudioEngine _engine;
+    /// <summary>
+    /// Create a control facade for all channels.
+    /// </summary>
     public AllChannelsControl(AudioEngine engine) => _engine = engine;
 
     /// <summary>
@@ -171,6 +177,9 @@ public sealed class MasterAudioControl
 {
     private readonly AudioEngine _engine;
     private RecordingSession? _lastRecording;
+    /// <summary>
+    /// Create a control facade for the master channel.
+    /// </summary>
     public MasterAudioControl(AudioEngine engine) => _engine = engine;
 
     /// <summary>
@@ -280,6 +289,9 @@ public sealed class AudioChannelControl
     private readonly int _index;
     private RecordingSession? _lastRecording;
 
+    /// <summary>
+    /// Create a control facade for a specific channel index.
+    /// </summary>
     public AudioChannelControl(ScriptGlobals globals, int index)
     {
         _globals = globals;
@@ -621,6 +633,9 @@ public sealed class ChannelSendControl
     private readonly int _sourceIndex;
     private readonly int _targetIndex;
 
+    /// <summary>
+    /// Create a send from one channel to another with an initial gain.
+    /// </summary>
     public ChannelSendControl(AudioEngine engine, int sourceIndex, int targetIndex, float gain)
     {
         _engine = engine;
@@ -649,6 +664,9 @@ public sealed class ChannelSendControl
 public sealed class OutputDeviceControl
 {
     private readonly AudioEngine _engine;
+    /// <summary>
+    /// Create output device utilities bound to the engine.
+    /// </summary>
     public OutputDeviceControl(AudioEngine engine) => _engine = engine;
 
     /// <summary>
@@ -738,6 +756,9 @@ public sealed class OutputDeviceControl
 public sealed class InputDeviceControl
 {
     private readonly AudioEngine _engine;
+    /// <summary>
+    /// Create input device utilities bound to the engine.
+    /// </summary>
     public InputDeviceControl(AudioEngine engine) => _engine = engine;
 
     /// <summary>
@@ -766,6 +787,9 @@ public sealed class InputDeviceControl
 public sealed class DjCueControl
 {
     private readonly AudioEngine _engine;
+    /// <summary>
+    /// Create DJ cue utilities bound to the engine.
+    /// </summary>
     public DjCueControl(AudioEngine engine) => _engine = engine;
 
     /// <summary>
@@ -787,6 +811,9 @@ public sealed class DjCueSwitch
     private bool _cueEnabled;
     private float _cueGain;
 
+    /// <summary>
+    /// Create a cue switch with audience and headphone channel indices.
+    /// </summary>
     public DjCueSwitch(AudioEngine engine, int audienceChannel, int headphonesChannel, float cueGain)
     {
         _engine = engine;
@@ -858,6 +885,9 @@ public sealed class RecordingControl
     private bool _stopForRender;
     private CancellationTokenSource? _oneShotCts;
 
+    /// <summary>
+    /// Create recording control wrappers.
+    /// </summary>
     public RecordingControl(Func<string, string?, RecordingOptions?, RecordingSession> start, Action<RecordingSession?> stop, Func<string> defaultPath)
     {
         _start = start;

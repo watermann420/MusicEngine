@@ -16,6 +16,9 @@ public sealed class AudioClip : ISampleProvider, IDisposable
     private readonly AudioFileReader _reader;
     private bool _disposed;
 
+    /// <summary>
+    /// Load an audio file for playback.
+    /// </summary>
     public AudioClip(string path)
     {
         if (string.IsNullOrWhiteSpace(path))
@@ -51,6 +54,9 @@ public sealed class AudioClip : ISampleProvider, IDisposable
         return read;
     }
 
+    /// <summary>
+    /// Dispose the underlying file reader.
+    /// </summary>
     public void Dispose()
     {
         if (_disposed) return;

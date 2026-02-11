@@ -23,6 +23,9 @@ public sealed class AudioInput : ISampleProvider, IInstrumentControls, IDisposab
     private bool _mute;
     private float _pan;
 
+    /// <summary>
+    /// Create an input from a specific MMDevice and index.
+    /// </summary>
     public AudioInput(MMDevice device, int deviceIndex)
     {
         DeviceIndex = deviceIndex;
@@ -66,14 +69,32 @@ public sealed class AudioInput : ISampleProvider, IInstrumentControls, IDisposab
         UpdatePan();
     }
 
+    /// <summary>
+    /// Device index used to create this input.
+    /// </summary>
     public int DeviceIndex { get; }
+    /// <summary>
+    /// Windows device ID string.
+    /// </summary>
     public string DeviceId { get; }
+    /// <summary>
+    /// Friendly device name.
+    /// </summary>
     public string Name { get; set; }
 
+    /// <summary>
+    /// Output wave format of the input stream.
+    /// </summary>
     public WaveFormat WaveFormat => _source.WaveFormat;
 
+    /// <summary>
+    /// Read audio samples into the buffer.
+    /// </summary>
     public int Read(float[] buffer, int offset, int count) => _source.Read(buffer, offset, count);
 
+    /// <summary>
+    /// Input gain (0..1).
+    /// </summary>
     public float Gain
     {
         get => _gain;
@@ -84,12 +105,18 @@ public sealed class AudioInput : ISampleProvider, IInstrumentControls, IDisposab
         }
     }
 
+    /// <summary>
+    /// Input gain (lowercase alias).
+    /// </summary>
     public float gain
     {
         get => Gain;
         set => Gain = value;
     }
 
+    /// <summary>
+    /// Mute input.
+    /// </summary>
     public bool Mute
     {
         get => _mute;
@@ -100,18 +127,27 @@ public sealed class AudioInput : ISampleProvider, IInstrumentControls, IDisposab
         }
     }
 
+    /// <summary>
+    /// Mute input (lowercase alias).
+    /// </summary>
     public bool mute
     {
         get => Mute;
         set => Mute = value;
     }
 
+    /// <summary>
+    /// Volume alias for Gain.
+    /// </summary>
     public float Volume
     {
         get => Gain;
         set => Gain = value;
     }
 
+    /// <summary>
+    /// Pan (-1..1).
+    /// </summary>
     public float Pan
     {
         get => _pan;
@@ -122,11 +158,26 @@ public sealed class AudioInput : ISampleProvider, IInstrumentControls, IDisposab
         }
     }
 
+    /// <summary>
+    /// Mod wheel value (0..1).
+    /// </summary>
     public float ModWheel { get; set; }
+    /// <summary>
+    /// Optional MIDI channel filter (-1 = any).
+    /// </summary>
     public int Channel { get; set; } = -1;
+    /// <summary>
+    /// Reverb send amount.
+    /// </summary>
     public float Reverb { get; set; }
+    /// <summary>
+    /// Chorus send amount.
+    /// </summary>
     public float Chorus { get; set; }
 
+    /// <summary>
+    /// Stop capture and release resources.
+    /// </summary>
     public void Dispose()
     {
         _capture.StopRecording();

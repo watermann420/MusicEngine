@@ -9,6 +9,11 @@
             Simple audio file clip for playback and routing.
             </summary>
         </member>
+        <member name="M:MusicEngine.Core.AudioClip.#ctor(System.String)">
+            <summary>
+            Load an audio file for playback.
+            </summary>
+        </member>
         <member name="P:MusicEngine.Core.AudioClip.Loop">
             <summary>
             When enabled, the clip restarts automatically at the end.
@@ -24,9 +29,19 @@
             Read audio samples into the buffer.
             </summary>
         </member>
+        <member name="M:MusicEngine.Core.AudioClip.Dispose">
+            <summary>
+            Dispose the underlying file reader.
+            </summary>
+        </member>
         <member name="T:MusicEngine.Core.AudioDeck">
             <summary>
             Sample-accurate audio deck for scrubbing, looping, and scratch playback.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioDeck.#ctor(System.String,System.Nullable{System.Int32})">
+            <summary>
+            Create a deck with a name and optional sample rate override.
             </summary>
         </member>
         <member name="P:MusicEngine.Core.AudioDeck.Name">
@@ -82,6 +97,11 @@
         <member name="M:MusicEngine.Core.AudioDeck.ScratchSeconds(System.Double)">
             <summary>
             Scratch (scrub) by delta seconds.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioDeck.Read(System.Single[],System.Int32,System.Int32)">
+            <summary>
+            Read audio samples into the buffer.
             </summary>
         </member>
         <member name="T:MusicEngine.Core.AudioEngine">
@@ -506,6 +526,86 @@
             Dispose the audio engine and release resources.
             </summary>
         </member>
+        <member name="T:MusicEngine.Core.AudioEngine.AudioChannel">
+            <summary>
+            Internal channel state bundle.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.AudioEngine.AudioChannel.Index">
+            <summary>
+            Channel index (1-based).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.AudioEngine.AudioChannel.Mixer">
+            <summary>
+            Channel mixer.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.AudioEngine.AudioChannel.Effects">
+            <summary>
+            Effect chain for this channel.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.AudioEngine.AudioChannel.Pan">
+            <summary>
+            Pan stage.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.AudioEngine.AudioChannel.Volume">
+            <summary>
+            Volume stage.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.AudioEngine.AudioChannel.Tap">
+            <summary>
+            Recording tap for the channel.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.AudioEngine.AudioChannel.ChannelGain">
+            <summary>
+            Additional gain multiplier.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.AudioChannel.#ctor(System.Int32,NAudio.Wave.SampleProviders.MixingSampleProvider,MusicEngine.Effects.Audio.AudioEffectChain,MusicEngine.Effects.Audio.PanSampleProvider,NAudio.Wave.SampleProviders.VolumeSampleProvider,MusicEngine.Core.RecordingTap)">
+            <summary>
+            Create a channel state bundle.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Core.AudioEngine.ChannelSend">
+            <summary>
+            Internal channel send state.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.AudioEngine.ChannelSend.Source">
+            <summary>
+            Source channel index.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.AudioEngine.ChannelSend.Target">
+            <summary>
+            Target channel index.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.AudioEngine.ChannelSend.Buffer">
+            <summary>
+            Buffered send stream.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.AudioEngine.ChannelSend.Volume">
+            <summary>
+            Gain stage for the send.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.AudioEngine.ChannelSend.Handler">
+            <summary>
+            Callback for receiving samples.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.ChannelSend.#ctor(System.Int32,System.Int32,NAudio.Wave.BufferedWaveProvider,NAudio.Wave.SampleProviders.VolumeSampleProvider,System.Action{System.Single[],System.Int32,System.Int32})">
+            <summary>
+            Create a channel send state bundle.
+            </summary>
+        </member>
         <member name="M:MusicEngine.Core.AudioEngine.ListInputDevices">
             <summary>
             List available audio input devices (capture endpoints).
@@ -521,9 +621,114 @@
             Create a live audio input from a capture device name.
             </summary>
         </member>
+        <member name="T:MusicEngine.Core.AudioEngine.AudioOutputDeviceInfo">
+            <summary>
+            Output device info (index, ID, name, channels, sample rate).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.AudioOutputDeviceInfo.#ctor(System.Int32,System.String,System.String,System.Int32,System.Int32)">
+            <summary>
+            Output device info (index, ID, name, channels, sample rate).
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Core.AudioEngine.AudioInputDeviceInfo">
+            <summary>
+            Input device info (index, ID, name).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.AudioInputDeviceInfo.#ctor(System.Int32,System.String,System.String)">
+            <summary>
+            Input device info (index, ID, name).
+            </summary>
+        </member>
         <member name="T:MusicEngine.Core.AudioInput">
             <summary>
             Live audio input source (mic/line-in).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioInput.#ctor(NAudio.CoreAudioApi.MMDevice,System.Int32)">
+            <summary>
+            Create an input from a specific MMDevice and index.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.AudioInput.DeviceIndex">
+            <summary>
+            Device index used to create this input.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.AudioInput.DeviceId">
+            <summary>
+            Windows device ID string.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.AudioInput.Name">
+            <summary>
+            Friendly device name.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.AudioInput.WaveFormat">
+            <summary>
+            Output wave format of the input stream.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioInput.Read(System.Single[],System.Int32,System.Int32)">
+            <summary>
+            Read audio samples into the buffer.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.AudioInput.Gain">
+            <summary>
+            Input gain (0..1).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.AudioInput.gain">
+            <summary>
+            Input gain (lowercase alias).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.AudioInput.Mute">
+            <summary>
+            Mute input.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.AudioInput.mute">
+            <summary>
+            Mute input (lowercase alias).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.AudioInput.Volume">
+            <summary>
+            Volume alias for Gain.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.AudioInput.Pan">
+            <summary>
+            Pan (-1..1).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.AudioInput.ModWheel">
+            <summary>
+            Mod wheel value (0..1).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.AudioInput.Channel">
+            <summary>
+            Optional MIDI channel filter (-1 = any).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.AudioInput.Reverb">
+            <summary>
+            Reverb send amount.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.AudioInput.Chorus">
+            <summary>
+            Chorus send amount.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioInput.Dispose">
+            <summary>
+            Stop capture and release resources.
             </summary>
         </member>
         <member name="T:MusicEngine.Core.RecordingOptions">
@@ -574,6 +779,86 @@
         <member name="M:MusicEngine.Core.RecordingSession.Dispose">
             <summary>
             Finalize and write the recording to disk.
+            </summary>
+        </member>
+        <member name="E:MusicEngine.Core.RecordingTap.SamplesAvailable">
+            <summary>
+            Fired when samples are captured by this tap.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.RecordingTap.#ctor(NAudio.Wave.ISampleProvider)">
+            <summary>
+            Create a recording tap for a source provider.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.RecordingTap.WaveFormat">
+            <summary>
+            Output wave format.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.RecordingTap.StartRecording(System.String,System.String,MusicEngine.Core.RecordingOptions)">
+            <summary>
+            Start a recording session.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.RecordingTap.StopRecording(MusicEngine.Core.RecordingSession)">
+            <summary>
+            Stop a recording session (defaults to last).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.RecordingTap.StopAll">
+            <summary>
+            Stop and dispose all sessions.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.RecordingTap.Read(System.Single[],System.Int32,System.Int32)">
+            <summary>
+            Read samples and forward to active sessions.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioVirtualOutput.#ctor(NAudio.CoreAudioApi.MMDevice,NAudio.Wave.WaveFormat,System.Int32,System.Int32)">
+            <summary>
+            Create a virtual output routed to a specific device.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.AudioVirtualOutput.DeviceId">
+            <summary>
+            Target device ID.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.AudioVirtualOutput.DeviceName">
+            <summary>
+            Target device name.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.AudioVirtualOutput.OutputChannelOffset">
+            <summary>
+            Output channel offset on the target device.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioVirtualOutput.Push(System.Single[],System.Int32,System.Int32)">
+            <summary>
+            Push interleaved float samples into the virtual output buffer.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioVirtualOutput.Dispose">
+            <summary>
+            Stop output and release resources.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.ChannelMappingSampleProvider.#ctor(NAudio.Wave.ISampleProvider,System.Int32,System.Int32)">
+            <summary>
+            Map a source provider into a larger output channel layout.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.ChannelMappingSampleProvider.WaveFormat">
+            <summary>
+            Output wave format.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.ChannelMappingSampleProvider.Read(System.Single[],System.Int32,System.Int32)">
+            <summary>
+            Read and map samples into the output buffer.
             </summary>
         </member>
         <member name="T:MusicEngine.Core.Guard">
@@ -640,6 +925,126 @@
             Fluent helpers for instrument setup.
             </summary>
         </member>
+        <member name="M:MusicEngine.Core.InstrumentFluentExtensions.Volume``1(``0,System.Single)">
+            <summary>
+            Set instrument volume (fluent).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.InstrumentFluentExtensions.volume``1(``0,System.Single)">
+            <summary>
+            Set instrument volume (lowercase alias).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.InstrumentFluentExtensions.Pan``1(``0,System.Single)">
+            <summary>
+            Set instrument pan (fluent).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.InstrumentFluentExtensions.pan``1(``0,System.Single)">
+            <summary>
+            Set instrument pan (lowercase alias).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.InstrumentFluentExtensions.Channel``1(``0,System.Int32)">
+            <summary>
+            Set instrument MIDI channel (fluent).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.InstrumentFluentExtensions.channel``1(``0,System.Int32)">
+            <summary>
+            Set instrument MIDI channel (lowercase alias).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.InstrumentFluentExtensions.Reverb``1(``0,System.Single)">
+            <summary>
+            Set instrument reverb amount (fluent).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.InstrumentFluentExtensions.reverb``1(``0,System.Single)">
+            <summary>
+            Set instrument reverb amount (lowercase alias).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.InstrumentFluentExtensions.Chorus``1(``0,System.Single)">
+            <summary>
+            Set instrument chorus amount (fluent).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.InstrumentFluentExtensions.chorus``1(``0,System.Single)">
+            <summary>
+            Set instrument chorus amount (lowercase alias).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.InstrumentFluentExtensions.ModWheel``1(``0,System.Single)">
+            <summary>
+            Set instrument mod wheel value (fluent).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.InstrumentFluentExtensions.modwheel``1(``0,System.Single)">
+            <summary>
+            Set instrument mod wheel value (lowercase alias).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.InstrumentFluentExtensions.PitchBend(MusicEngine.Core.ISynth,System.Single)">
+            <summary>
+            Set pitch bend for VSTs or mapped instruments (fluent).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.InstrumentFluentExtensions.Pitchbend(MusicEngine.Core.ISynth,System.Single)">
+            <summary>
+            Set pitch bend (alias).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.InstrumentFluentExtensions.pitchbend(MusicEngine.Core.ISynth,System.Single)">
+            <summary>
+            Set pitch bend (lowercase alias).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.InstrumentFluentExtensions.Name``1(``0,System.String)">
+            <summary>
+            Set instrument name (fluent).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.InstrumentFluentExtensions.name``1(``0,System.String)">
+            <summary>
+            Set instrument name (lowercase alias).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.InstrumentFluentExtensions.Program(MusicEngine.Instruments.GeneralMidiInstrument,MusicEngine.Instruments.GeneralMidiProgram)">
+            <summary>
+            Set General MIDI program (fluent).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.InstrumentFluentExtensions.program(MusicEngine.Instruments.GeneralMidiInstrument,MusicEngine.Instruments.GeneralMidiProgram)">
+            <summary>
+            Set General MIDI program (lowercase alias).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.InstrumentFluentExtensions.Gain(MusicEngine.Core.AudioInput,System.Single)">
+            <summary>
+            Set input gain (fluent).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.InstrumentFluentExtensions.gain(MusicEngine.Core.AudioInput,System.Single)">
+            <summary>
+            Set input gain (lowercase alias).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.InstrumentFluentExtensions.Mute(MusicEngine.Core.AudioInput,System.Boolean)">
+            <summary>
+            Set input mute (fluent).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.InstrumentFluentExtensions.mute(MusicEngine.Core.AudioInput,System.Boolean)">
+            <summary>
+            Set input mute (lowercase alias).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.InstrumentFluentExtensions.State(MusicEngine.Vst.IVstInstrument,System.String)">
+            <summary>
+            Restore VST state from base64 (fluent).
+            </summary>
+        </member>
         <member name="T:MusicEngine.Core.ISynth">
             <summary>
             Minimal synth interface for note playback and parameter control.
@@ -675,6 +1080,21 @@
             <param name="name">Parameter name.</param>
             <param name="value">Normalized or raw value (implementation-specific).</param>
         </member>
+        <member name="M:MusicEngine.Core.MidiOutPool.Rent(System.Int32)">
+            <summary>
+            Rent or open a MIDI output for the given device.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.MidiOutPool.Return(System.Int32)">
+            <summary>
+            Return a MIDI output reference and dispose when no longer used.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.MidiOutPool.DisposeAll">
+            <summary>
+            Dispose all pooled MIDI outputs.
+            </summary>
+        </member>
         <member name="T:MusicEngine.Core.MidiPriorityGroup">
             <summary>
             Ordered MIDI route group where only the first enabled target receives notes.
@@ -683,6 +1103,11 @@
         <member name="T:MusicEngine.Core.MidiPriorityRoute">
             <summary>
             Route entry for priority groups.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.MidiPriorityRoute.#ctor(MusicEngine.Core.ISynth)">
+            <summary>
+            Create a priority route for a synth target.
             </summary>
         </member>
         <member name="P:MusicEngine.Core.MidiPriorityRoute.Synth">
@@ -713,6 +1138,41 @@
         <member name="E:MusicEngine.Core.MidiRouter.EditorMidiDeviceActive">
             <summary>
             Raised when a device becomes active while editor mode is enabled.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.MidiRouter.MidiMapping.DeviceIndex">
+            <summary>
+            Source device index.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.MidiRouter.MidiMapping.Channel">
+            <summary>
+            Source channel (0-15 or -1).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.MidiRouter.MidiMapping.ControlId">
+            <summary>
+            Control change ID.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.MidiRouter.MidiMapping.Action">
+            <summary>
+            Callback invoked with normalized values.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.MidiRouter.MidiRoute.Synth">
+            <summary>
+            Target synth.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.MidiRouter.MidiRoute.Enabled">
+            <summary>
+            Whether this route is enabled.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.MidiRouter.MidiRoute.#ctor(MusicEngine.Core.ISynth)">
+            <summary>
+            Create a route to a synth.
             </summary>
         </member>
         <member name="M:MusicEngine.Core.MidiRouter.Route(System.Int32,MusicEngine.Core.ISynth)">
@@ -926,6 +1386,236 @@
             Modulation helpers for binding variables.
             </summary>
         </member>
+        <member name="M:MusicEngine.Core.Modulation.Mod.Bind(System.Func{System.Single},System.Action{System.Single},System.Nullable{System.Single})">
+            <summary>
+            Bind a getter/setter pair to a modulated variable.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Modulation.Mod.Var(System.Func{System.Single},System.Action{System.Single},System.Nullable{System.Single})">
+            <summary>
+            Bind a getter/setter pair to a modulated variable.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Modulation.Mod.Var(System.Object,System.String,System.Nullable{System.Single})">
+            <summary>
+            Bind a writable property/field by name to a modulated variable.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Modulation.Mod.Param(System.Object,System.String,System.Nullable{System.Single})">
+            <summary>
+            Alias for Var (property/field binding).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Modulation.Mod.Group(MusicEngine.Core.Modulation.ModVar[])">
+            <summary>
+            Group multiple mod variables for combined enable/disable.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Modulation.Mod.Volume(MusicEngine.Core.IInstrumentControls,System.Nullable{System.Single})">
+            <summary>
+            Bind an instrument volume to a modulated variable.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Modulation.Mod.Pan(MusicEngine.Core.IInstrumentControls,System.Nullable{System.Single})">
+            <summary>
+            Bind an instrument pan to a modulated variable.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Modulation.Mod.Reverb(MusicEngine.Core.IInstrumentControls,System.Nullable{System.Single})">
+            <summary>
+            Bind an instrument reverb to a modulated variable.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Modulation.Mod.Chorus(MusicEngine.Core.IInstrumentControls,System.Nullable{System.Single})">
+            <summary>
+            Bind an instrument chorus to a modulated variable.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Modulation.Mod.ModWheel(MusicEngine.Core.IInstrumentControls,System.Nullable{System.Single})">
+            <summary>
+            Bind an instrument mod wheel to a modulated variable.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Modulation.Mod.Gain(MusicEngine.Core.AudioInput,System.Nullable{System.Single})">
+            <summary>
+            Bind an input gain to a modulated variable.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Modulation.Mod.Mix(MusicEngine.Effects.Audio.SimpleDelayEffect,System.Nullable{System.Single})">
+            <summary>
+            Bind a delay mix to a modulated variable.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Modulation.Mod.TimeMs(MusicEngine.Effects.Audio.SimpleDelayEffect,System.Nullable{System.Single})">
+            <summary>
+            Bind a delay time (ms) to a modulated variable.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Modulation.Mod.Feedback(MusicEngine.Effects.Audio.SimpleDelayEffect,System.Nullable{System.Single})">
+            <summary>
+            Bind a delay feedback to a modulated variable.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Modulation.Mod.Mix(MusicEngine.Effects.Audio.SimpleReverbEffect,System.Nullable{System.Single})">
+            <summary>
+            Bind a reverb mix to a modulated variable.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Modulation.Mod.Size(MusicEngine.Effects.Audio.SimpleReverbEffect,System.Nullable{System.Single})">
+            <summary>
+            Bind a reverb size to a modulated variable.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Modulation.Mod.Damping(MusicEngine.Effects.Audio.SimpleReverbEffect,System.Nullable{System.Single})">
+            <summary>
+            Bind a reverb damping to a modulated variable.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Modulation.Mod.Depth(MusicEngine.Effects.Audio.TremoloEffect,System.Nullable{System.Single})">
+            <summary>
+            Bind a tremolo depth to a modulated variable.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Modulation.Mod.Rate(MusicEngine.Effects.Audio.TremoloEffect,System.Nullable{System.Single})">
+            <summary>
+            Bind a tremolo rate to a modulated variable.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Core.Modulation.ModEngine">
+            <summary>
+            Shared modulation engine that updates registered mod nodes.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Modulation.ModEngine.Shared">
+            <summary>
+            Shared global modulation engine.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Modulation.ModEngine.Register(MusicEngine.Core.Modulation.IModNode)">
+            <summary>
+            Register a mod node for updates.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Modulation.ModEngine.Unregister(MusicEngine.Core.Modulation.IModNode)">
+            <summary>
+            Unregister a mod node.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Modulation.ModEngine.Dispose">
+            <summary>
+            Stop the update timer and clear nodes.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Core.Modulation.ModGroup">
+            <summary>
+            Group of mod variables that can be enabled/disabled together.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Modulation.ModGroup.Add(MusicEngine.Core.Modulation.ModVar[])">
+            <summary>
+            Add mod variables to the group.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Modulation.ModGroup.Enable(System.Boolean)">
+            <summary>
+            Enable or disable all mod variables in the group.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Core.Modulation.ModVar">
+            <summary>
+            Modulated variable with chained modifiers (random/LFO/map/if).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Modulation.ModVar.Enabled">
+            <summary>
+            Enable or disable modulation updates.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Modulation.ModVar.Enable(System.Boolean)">
+            <summary>
+            Enable or disable modulation updates (fluent).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Modulation.ModVar.Value">
+            <summary>
+            Base value before modulation.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Modulation.ModVar.Set(System.Single)">
+            <summary>
+            Set the base value (fluent).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Modulation.ModVar.Clear">
+            <summary>
+            Clear all modulators.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Modulation.ModVar.Random(System.Single,System.Single,System.Double)">
+            <summary>
+            Add a random value modulator.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Modulation.ModVar.Lfo(System.Single,System.Single,System.Single)">
+            <summary>
+            Add an LFO modulator.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Modulation.ModVar.Map(System.Func{System.Single,System.Single})">
+            <summary>
+            Add a mapping transform modulator.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Modulation.ModVar.If(System.Func{System.Boolean},System.Single,System.Single)">
+            <summary>
+            Add a conditional modulator.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Modulation.ModVar.Update(System.Double)">
+            <summary>
+            Update the modulated value for this frame.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Modulation.ModVar.RandomModulator.#ctor(System.Single,System.Single,System.Double)">
+            <summary>
+            Create a random modulator with a fixed interval.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Modulation.ModVar.RandomModulator.Apply(System.Single,System.Double)">
+            <summary>
+            Return the current random value.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Modulation.ModVar.LfoValueModulator.#ctor(System.Single,System.Single,System.Single)">
+            <summary>
+            Create an LFO modulator.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Modulation.ModVar.LfoValueModulator.Apply(System.Single,System.Double)">
+            <summary>
+            Return the current LFO value.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Modulation.ModVar.MapModulator.#ctor(System.Func{System.Single,System.Single})">
+            <summary>
+            Create a mapping modulator.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Modulation.ModVar.MapModulator.Apply(System.Single,System.Double)">
+            <summary>
+            Apply the mapping function.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Modulation.ModVar.IfModulator.#ctor(System.Func{System.Boolean},System.Single,System.Single)">
+            <summary>
+            Create a conditional modulator.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Modulation.ModVar.IfModulator.Apply(System.Single,System.Double)">
+            <summary>
+            Choose between true/false values based on predicate.
+            </summary>
+        </member>
         <member name="T:MusicEngine.Core.NoteActivity">
             <summary>
             Runtime note activity information.
@@ -1019,6 +1709,11 @@
         <member name="P:MusicEngine.Core.NoteSequence.Enabled">
             <summary>
             Enable or disable this sequence.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.NoteSequence.#ctor(MusicEngine.Core.NoteEvent,System.String)">
+            <summary>
+            Create a sequence from a base note and step string.
             </summary>
         </member>
         <member name="T:MusicEngine.Core.Pattern">
@@ -1259,6 +1954,11 @@
         <member name="T:MusicEngine.Core.PatternPriorityRoute">
             <summary>
             Route entry for priority pattern groups.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.PatternPriorityRoute.#ctor(MusicEngine.Core.ISynth)">
+            <summary>
+            Create a priority route for a synth target.
             </summary>
         </member>
         <member name="P:MusicEngine.Core.PatternPriorityRoute.Synth">
@@ -1649,6 +2349,11 @@
         <member name="M:MusicEngine.Core.TimeMasterController.SetRandomSeed(System.Int32)">
             <summary>
             Set a deterministic random seed for time randomization.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.TimeMasterController.Dispose">
+            <summary>
+            Stop playback and clear registered targets.
             </summary>
         </member>
         <member name="T:MusicEngine.Effects.Audio.BitCrusherEffect">
@@ -2699,9 +3404,49 @@
             Modulate pulse width (audio-rate).
             </summary>
         </member>
+        <member name="M:MusicEngine.Scripting.ActionBinder.Trigger(System.Object,System.String)">
+            <summary>
+            Bind a rising-edge trigger to a parameterless method.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ActionBinder.Call(System.Object,System.String,System.Single,System.Single)">
+            <summary>
+            Bind a normalized value to a single-parameter method with min/max scaling.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ActionBinder.Call(System.Object,System.String,System.Func{System.Single,System.Single})">
+            <summary>
+            Bind a normalized value to a single-parameter method with a custom mapper.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ActionBinder.Toggle(System.Object,System.String)">
+            <summary>
+            Toggle a boolean property/field on rising edge.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ActionBinder.Switch(System.Object,System.String)">
+            <summary>
+            Switch a boolean property/field based on the current value.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ActionBinder.Toggle(System.Func{System.Boolean},System.Action{System.Boolean})">
+            <summary>
+            Toggle a boolean getter/setter on rising edge.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ActionBinder.Switch(System.Func{System.Boolean},System.Action{System.Boolean})">
+            <summary>
+            Switch a boolean getter/setter based on the current value.
+            </summary>
+        </member>
         <member name="T:MusicEngine.Scripting.ActivityController">
             <summary>
             Global activity controller for performance tuning.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ActivityController.#ctor(MusicEngine.Scripting.ScriptGlobals)">
+            <summary>
+            Create an activity controller for the current script context.
             </summary>
         </member>
         <member name="P:MusicEngine.Scripting.ActivityController.AudioEnabled">
@@ -2764,6 +3509,36 @@
             Set a more aggressive VST sleep preset.
             </summary>
         </member>
+        <member name="M:MusicEngine.Scripting.CaseInsensitiveProxy.#ctor(System.Object)">
+            <summary>
+            Wrap an object for case-insensitive dynamic access.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.CaseInsensitiveProxy.Target">
+            <summary>
+            Underlying target instance.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.CaseInsensitiveProxy.TryGetMember(System.Dynamic.GetMemberBinder,System.Object@)">
+            <summary>
+            Try to get a member ignoring case.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.CaseInsensitiveProxy.TrySetMember(System.Dynamic.SetMemberBinder,System.Object)">
+            <summary>
+            Try to set a member ignoring case.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.CaseInsensitiveProxy.TryInvokeMember(System.Dynamic.InvokeMemberBinder,System.Object[],System.Object@)">
+            <summary>
+            Try to invoke a method ignoring case.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.CaseInsensitiveProxy.TryConvert(System.Dynamic.ConvertBinder,System.Object@)">
+            <summary>
+            Try to convert to the target type.
+            </summary>
+        </member>
         <member name="T:MusicEngine.Scripting.ConsoleInterface">
             <summary>
             Minimal interactive console interface for script execution.
@@ -2790,6 +3565,21 @@
             Named pipe IPC server for polling state and receiving editor events.
             </summary>
         </member>
+        <member name="F:MusicEngine.Scripting.EngineIpcServer.StatePipeName">
+            <summary>
+            Pipe name for state requests.
+            </summary>
+        </member>
+        <member name="F:MusicEngine.Scripting.EngineIpcServer.EventsPipeName">
+            <summary>
+            Pipe name for event stream.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.EngineIpcServer.#ctor(MusicEngine.Scripting.IEngineScriptInterface)">
+            <summary>
+            Create an IPC server for the script engine.
+            </summary>
+        </member>
         <member name="M:MusicEngine.Scripting.EngineIpcServer.Start">
             <summary>
             Start the IPC server loops.
@@ -2798,6 +3588,11 @@
         <member name="M:MusicEngine.Scripting.EngineIpcServer.StopAsync">
             <summary>
             Stop the IPC server loops.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.EngineIpcServer.Dispose">
+            <summary>
+            Stop the server and release resources.
             </summary>
         </member>
         <member name="T:MusicEngine.Scripting.EngineLauncher">
@@ -3150,6 +3945,11 @@
             Fluent API entry point for audio routing and controls.
             </summary>
         </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AudioControl.#ctor(MusicEngine.Scripting.ScriptGlobals)">
+            <summary>
+            Create a new audio control wrapper for the current script context.
+            </summary>
+        </member>
         <member name="P:MusicEngine.Scripting.FluentApi.AudioControl.master">
             <summary>
             Master channel controls.
@@ -3265,6 +4065,11 @@
             Controls that apply to all channels.
             </summary>
         </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AllChannelsControl.#ctor(MusicEngine.Core.AudioEngine)">
+            <summary>
+            Create a control facade for all channels.
+            </summary>
+        </member>
         <member name="M:MusicEngine.Scripting.FluentApi.AllChannelsControl.gain(System.Single)">
             <summary>
             Set gain for all channels.
@@ -3308,6 +4113,11 @@
         <member name="T:MusicEngine.Scripting.FluentApi.MasterAudioControl">
             <summary>
             Controls for the master output.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MasterAudioControl.#ctor(MusicEngine.Core.AudioEngine)">
+            <summary>
+            Create a control facade for the master channel.
             </summary>
         </member>
         <member name="M:MusicEngine.Scripting.FluentApi.MasterAudioControl.gain(System.Single)">
@@ -3413,6 +4223,11 @@
         <member name="T:MusicEngine.Scripting.FluentApi.AudioChannelControl">
             <summary>
             Controls for a specific audio channel.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.AudioChannelControl.#ctor(MusicEngine.Scripting.ScriptGlobals,System.Int32)">
+            <summary>
+            Create a control facade for a specific channel index.
             </summary>
         </member>
         <member name="M:MusicEngine.Scripting.FluentApi.AudioChannelControl.gain(System.Single)">
@@ -3675,6 +4490,11 @@
             Handle for a channel send.
             </summary>
         </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.ChannelSendControl.#ctor(MusicEngine.Core.AudioEngine,System.Int32,System.Int32,System.Single)">
+            <summary>
+            Create a send from one channel to another with an initial gain.
+            </summary>
+        </member>
         <member name="P:MusicEngine.Scripting.FluentApi.ChannelSendControl.Gain">
             <summary>
             Send gain in [0, 1].
@@ -3688,6 +4508,11 @@
         <member name="T:MusicEngine.Scripting.FluentApi.OutputDeviceControl">
             <summary>
             Output device helper for listing devices.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.OutputDeviceControl.#ctor(MusicEngine.Core.AudioEngine)">
+            <summary>
+            Create output device utilities bound to the engine.
             </summary>
         </member>
         <member name="M:MusicEngine.Scripting.FluentApi.OutputDeviceControl.list">
@@ -3755,6 +4580,11 @@
             Input device helper for listing devices.
             </summary>
         </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.InputDeviceControl.#ctor(MusicEngine.Core.AudioEngine)">
+            <summary>
+            Create input device utilities bound to the engine.
+            </summary>
+        </member>
         <member name="M:MusicEngine.Scripting.FluentApi.InputDeviceControl.list">
             <summary>
             List available input devices.
@@ -3770,6 +4600,11 @@
             DJ cue helper for A/B monitoring.
             </summary>
         </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.DjCueControl.#ctor(MusicEngine.Core.AudioEngine)">
+            <summary>
+            Create DJ cue utilities bound to the engine.
+            </summary>
+        </member>
         <member name="M:MusicEngine.Scripting.FluentApi.DjCueControl.Create(System.Int32,System.Int32,System.Single)">
             <summary>
             Create a DJ cue switch (A/B monitor).
@@ -3778,6 +4613,11 @@
         <member name="T:MusicEngine.Scripting.FluentApi.DjCueSwitch">
             <summary>
             DJ cue switch for A/B monitoring.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.DjCueSwitch.#ctor(MusicEngine.Core.AudioEngine,System.Int32,System.Int32,System.Single)">
+            <summary>
+            Create a cue switch with audience and headphone channel indices.
             </summary>
         </member>
         <member name="P:MusicEngine.Scripting.FluentApi.DjCueSwitch.Cue">
@@ -3803,6 +4643,11 @@
         <member name="T:MusicEngine.Scripting.FluentApi.RecordingControl">
             <summary>
             Recording controls used by fluent API.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.RecordingControl.#ctor(System.Func{System.String,System.String,MusicEngine.Core.RecordingOptions,MusicEngine.Core.RecordingSession},System.Action{MusicEngine.Core.RecordingSession},System.Func{System.String})">
+            <summary>
+            Create recording control wrappers.
             </summary>
         </member>
         <member name="M:MusicEngine.Scripting.FluentApi.RecordingControl.start">
@@ -3966,6 +4811,11 @@
             Fluent API entry point for MIDI routing and mapping.
             </summary>
         </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MidiControl.#ctor(MusicEngine.Scripting.ScriptGlobals)">
+            <summary>
+            Create a new MIDI control wrapper for the current script context.
+            </summary>
+        </member>
         <member name="P:MusicEngine.Scripting.FluentApi.MidiControl.Map">
             <summary>
             Shared MIDI mapping helper.
@@ -3994,6 +4844,11 @@
         <member name="T:MusicEngine.Scripting.FluentApi.DeviceControl">
             <summary>
             MIDI device routing and control mapping.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.DeviceControl.#ctor(MusicEngine.Scripting.ScriptGlobals,System.Int32)">
+            <summary>
+            Create a control facade for a MIDI device index.
             </summary>
         </member>
         <member name="M:MusicEngine.Scripting.FluentApi.DeviceControl.to(MusicEngine.Core.ISynth)">
@@ -4121,6 +4976,11 @@
             MIDI channel routing and control mapping.
             </summary>
         </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.ChannelControl.#ctor(MusicEngine.Scripting.ScriptGlobals,System.Int32,System.Int32)">
+            <summary>
+            Create a control facade for a specific device channel.
+            </summary>
+        </member>
         <member name="M:MusicEngine.Scripting.FluentApi.ChannelControl.to(MusicEngine.Core.ISynth)">
             <summary>
             Route the device channel to a synth.
@@ -4236,6 +5096,11 @@
             MIDI routing helper for layered synth stacks.
             </summary>
         </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MidiLayerGroup.#ctor(MusicEngine.Core.AudioEngine,System.Int32,System.Int32,MusicEngine.Core.ISynth,MusicEngine.Core.ISynth[])">
+            <summary>
+            Create a layered route stack for a device/channel.
+            </summary>
+        </member>
         <member name="M:MusicEngine.Scripting.FluentApi.MidiLayerGroup.Add(MusicEngine.Core.ISynth)">
             <summary>
             Add a synth to this route stack.
@@ -4296,9 +5161,24 @@
             Marker for fallback routing in priority groups.
             </summary>
         </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.FallbackTarget.#ctor(MusicEngine.Core.ISynth)">
+            <summary>
+            Wrap a synth as a fallback marker.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.FluentApi.FallbackTarget.Synth">
+            <summary>
+            Synth instance for this fallback step.
+            </summary>
+        </member>
         <member name="T:MusicEngine.Scripting.FluentApi.MidiPriorityGroup">
             <summary>
             MIDI routing helper for priority/fallback stacks.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.MidiPriorityGroup.#ctor(MusicEngine.Core.AudioEngine,System.Int32,System.Int32,MusicEngine.Core.ISynth,MusicEngine.Scripting.FluentApi.FallbackTarget,MusicEngine.Scripting.FluentApi.FallbackTarget[])">
+            <summary>
+            Create a priority/fallback route stack for a device/channel.
             </summary>
         </member>
         <member name="M:MusicEngine.Scripting.FluentApi.MidiPriorityGroup.Add(MusicEngine.Core.ISynth)">
@@ -4371,6 +5251,11 @@
             Jog wheel mapping helper.
             </summary>
         </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.JogControl.#ctor(MusicEngine.Scripting.ScriptGlobals,System.Int32,System.Int32,MusicEngine.Scripting.FluentApi.JogMode,System.Int32,System.Int32)">
+            <summary>
+            Create a jog wheel mapping helper.
+            </summary>
+        </member>
         <member name="M:MusicEngine.Scripting.FluentApi.JogControl.to(System.Action{System.Int32})">
             <summary>
             Map the jog wheel to a delta tick callback.
@@ -4379,6 +5264,11 @@
         <member name="T:MusicEngine.Scripting.FluentApi.ControlMapping">
             <summary>
             Control mapping configuration.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.ControlMapping.#ctor(MusicEngine.Scripting.ScriptGlobals,System.Int32,System.Int32,System.Int32)">
+            <summary>
+            Create a control mapping for a device/channel control ID.
             </summary>
         </member>
         <member name="M:MusicEngine.Scripting.FluentApi.ControlMapping.to(System.Action{System.Single})">
@@ -4394,6 +5284,11 @@
         <member name="M:MusicEngine.Scripting.FluentApi.ControlMapping.TO(System.Action{System.Single})">
             <summary>
             Map the control to an action.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Scripting.LibraryAccess">
+            <summary>
+            Script-side access to optional MusicEngine.Library instruments.
             </summary>
         </member>
         <member name="M:MusicEngine.Scripting.LibraryAccess.Instrument(System.String)">
@@ -4466,9 +5361,29 @@
             Library of named MIDI mapping presets.
             </summary>
         </member>
+        <member name="M:MusicEngine.Scripting.MidiMapLibrary.Register(System.String,MusicEngine.Scripting.MidiMap)">
+            <summary>
+            Register a named MIDI map preset.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.MidiMapLibrary.Get(System.String)">
+            <summary>
+            Get a registered MIDI map by name.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.MidiMapLibrary.List">
+            <summary>
+            List all registered map names.
+            </summary>
+        </member>
         <member name="T:MusicEngine.Scripting.NoteBuilder">
             <summary>
             Fluent note trigger helper.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.NoteBuilder.#ctor(MusicEngine.Scripting.ScriptGlobals,System.Int32)">
+            <summary>
+            Create a note builder for a specific MIDI note.
             </summary>
         </member>
         <member name="M:MusicEngine.Scripting.NoteBuilder.To(MusicEngine.Core.ISynth)">
@@ -4494,6 +5409,16 @@
         <member name="T:MusicEngine.Scripting.NoteBinding">
             <summary>
             A bound note trigger for a specific synth.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.NoteBinding.#ctor(MusicEngine.Scripting.ScriptGlobals,System.Int32,MusicEngine.Core.ISynth[])">
+            <summary>
+            Create a binding for a note and target synths.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.NoteBinding.Note">
+            <summary>
+            Bound MIDI note number.
             </summary>
         </member>
         <member name="P:MusicEngine.Scripting.NoteBinding.Targets">
@@ -4576,9 +5501,79 @@
             Play a note for a duration in milliseconds (alias).
             </summary>
         </member>
+        <member name="M:MusicEngine.Scripting.NoteTargetProxy.#ctor(MusicEngine.Scripting.ScriptGlobals,System.Int32)">
+            <summary>
+            Create a dynamic target resolver for a note.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.NoteTargetProxy.TryGetMember(System.Dynamic.GetMemberBinder,System.Object@)">
+            <summary>
+            Resolve a member name into a synth binding.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.NoteChainProxy.#ctor(MusicEngine.Scripting.NoteBinding,MusicEngine.Scripting.ScriptGlobals)">
+            <summary>
+            Create a chainable dynamic target resolver.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.NoteChainProxy.TryGetMember(System.Dynamic.GetMemberBinder,System.Object@)">
+            <summary>
+            Resolve a member name into another target in the chain.
+            </summary>
+        </member>
         <member name="T:MusicEngine.Scripting.NoteLoop">
             <summary>
             Loop helper for repeated note triggering.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.NoteLoop.#ctor(MusicEngine.Scripting.NoteBinding)">
+            <summary>
+            Create a loop helper for a bound note.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.NoteLoop.Bpm">
+            <summary>
+            Current BPM for the loop.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.NoteLoop.GateMs">
+            <summary>
+            Current gate length in milliseconds.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.NoteLoop.Active">
+            <summary>
+            True while the loop is active.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.NoteLoop.Speed(System.Int32)">
+            <summary>
+            Set BPM and restart the loop.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.NoteLoop.Gate(System.Int32)">
+            <summary>
+            Set gate length in milliseconds.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.NoteLoop.Start">
+            <summary>
+            Start looping.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.NoteLoop.Stop">
+            <summary>
+            Stop looping.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.PropertyBinder.Create(System.Object,System.String,System.Single,System.Single)">
+            <summary>
+            Create a binding that maps a normalized value into a property/field range.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.PropertyBinder.Create(System.Object,System.String,System.Func{System.Single,System.Single})">
+            <summary>
+            Create a binding that maps a normalized value using a custom function.
             </summary>
         </member>
         <member name="T:MusicEngine.Scripting.QuickNotePlayer">
@@ -4659,6 +5654,56 @@
             Implicit conversion to bool using <see cref="M:MusicEngine.Scripting.RandomSource.NextBool"/>.
             </summary>
         </member>
+        <member name="M:MusicEngine.Scripting.SampleFolder.#ctor(System.String,System.String,System.Boolean,System.Boolean)">
+            <summary>
+            Scan a folder for sample files and expose them by name.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.SampleFolder.Folder">
+            <summary>
+            Source folder path.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.SampleFolder.SearchPattern">
+            <summary>
+            Search pattern used for file discovery.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.SampleFolder.Recursive">
+            <summary>
+            True to scan subfolders.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.SampleFolder.AudioOnly">
+            <summary>
+            True to include only audio file extensions.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.SampleFolder.Names">
+            <summary>
+            All discovered sample names.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.SampleFolder.Get(System.String)">
+            <summary>
+            Get a sample path by name or alias.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.SampleFolder.Item(System.String)">
+            <summary>
+            Indexer for sample paths by name.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.SampleFolder.TryGetMember(System.Dynamic.GetMemberBinder,System.Object@)">
+            <summary>
+            Dynamic member access for sample names.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.SampleFolder.GetDynamicMemberNames">
+            <summary>
+            List all dynamic member names for tooling.
+            </summary>
+        </member>
         <member name="T:MusicEngine.Scripting.ScriptHost">
             <summary>
             Script host for executing C# scripts against the engine.
@@ -4695,6 +5740,11 @@
         <member name="M:MusicEngine.Scripting.ScriptHost.RefreshScriptFromFileAsync(System.Boolean)">
             <summary>
             Clear state then execute the configured script file, if available.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptHost.RefreshMainScriptsAsync">
+            <summary>
+            Clear state then execute all main scripts.
             </summary>
         </member>
         <member name="M:MusicEngine.Scripting.ScriptHost.ClearState">
@@ -4785,6 +5835,11 @@
         <member name="M:MusicEngine.Scripting.ScriptGlobals.LibraryApi(System.String)">
             <summary>
             Create and route a library instrument by full type name.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.Targets(System.Object[])">
+            <summary>
+            Combine multiple targets into a single dynamic proxy that forwards method calls to each target.
             </summary>
         </member>
         <member name="M:MusicEngine.Scripting.ScriptGlobals.CreateSynth">
@@ -5362,9 +6417,34 @@
             Load and run a module script by name.
             </summary>
         </member>
+        <member name="M:MusicEngine.Scripting.ScriptLibrary.TryInvokeMember(System.Dynamic.InvokeMemberBinder,System.Object[],System.Object@)">
+            <summary>
+            Dynamic getter/setter for shared values.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptLibrary.TryInvoke(System.Dynamic.InvokeBinder,System.Object[],System.Object@)">
+            <summary>
+            Dynamic invocation for File() helpers.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptLibrary.TryGetMember(System.Dynamic.GetMemberBinder,System.Object@)">
+            <summary>
+            Dynamic get for values or scopes.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptLibrary.TrySetMember(System.Dynamic.SetMemberBinder,System.Object)">
+            <summary>
+            Dynamic set for values (null removes).
+            </summary>
+        </member>
         <member name="T:MusicEngine.Scripting.ScriptFileBuilder">
             <summary>
             Builder for script registration.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptFileBuilder.#ctor(MusicEngine.Scripting.ScriptLibrary,System.String,System.Boolean)">
+            <summary>
+            Create a builder for script registration.
             </summary>
         </member>
         <member name="M:MusicEngine.Scripting.ScriptFileBuilder.Name(System.String)">

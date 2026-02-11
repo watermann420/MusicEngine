@@ -17,6 +17,9 @@ namespace MusicEngine.Scripting.FluentApi;
 public sealed class MidiControl
 {
     private readonly ScriptGlobals _globals;
+    /// <summary>
+    /// Create a new MIDI control wrapper for the current script context.
+    /// </summary>
     public MidiControl(ScriptGlobals globals) => _globals = globals;
 
     /// <summary>
@@ -53,6 +56,9 @@ public sealed class DeviceControl
     private readonly ScriptGlobals _globals;
     private readonly int _deviceIndex;
 
+    /// <summary>
+    /// Create a control facade for a MIDI device index.
+    /// </summary>
     public DeviceControl(ScriptGlobals globals, int deviceIndex)
     {
         _globals = globals;
@@ -206,6 +212,9 @@ public sealed class ChannelControl
     private readonly int _deviceIndex;
     private readonly int _channel;
 
+    /// <summary>
+    /// Create a control facade for a specific device channel.
+    /// </summary>
     public ChannelControl(ScriptGlobals globals, int deviceIndex, int channel)
     {
         _globals = globals;
@@ -351,6 +360,9 @@ public sealed class MidiLayerGroup
     private readonly int _channel;
     private readonly System.Collections.Generic.List<ISynth> _layers = new();
 
+    /// <summary>
+    /// Create a layered route stack for a device/channel.
+    /// </summary>
     public MidiLayerGroup(AudioEngine engine, int deviceIndex, int channel, ISynth first, params ISynth[] layers)
     {
         _engine = engine;
@@ -456,11 +468,17 @@ public sealed class MidiLayerGroup
 /// </summary>
 public sealed class FallbackTarget
 {
+    /// <summary>
+    /// Wrap a synth as a fallback marker.
+    /// </summary>
     public FallbackTarget(ISynth synth)
     {
         Synth = synth;
     }
 
+    /// <summary>
+    /// Synth instance for this fallback step.
+    /// </summary>
     public ISynth Synth { get; }
 }
 
@@ -474,6 +492,9 @@ public sealed class MidiPriorityGroup
     private readonly int _channel;
     private readonly MusicEngine.Core.MidiPriorityGroup _group;
 
+    /// <summary>
+    /// Create a priority/fallback route stack for a device/channel.
+    /// </summary>
     public MidiPriorityGroup(AudioEngine engine, int deviceIndex, int channel, ISynth primary,
         FallbackTarget fallback, params FallbackTarget[] fallbacks)
     {
@@ -660,6 +681,9 @@ public sealed class JogControl
     private readonly int _scale;
     private int? _lastRaw;
 
+    /// <summary>
+    /// Create a jog wheel mapping helper.
+    /// </summary>
     public JogControl(ScriptGlobals globals, int deviceIndex, int controlId, JogMode mode, int scale, int channel = -1)
     {
         _globals = globals;
@@ -723,6 +747,9 @@ public sealed class ControlMapping
     private readonly int _controlId;
     private readonly int _channel;
 
+    /// <summary>
+    /// Create a control mapping for a device/channel control ID.
+    /// </summary>
     public ControlMapping(ScriptGlobals globals, int deviceIndex, int controlId, int channel = -1)
     {
         _globals = globals;

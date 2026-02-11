@@ -270,16 +270,28 @@ internal sealed class RecordingTap : ISampleProvider
     private readonly object _lock = new();
     private readonly List<RecordingSession> _sessions = new();
 
+    /// <summary>
+    /// Fired when samples are captured by this tap.
+    /// </summary>
     public event Action<float[], int, int>? SamplesAvailable;
 
+    /// <summary>
+    /// Create a recording tap for a source provider.
+    /// </summary>
     public RecordingTap(ISampleProvider source)
     {
         _source = source;
         WaveFormat = source.WaveFormat;
     }
 
+    /// <summary>
+    /// Output wave format.
+    /// </summary>
     public WaveFormat WaveFormat { get; }
 
+    /// <summary>
+    /// Start a recording session.
+    /// </summary>
     public RecordingSession StartRecording(string path, string? format = null, RecordingOptions? options = null)
     {
         if (string.IsNullOrWhiteSpace(path))
@@ -296,6 +308,9 @@ internal sealed class RecordingTap : ISampleProvider
         return session;
     }
 
+    /// <summary>
+    /// Stop a recording session (defaults to last).
+    /// </summary>
     public void StopRecording(RecordingSession? session = null)
     {
         RecordingSession? toStop = session;
@@ -312,6 +327,9 @@ internal sealed class RecordingTap : ISampleProvider
         toStop.Dispose();
     }
 
+    /// <summary>
+    /// Stop and dispose all sessions.
+    /// </summary>
     public void StopAll()
     {
         RecordingSession[] sessions;
@@ -327,6 +345,9 @@ internal sealed class RecordingTap : ISampleProvider
         }
     }
 
+    /// <summary>
+    /// Read samples and forward to active sessions.
+    /// </summary>
     public int Read(float[] buffer, int offset, int count)
     {
         int read = _source.Read(buffer, offset, count);

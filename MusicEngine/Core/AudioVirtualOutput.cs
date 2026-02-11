@@ -19,6 +19,9 @@ internal sealed class AudioVirtualOutput : IDisposable
     private readonly int _outputChannelOffset;
     private bool _disposed;
 
+    /// <summary>
+    /// Create a virtual output routed to a specific device.
+    /// </summary>
     public AudioVirtualOutput(MMDevice device, WaveFormat format, int latencyMs, int outputChannelOffset = 0)
     {
         _device = device;
@@ -56,10 +59,22 @@ internal sealed class AudioVirtualOutput : IDisposable
         _output.Play();
     }
 
+    /// <summary>
+    /// Target device ID.
+    /// </summary>
     public string DeviceId => _device.ID;
+    /// <summary>
+    /// Target device name.
+    /// </summary>
     public string DeviceName => _device.FriendlyName;
+    /// <summary>
+    /// Output channel offset on the target device.
+    /// </summary>
     public int OutputChannelOffset => _outputChannelOffset;
 
+    /// <summary>
+    /// Push interleaved float samples into the virtual output buffer.
+    /// </summary>
     public void Push(float[] buffer, int offset, int count)
     {
         if (_disposed) return;
@@ -78,6 +93,9 @@ internal sealed class AudioVirtualOutput : IDisposable
         }
     }
 
+    /// <summary>
+    /// Stop output and release resources.
+    /// </summary>
     public void Dispose()
     {
         if (_disposed) return;
@@ -101,6 +119,9 @@ internal sealed class ChannelMappingSampleProvider : ISampleProvider
     private readonly int _outputOffset;
     private float[]? _sourceBuffer;
 
+    /// <summary>
+    /// Map a source provider into a larger output channel layout.
+    /// </summary>
     public ChannelMappingSampleProvider(ISampleProvider source, int outputChannels, int outputOffset)
     {
         _source = source;
@@ -109,8 +130,14 @@ internal sealed class ChannelMappingSampleProvider : ISampleProvider
         WaveFormat = WaveFormat.CreateIeeeFloatWaveFormat(_source.WaveFormat.SampleRate, _outputChannels);
     }
 
+    /// <summary>
+    /// Output wave format.
+    /// </summary>
     public WaveFormat WaveFormat { get; }
 
+    /// <summary>
+    /// Read and map samples into the output buffer.
+    /// </summary>
     public int Read(float[] buffer, int offset, int count)
     {
         int framesRequested = count / _outputChannels;

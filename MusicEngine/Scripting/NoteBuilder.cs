@@ -18,6 +18,9 @@ public sealed class NoteBuilder
     private readonly ScriptGlobals _globals;
     private readonly int _note;
 
+    /// <summary>
+    /// Create a note builder for a specific MIDI note.
+    /// </summary>
     public NoteBuilder(ScriptGlobals globals, int note)
     {
         _globals = globals;
@@ -55,6 +58,9 @@ public sealed class NoteBinding
     private readonly List<ISynth> _targets = new();
     private readonly NoteLoop _loop;
 
+    /// <summary>
+    /// Create a binding for a note and target synths.
+    /// </summary>
     public NoteBinding(ScriptGlobals? globals, int note, params ISynth[] targets)
     {
         _globals = globals;
@@ -72,6 +78,9 @@ public sealed class NoteBinding
         _loop = new NoteLoop(this);
     }
 
+    /// <summary>
+    /// Bound MIDI note number.
+    /// </summary>
     public int Note => _note;
 
     /// <summary>
@@ -207,12 +216,18 @@ internal sealed class NoteTargetProxy : DynamicObject
     private readonly ScriptGlobals _globals;
     private readonly int _note;
 
+    /// <summary>
+    /// Create a dynamic target resolver for a note.
+    /// </summary>
     public NoteTargetProxy(ScriptGlobals globals, int note)
     {
         _globals = globals;
         _note = note;
     }
 
+    /// <summary>
+    /// Resolve a member name into a synth binding.
+    /// </summary>
     public override bool TryGetMember(GetMemberBinder binder, out object? result)
     {
         result = Resolve(binder.Name);
@@ -243,12 +258,18 @@ internal sealed class NoteChainProxy : DynamicObject
     private readonly NoteBinding _binding;
     private readonly ScriptGlobals? _globals;
 
+    /// <summary>
+    /// Create a chainable dynamic target resolver.
+    /// </summary>
     public NoteChainProxy(NoteBinding binding, ScriptGlobals? globals)
     {
         _binding = binding;
         _globals = globals;
     }
 
+    /// <summary>
+    /// Resolve a member name into another target in the chain.
+    /// </summary>
     public override bool TryGetMember(GetMemberBinder binder, out object? result)
     {
         result = Resolve(binder.Name);
@@ -287,15 +308,30 @@ public sealed class NoteLoop
     private int _bpm = 120;
     private int _gateMs = 120;
 
+    /// <summary>
+    /// Create a loop helper for a bound note.
+    /// </summary>
     public NoteLoop(NoteBinding binding)
     {
         _binding = binding;
     }
 
+    /// <summary>
+    /// Current BPM for the loop.
+    /// </summary>
     public int Bpm => _bpm;
+    /// <summary>
+    /// Current gate length in milliseconds.
+    /// </summary>
     public int GateMs => _gateMs;
+    /// <summary>
+    /// True while the loop is active.
+    /// </summary>
     public bool Active => _timer != null;
 
+    /// <summary>
+    /// Set BPM and restart the loop.
+    /// </summary>
     public NoteLoop Speed(int bpm)
     {
         _bpm = Math.Clamp(bpm, 1, 1200);
@@ -303,12 +339,18 @@ public sealed class NoteLoop
         return this;
     }
 
+    /// <summary>
+    /// Set gate length in milliseconds.
+    /// </summary>
     public NoteLoop Gate(int ms)
     {
         _gateMs = Math.Clamp(ms, 1, 60000);
         return this;
     }
 
+    /// <summary>
+    /// Start looping.
+    /// </summary>
     public NoteLoop Start()
     {
         lock (_lock)
@@ -320,6 +362,9 @@ public sealed class NoteLoop
         return this;
     }
 
+    /// <summary>
+    /// Stop looping.
+    /// </summary>
     public NoteLoop Stop()
     {
         lock (_lock)

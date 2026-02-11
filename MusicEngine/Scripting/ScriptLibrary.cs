@@ -198,6 +198,9 @@ public sealed class ScriptLibrary : DynamicObject
         }
     }
 
+    /// <summary>
+    /// Dynamic getter/setter for shared values.
+    /// </summary>
     public override bool TryInvokeMember(InvokeMemberBinder binder, object?[]? args, out object? result)
     {
         args ??= Array.Empty<object?>();
@@ -226,6 +229,9 @@ public sealed class ScriptLibrary : DynamicObject
         return false;
     }
 
+    /// <summary>
+    /// Dynamic invocation for File() helpers.
+    /// </summary>
     public override bool TryInvoke(InvokeBinder binder, object?[]? args, out object? result)
     {
         args ??= Array.Empty<object?>();
@@ -257,6 +263,9 @@ public sealed class ScriptLibrary : DynamicObject
         return false;
     }
 
+    /// <summary>
+    /// Dynamic get for values or scopes.
+    /// </summary>
     public override bool TryGetMember(GetMemberBinder binder, out object? result)
     {
         result = Get(binder.Name) ?? GetOrCreateScope(binder.Name);
@@ -306,6 +315,9 @@ public sealed class ScriptLibrary : DynamicObject
     internal bool HostHasScript(string scriptName)
         => _host.ResolveScriptPath(scriptName) != null;
 
+    /// <summary>
+    /// Dynamic set for values (null removes).
+    /// </summary>
     public override bool TrySetMember(SetMemberBinder binder, object? value)
     {
         if (value == null)
@@ -344,6 +356,9 @@ public sealed class ScriptFileBuilder
     private readonly string _alias;
     private readonly bool _master;
 
+    /// <summary>
+    /// Create a builder for script registration.
+    /// </summary>
     public ScriptFileBuilder(ScriptLibrary library, string alias, bool master)
     {
         _library = library;

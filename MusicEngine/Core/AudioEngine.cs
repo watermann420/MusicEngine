@@ -1322,16 +1322,43 @@ public sealed class AudioEngine : IDisposable
         return current;
     }
 
+    /// <summary>
+    /// Internal channel state bundle.
+    /// </summary>
     private sealed class AudioChannel
     {
+        /// <summary>
+        /// Channel index (1-based).
+        /// </summary>
         public int Index { get; }
+        /// <summary>
+        /// Channel mixer.
+        /// </summary>
         public MixingSampleProvider Mixer { get; }
+        /// <summary>
+        /// Effect chain for this channel.
+        /// </summary>
         public AudioEffectChain Effects { get; }
+        /// <summary>
+        /// Pan stage.
+        /// </summary>
         public PanSampleProvider Pan { get; }
+        /// <summary>
+        /// Volume stage.
+        /// </summary>
         public VolumeSampleProvider Volume { get; }
+        /// <summary>
+        /// Recording tap for the channel.
+        /// </summary>
         public RecordingTap Tap { get; }
+        /// <summary>
+        /// Additional gain multiplier.
+        /// </summary>
         public float ChannelGain { get; set; } = 1f;
 
+        /// <summary>
+        /// Create a channel state bundle.
+        /// </summary>
         public AudioChannel(int index, MixingSampleProvider mixer, AudioEffectChain effects, PanSampleProvider pan,
             VolumeSampleProvider volume, RecordingTap tap)
         {
@@ -1344,14 +1371,35 @@ public sealed class AudioEngine : IDisposable
         }
     }
 
+    /// <summary>
+    /// Internal channel send state.
+    /// </summary>
     private sealed class ChannelSend
     {
+        /// <summary>
+        /// Source channel index.
+        /// </summary>
         public int Source { get; }
+        /// <summary>
+        /// Target channel index.
+        /// </summary>
         public int Target { get; }
+        /// <summary>
+        /// Buffered send stream.
+        /// </summary>
         public BufferedWaveProvider Buffer { get; }
+        /// <summary>
+        /// Gain stage for the send.
+        /// </summary>
         public VolumeSampleProvider Volume { get; }
+        /// <summary>
+        /// Callback for receiving samples.
+        /// </summary>
         public Action<float[], int, int> Handler { get; }
 
+        /// <summary>
+        /// Create a channel send state bundle.
+        /// </summary>
         public ChannelSend(int source, int target, BufferedWaveProvider buffer, VolumeSampleProvider volume,
             Action<float[], int, int> handler)
         {
@@ -1509,7 +1557,13 @@ public sealed class AudioEngine : IDisposable
         return null;
     }
 
+    /// <summary>
+    /// Output device info (index, ID, name, channels, sample rate).
+    /// </summary>
     public readonly record struct AudioOutputDeviceInfo(int Index, string Id, string Name, int Channels, int SampleRate);
+    /// <summary>
+    /// Input device info (index, ID, name).
+    /// </summary>
     public readonly record struct AudioInputDeviceInfo(int Index, string Id, string Name);
 
     private static MMDevice? TryGetInputDevice(int index)

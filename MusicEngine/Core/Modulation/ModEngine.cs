@@ -9,6 +9,9 @@ using ThreadingTimer = System.Threading.Timer;
 
 namespace MusicEngine.Core.Modulation;
 
+/// <summary>
+/// Shared modulation engine that updates registered mod nodes.
+/// </summary>
 internal sealed class ModEngine : IDisposable
 {
     private readonly List<IModNode> _nodes = new();
@@ -16,6 +19,9 @@ internal sealed class ModEngine : IDisposable
     private readonly Stopwatch _watch = Stopwatch.StartNew();
     private readonly ThreadingTimer _timer;
 
+    /// <summary>
+    /// Shared global modulation engine.
+    /// </summary>
     public static ModEngine Shared { get; } = new ModEngine();
 
     private ModEngine()
@@ -23,6 +29,9 @@ internal sealed class ModEngine : IDisposable
         _timer = new ThreadingTimer(_ => Tick(), null, 30, 30);
     }
 
+    /// <summary>
+    /// Register a mod node for updates.
+    /// </summary>
     public void Register(IModNode node)
     {
         if (node == null) return;
@@ -33,6 +42,9 @@ internal sealed class ModEngine : IDisposable
         }
     }
 
+    /// <summary>
+    /// Unregister a mod node.
+    /// </summary>
     public void Unregister(IModNode node)
     {
         if (node == null) return;
@@ -61,6 +73,9 @@ internal sealed class ModEngine : IDisposable
         }
     }
 
+    /// <summary>
+    /// Stop the update timer and clear nodes.
+    /// </summary>
     public void Dispose()
     {
         _timer.Dispose();

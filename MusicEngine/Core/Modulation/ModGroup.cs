@@ -6,10 +6,16 @@ using System.Collections.Generic;
 
 namespace MusicEngine.Core.Modulation;
 
+/// <summary>
+/// Group of mod variables that can be enabled/disabled together.
+/// </summary>
 public sealed class ModGroup
 {
     private readonly List<ModVar> _vars = new();
 
+    /// <summary>
+    /// Add mod variables to the group.
+    /// </summary>
     public ModGroup Add(params ModVar[] vars)
     {
         foreach (var modVar in vars)
@@ -21,6 +27,9 @@ public sealed class ModGroup
         return this;
     }
 
+    /// <summary>
+    /// Enable or disable all mod variables in the group.
+    /// </summary>
     public ModGroup Enable(bool enabled)
     {
         foreach (var modVar in _vars)

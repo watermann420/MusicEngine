@@ -19,7 +19,13 @@ namespace MusicEngine.Scripting;
 /// </summary>
 public sealed class EngineIpcServer : IDisposable
 {
+    /// <summary>
+    /// Pipe name for state requests.
+    /// </summary>
     public const string StatePipeName = "MusicEngine.State";
+    /// <summary>
+    /// Pipe name for event stream.
+    /// </summary>
     public const string EventsPipeName = "MusicEngine.Events";
 
     private readonly IEngineScriptInterface _engine;
@@ -29,6 +35,9 @@ public sealed class EngineIpcServer : IDisposable
     private Task? _stateTask;
     private Task? _eventsTask;
 
+    /// <summary>
+    /// Create an IPC server for the script engine.
+    /// </summary>
     public EngineIpcServer(IEngineScriptInterface engine)
     {
         _engine = engine ?? throw new ArgumentNullException(nameof(engine));
@@ -76,6 +85,9 @@ public sealed class EngineIpcServer : IDisposable
         _cts = null;
     }
 
+    /// <summary>
+    /// Stop the server and release resources.
+    /// </summary>
     public void Dispose()
     {
         StopAsync().GetAwaiter().GetResult();

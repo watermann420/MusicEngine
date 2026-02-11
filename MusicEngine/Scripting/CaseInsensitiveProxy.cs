@@ -13,13 +13,22 @@ internal sealed class CaseInsensitiveProxy : DynamicObject
 {
     private readonly object _target;
 
+    /// <summary>
+    /// Wrap an object for case-insensitive dynamic access.
+    /// </summary>
     public CaseInsensitiveProxy(object target)
     {
         _target = target ?? throw new ArgumentNullException(nameof(target));
     }
 
+    /// <summary>
+    /// Underlying target instance.
+    /// </summary>
     public object Target => _target;
 
+    /// <summary>
+    /// Try to get a member ignoring case.
+    /// </summary>
     public override bool TryGetMember(GetMemberBinder binder, out object? result)
     {
         var type = _target.GetType();
@@ -42,6 +51,9 @@ internal sealed class CaseInsensitiveProxy : DynamicObject
         return false;
     }
 
+    /// <summary>
+    /// Try to set a member ignoring case.
+    /// </summary>
     public override bool TrySetMember(SetMemberBinder binder, object? value)
     {
         var type = _target.GetType();
@@ -63,6 +75,9 @@ internal sealed class CaseInsensitiveProxy : DynamicObject
         return false;
     }
 
+    /// <summary>
+    /// Try to invoke a method ignoring case.
+    /// </summary>
     public override bool TryInvokeMember(InvokeMemberBinder binder, object?[]? args, out object? result)
     {
         var type = _target.GetType();
@@ -80,6 +95,9 @@ internal sealed class CaseInsensitiveProxy : DynamicObject
         return true;
     }
 
+    /// <summary>
+    /// Try to convert to the target type.
+    /// </summary>
     public override bool TryConvert(ConvertBinder binder, out object? result)
     {
         if (binder.Type.IsInstanceOfType(_target))

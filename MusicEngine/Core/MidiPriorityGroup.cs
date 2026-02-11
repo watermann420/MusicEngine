@@ -19,6 +19,9 @@ public sealed class MidiPriorityGroup
 /// </summary>
 public sealed class MidiPriorityRoute
 {
+    /// <summary>
+    /// Create a priority route for a synth target.
+    /// </summary>
     public MidiPriorityRoute(ISynth synth)
     {
         Synth = synth;

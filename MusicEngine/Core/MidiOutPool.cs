@@ -13,6 +13,9 @@ internal static class MidiOutPool
     private static readonly object LockObj = new();
     private static readonly Dictionary<int, (MidiOut midiOut, int refCount)> Pool = new();
 
+    /// <summary>
+    /// Rent or open a MIDI output for the given device.
+    /// </summary>
     public static MidiOut Rent(int deviceId)
     {
         lock (LockObj)
@@ -29,6 +32,9 @@ internal static class MidiOutPool
         }
     }
 
+    /// <summary>
+    /// Return a MIDI output reference and dispose when no longer used.
+    /// </summary>
     public static void Return(int deviceId)
     {
         lock (LockObj)
@@ -48,6 +54,9 @@ internal static class MidiOutPool
         }
     }
 
+    /// <summary>
+    /// Dispose all pooled MIDI outputs.
+    /// </summary>
     public static void DisposeAll()
     {
         lock (LockObj)

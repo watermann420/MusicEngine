@@ -9,11 +9,11 @@
 
 # MusicEngine
 
-Scriptable C# music engine for realtime playback, instruments, and VST3 hosting.
+Scriptable C# music engine for realtime playback, instruments, and VST3 hosting. It can also record mics and music, render audio, and cover a full DAW-like workflow if you know what you’re doing.
 
 ## What makes MusicEngine different?
 
-MusicEngine is a C# scripting language for music. It supports VSTs, sequencers, and patterns but does not force any workflow. You keep full control over time and timing. Everything is a tool, nothing is forced, and there are no hidden mathematical clamps. Almost anything can be turned into a variable and be modulated.
+MusicEngine is a C# scripting language for music. It supports VSTs, sequencers, and patterns without forcing you into any workflow. You keep full control over time and timing. Everything is a tool, nothing is forced, and there are no hidden mathematical clamps. Almost anything can be turned into a variable and be modulated.
 
 ## Pattern Example (Script)
 

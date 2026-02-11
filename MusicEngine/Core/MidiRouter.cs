@@ -45,17 +45,38 @@ public sealed class MidiRouter
 
     private sealed class MidiMapping
     {
+        /// <summary>
+        /// Source device index.
+        /// </summary>
         public int DeviceIndex { get; init; }
+        /// <summary>
+        /// Source channel (0-15 or -1).
+        /// </summary>
         public int Channel { get; init; }
+        /// <summary>
+        /// Control change ID.
+        /// </summary>
         public int ControlId { get; init; }
+        /// <summary>
+        /// Callback invoked with normalized values.
+        /// </summary>
         public Action<float> Action { get; init; } = null!;
     }
 
     private sealed class MidiRoute
     {
+        /// <summary>
+        /// Target synth.
+        /// </summary>
         public ISynth Synth { get; }
+        /// <summary>
+        /// Whether this route is enabled.
+        /// </summary>
         public bool Enabled { get; set; } = true;
 
+        /// <summary>
+        /// Create a route to a synth.
+        /// </summary>
         public MidiRoute(ISynth synth)
         {
             Synth = synth;

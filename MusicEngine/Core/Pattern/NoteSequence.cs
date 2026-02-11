@@ -36,6 +36,9 @@ public sealed class NoteSequence
     /// </summary>
     public bool Enabled { get; set; } = true;
 
+    /// <summary>
+    /// Create a sequence from a base note and step string.
+    /// </summary>
     public NoteSequence(NoteEvent note, string steps)
     {
         Note = note;

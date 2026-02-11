@@ -15,60 +15,117 @@ namespace MusicEngine.Core.Modulation;
 /// </summary>
 public static class Mod
 {
+    /// <summary>
+    /// Bind a getter/setter pair to a modulated variable.
+    /// </summary>
     public static ModVar Bind(Func<float> get, Action<float> set, float? initial = null)
         => new ModVar(get, set, initial);
 
+    /// <summary>
+    /// Bind a getter/setter pair to a modulated variable.
+    /// </summary>
     public static ModVar Var(Func<float> get, Action<float> set, float? initial = null)
         => Bind(get, set, initial);
 
+    /// <summary>
+    /// Bind a writable property/field by name to a modulated variable.
+    /// </summary>
     public static ModVar Var(object target, string member, float? initial = null)
         => CreateVar(target, member, initial);
 
+    /// <summary>
+    /// Alias for Var (property/field binding).
+    /// </summary>
     public static ModVar Param(object target, string member, float? initial = null)
         => Var(target, member, initial);
 
+    /// <summary>
+    /// Group multiple mod variables for combined enable/disable.
+    /// </summary>
     public static ModGroup Group(params ModVar[] vars)
         => new ModGroup().Add(vars);
 
+    /// <summary>
+    /// Bind an instrument volume to a modulated variable.
+    /// </summary>
     public static ModVar Volume(IInstrumentControls instrument, float? initial = null)
         => Bind(() => instrument.Volume, v => instrument.Volume = v, initial);
 
+    /// <summary>
+    /// Bind an instrument pan to a modulated variable.
+    /// </summary>
     public static ModVar Pan(IInstrumentControls instrument, float? initial = null)
         => Bind(() => instrument.Pan, v => instrument.Pan = v, initial);
 
+    /// <summary>
+    /// Bind an instrument reverb to a modulated variable.
+    /// </summary>
     public static ModVar Reverb(IInstrumentControls instrument, float? initial = null)
         => Bind(() => instrument.Reverb, v => instrument.Reverb = v, initial);
 
+    /// <summary>
+    /// Bind an instrument chorus to a modulated variable.
+    /// </summary>
     public static ModVar Chorus(IInstrumentControls instrument, float? initial = null)
         => Bind(() => instrument.Chorus, v => instrument.Chorus = v, initial);
 
+    /// <summary>
+    /// Bind an instrument mod wheel to a modulated variable.
+    /// </summary>
     public static ModVar ModWheel(IInstrumentControls instrument, float? initial = null)
         => Bind(() => instrument.ModWheel, v => instrument.ModWheel = v, initial);
 
+    /// <summary>
+    /// Bind an input gain to a modulated variable.
+    /// </summary>
     public static ModVar Gain(AudioInput input, float? initial = null)
         => Bind(() => input.Gain, v => input.Gain = v, initial);
 
+    /// <summary>
+    /// Bind a delay mix to a modulated variable.
+    /// </summary>
     public static ModVar Mix(SimpleDelayEffect effect, float? initial = null)
         => Bind(() => effect.Mix, v => effect.Mix = v, initial);
 
+    /// <summary>
+    /// Bind a delay time (ms) to a modulated variable.
+    /// </summary>
     public static ModVar TimeMs(SimpleDelayEffect effect, float? initial = null)
         => Bind(() => effect.TimeMs, v => effect.TimeMs = v, initial);
 
+    /// <summary>
+    /// Bind a delay feedback to a modulated variable.
+    /// </summary>
     public static ModVar Feedback(SimpleDelayEffect effect, float? initial = null)
         => Bind(() => effect.Feedback, v => effect.Feedback = v, initial);
 
+    /// <summary>
+    /// Bind a reverb mix to a modulated variable.
+    /// </summary>
     public static ModVar Mix(SimpleReverbEffect effect, float? initial = null)
         => Bind(() => effect.Mix, v => effect.Mix = v, initial);
 
+    /// <summary>
+    /// Bind a reverb size to a modulated variable.
+    /// </summary>
     public static ModVar Size(SimpleReverbEffect effect, float? initial = null)
         => Bind(() => effect.Size, v => effect.Size = v, initial);
 
+    /// <summary>
+    /// Bind a reverb damping to a modulated variable.
+    /// </summary>
     public static ModVar Damping(SimpleReverbEffect effect, float? initial = null)
         => Bind(() => effect.Damping, v => effect.Damping = v, initial);
 
+    /// <summary>
+    /// Bind a tremolo depth to a modulated variable.
+    /// </summary>
     public static ModVar Depth(TremoloEffect effect, float? initial = null)
         => Bind(() => effect.Depth, v => effect.Depth = v, initial);
 
+    /// <summary>
+    /// Bind a tremolo rate to a modulated variable.
+    /// </summary>
     public static ModVar Rate(TremoloEffect effect, float? initial = null)
         => Bind(() => effect.Rate, v => effect.Rate = v, initial);
 

@@ -20,6 +20,9 @@ public sealed class AudioDeck : ISampleProvider
     private int _frameCount;
     private float _positionFrames;
 
+    /// <summary>
+    /// Create a deck with a name and optional sample rate override.
+    /// </summary>
     public AudioDeck(string name, int? sampleRate = null)
     {
         Name = string.IsNullOrWhiteSpace(name) ? "Deck" : name;
@@ -126,6 +129,9 @@ public sealed class AudioDeck : ISampleProvider
         _positionFrames = WrapOrClamp(_positionFrames + (float)frames);
     }
 
+    /// <summary>
+    /// Read audio samples into the buffer.
+    /// </summary>
     public int Read(float[] buffer, int offset, int count)
     {
         Array.Clear(buffer, offset, count);

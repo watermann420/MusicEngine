@@ -8,6 +8,9 @@ using MusicEngine.Instruments;
 
 namespace MusicEngine.Scripting;
 
+/// <summary>
+/// Script-side access to optional MusicEngine.Library instruments.
+/// </summary>
 public sealed class LibraryAccess
 {
     private readonly ScriptGlobals _globals;

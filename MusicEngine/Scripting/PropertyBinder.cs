@@ -9,6 +9,9 @@ namespace MusicEngine.Scripting;
 
 internal static class PropertyBinder
 {
+    /// <summary>
+    /// Create a binding that maps a normalized value into a property/field range.
+    /// </summary>
     public static Action<float> Create(object target, string member, float min, float max)
     {
         if (target == null) throw new ArgumentNullException(nameof(target));
@@ -22,6 +25,9 @@ internal static class PropertyBinder
         };
     }
 
+    /// <summary>
+    /// Create a binding that maps a normalized value using a custom function.
+    /// </summary>
     public static Action<float> Create(object target, string member, Func<float, float> map)
     {
         if (target == null) throw new ArgumentNullException(nameof(target));

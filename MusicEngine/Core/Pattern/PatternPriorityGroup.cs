@@ -19,6 +19,9 @@ public sealed class PatternPriorityGroup
 /// </summary>
 public sealed class PatternPriorityRoute
 {
+    /// <summary>
+    /// Create a priority route for a synth target.
+    /// </summary>
     public PatternPriorityRoute(ISynth synth)
     {
         Synth = synth;
