@@ -11,13 +11,6 @@ Audio.master.Gain(0.1); // Set master gain to a safe level (adjust as needed)
 
 
 
-var speech = LibraryApi.Instrument("MusicEngine.Instruments.SpeechInstrument");
-speech.Phrase("Hallo MusicEngine", 60);
-speech.NoteOn(60, 100);
-Midi.Device(0).to(speech); 
-
-
-
 // Create a VST instrument instance (replace "Vital" with your desired plugin name)
 var vital = CreateVst("Vital");
 var ch1 = Audio.CreateChannel(1);
@@ -26,6 +19,7 @@ ch1.Gain(1.0);
 ch1.Pan(0.0); 
 ch1.Route(vital);
 ch1.Route(synth);
+ch1.Route(piano);
 
 // Create a VST effect instance (replace "Ozone 12 Equalizer" with your desired plugin name)
 var eq1 = CreateVstEffect("Ozone 12 Equalizer");
