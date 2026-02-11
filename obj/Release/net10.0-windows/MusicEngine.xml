@@ -1312,6 +1312,11 @@
             Default VST editor block size in frames.
             </summary>
         </member>
+        <member name="P:MusicEngine.Core.Settings.VstProcessBlockFrames">
+            <summary>
+            Extra processing block size for VST instruments/effects (adds latency but reduces CPU spikes).
+            </summary>
+        </member>
         <member name="P:MusicEngine.Core.Settings.VstCloseOnDispose">
             <summary>
             Close native VST instances on dispose (disable if plugins crash on close).
@@ -2011,6 +2016,11 @@
             <param name="dt">Phase increment.</param>
             <returns>Correction term.</returns>
         </member>
+        <member name="T:MusicEngine.Instruments.Modules.Wavetable">
+            <summary>
+            Simple wavetable container with linear interpolation sampling.
+            </summary>
+        </member>
         <member name="T:MusicEngine.Instruments.WaveType">
             <summary>
             Core waveform types for oscillators.
@@ -2189,6 +2199,9 @@
         <member name="P:MusicEngine.Instruments.SimpleSynth.Waveform">
             <summary>Oscillator 1 waveform type</summary>
         </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.Osc1Wavetable">
+            <summary>Oscillator 1 wavetable (overrides waveform when set)</summary>
+        </member>
         <member name="P:MusicEngine.Instruments.SimpleSynth.Osc1Octave">
             <summary>Oscillator 1 octave offset (-3 to +3)</summary>
         </member>
@@ -2209,6 +2222,9 @@
         </member>
         <member name="P:MusicEngine.Instruments.SimpleSynth.Osc2Waveform">
             <summary>Oscillator 2 waveform type</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.Osc2Wavetable">
+            <summary>Oscillator 2 wavetable (overrides waveform when set)</summary>
         </member>
         <member name="P:MusicEngine.Instruments.SimpleSynth.Osc2Octave">
             <summary>Oscillator 2 octave offset (-3 to +3)</summary>
@@ -2442,6 +2458,11 @@
         <member name="P:MusicEngine.Instruments.SynthOscillator.Waveform">
             <summary>
             Oscillator waveform.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SynthOscillator.Wavetable">
+            <summary>
+            Optional wavetable override.
             </summary>
         </member>
         <member name="P:MusicEngine.Instruments.SynthOscillator.Octave">

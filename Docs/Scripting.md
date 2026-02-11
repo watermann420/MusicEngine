@@ -75,6 +75,18 @@ var file = File(); // uses file name (Instruments) and exposes File.Instruments
 file.Synth1 = CreateSynth();
 ```
 
+## Wavetable Usage
+
+```csharp
+var synth = CreateSynth();
+synth.Osc1Wavetable = Wavetable.Saw(2048);
+
+var wt = Wavetable.FromFile("my_wave.wav", maxSamples: 2048);
+var osc = synth.Oscillator();
+osc.Wavetable = wt;
+osc.Enabled = true;
+```
+
 ## Notes
 
 - Shared objects live until you clear state or restart the engine.

@@ -134,6 +134,11 @@ public static class Settings
     public static int VstEditorBlockSize { get; set; } = 512;
 
     /// <summary>
+    /// Extra processing block size for VST instruments/effects (adds latency but reduces CPU spikes).
+    /// </summary>
+    public static int VstProcessBlockFrames { get; set; } = 256;
+
+    /// <summary>
     /// Close native VST instances on dispose (disable if plugins crash on close).
     /// </summary>
     public static bool VstCloseOnDispose { get; set; } = false;

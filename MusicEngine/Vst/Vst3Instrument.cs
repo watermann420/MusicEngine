@@ -29,6 +29,10 @@ public sealed class Vst3Instrument : IVstInstrument, IDisposable
     private bool _disposed;
     private float[]? _tempBuffer;
     private bool _tempBufferFromPool;
+    private float[]? _blockBuffer;
+    private bool _blockBufferFromPool;
+    private int _blockOffset;
+    private int _blockAvailable;
     private Dictionary<string, int>? _parameterMap;
     private int _activeNotes;
     private bool _isSleeping;
@@ -177,6 +181,12 @@ public sealed class Vst3Instrument : IVstInstrument, IDisposable
         {
             Array.Clear(buffer, offset, count);
             return count;
+        }
+
+        int blockFrames = Math.Max(frames, Settings.VstProcessBlockFrames);
+        if (blockFrames > frames)
+        {
+            return ReadBuffered(buffer, offset, count, frames, blockFrames);
         }
 
         EnsureSetup(frames);
@@ -458,6 +468,12 @@ public sealed class Vst3Instrument : IVstInstrument, IDisposable
         }
         _tempBuffer = null;
         _tempBufferFromPool = false;
+        if (_blockBuffer != null && _blockBufferFromPool)
+        {
+            ArrayPool<float>.Shared.Return(_blockBuffer);
+        }
+        _blockBuffer = null;
+        _blockBufferFromPool = false;
     }
 
     private void EnsureSetup(int frames)
@@ -487,6 +503,16 @@ public sealed class Vst3Instrument : IVstInstrument, IDisposable
             _tempBufferFromPool = true;
         }
         return _tempBuffer;
+    }
+
+    private float[] GetBlockBuffer(int count)
+    {
+        if (_blockBuffer == null || _blockBuffer.Length < count)
+        {
+            _blockBuffer = ArrayPool<float>.Shared.Rent(count);
+            _blockBufferFromPool = true;
+        }
+        return _blockBuffer;
     }
 
     private void EnsureParameterMap()
@@ -569,6 +595,47 @@ public sealed class Vst3Instrument : IVstInstrument, IDisposable
         {
             _isSleeping = true;
         }
+    }
+
+    private int ReadBuffered(float[] buffer, int offset, int count, int frames, int blockFrames)
+    {
+        int samplesRequested = count;
+        int channels = _outputChannels;
+        int blockSamples = blockFrames * channels;
+        var block = GetBlockBuffer(blockSamples);
+
+        int writeOffset = offset;
+        int remaining = samplesRequested;
+        while (remaining > 0)
+        {
+            if (_blockAvailable == 0)
+            {
+                EnsureSetup(blockFrames);
+                if (!Process(block, blockFrames))
+                {
+                    Array.Clear(block, 0, blockSamples);
+                }
+                if (!IsUnity(Volume) || !IsZero(Pan))
+                {
+                    ApplyVolumePan(block, 0, blockSamples);
+                }
+                if (SleepWhenIdle)
+                {
+                    UpdateSleepState(block, 0, blockSamples);
+                }
+                _blockOffset = 0;
+                _blockAvailable = blockSamples;
+            }
+
+            int toCopy = Math.Min(remaining, _blockAvailable);
+            Array.Copy(block, _blockOffset, buffer, writeOffset, toCopy);
+            _blockOffset += toCopy;
+            _blockAvailable -= toCopy;
+            writeOffset += toCopy;
+            remaining -= toCopy;
+        }
+
+        return count;
     }
 
     private void QueueAutoSave()

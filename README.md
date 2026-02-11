@@ -128,6 +128,22 @@ osc4.Pan = 0.2f;
 osc4.ModToFilter = 0.2f;
 ```
 
+## Wavetable Oscillators
+
+```csharp
+var synth = CreateSynth();
+
+// Built-in tables
+synth.Osc1Wavetable = Wavetable.Saw(2048);
+synth.Osc2Wavetable = Wavetable.WhiteNoise(2048);
+
+// Custom file (first channel)
+var wt = Wavetable.FromFile("my_wave.wav", maxSamples: 2048);
+var osc = synth.Oscillator();
+osc.Wavetable = wt;
+osc.Enabled = true;
+```
+
 ## VST3 Example (Script)
 
 ```csharp

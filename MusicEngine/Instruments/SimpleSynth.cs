@@ -46,6 +46,9 @@ public class SimpleSynth : ISynth
     /// <summary>Oscillator 1 waveform type</summary>
     public WaveType Waveform { get; set; } = WaveType.Sawtooth;
 
+    /// <summary>Oscillator 1 wavetable (overrides waveform when set)</summary>
+    public Wavetable? Osc1Wavetable { get; set; }
+
     /// <summary>Oscillator 1 octave offset (-3 to +3)</summary>
     public int Osc1Octave { get; set; } = 0;
 
@@ -70,6 +73,9 @@ public class SimpleSynth : ISynth
 
     /// <summary>Oscillator 2 waveform type</summary>
     public WaveType Osc2Waveform { get; set; } = WaveType.Sawtooth;
+
+    /// <summary>Oscillator 2 wavetable (overrides waveform when set)</summary>
+    public Wavetable? Osc2Wavetable { get; set; }
 
     /// <summary>Oscillator 2 octave offset (-3 to +3)</summary>
     public int Osc2Octave { get; set; } = 0;
@@ -876,7 +882,9 @@ public class SimpleSynth : ISynth
 
                     // Oscillator 1 with band-limiting
                     float pw1 = Math.Clamp(synth.Osc1PulseWidth + pwMod, 0.0001f, 0.9999f);
-                    float osc1 = WaveformGenerator.Oscillator(synth.Waveform, _unisonPhases[u], pw1, _random, osc1PhaseInc) * synth.Osc1Level;
+                    float osc1 = synth.Osc1Wavetable != null
+                        ? synth.Osc1Wavetable.Sample(_unisonPhases[u]) * synth.Osc1Level
+                        : WaveformGenerator.Oscillator(synth.Waveform, _unisonPhases[u], pw1, _random, osc1PhaseInc) * synth.Osc1Level;
                     _unisonPhases[u] += osc1PhaseInc;
                     if (_unisonPhases[u] >= 1f) _unisonPhases[u] -= 1f;
 
@@ -912,7 +920,9 @@ public class SimpleSynth : ISynth
                     float oscFreq = baseFreq * osc.GetPitchRatio();
                     float phaseInc = oscFreq / sampleRate;
                     float pw = Math.Clamp(osc.PulseWidth + pwMod, 0.0001f, 0.9999f);
-                    float oscSample = WaveformGenerator.Oscillator(osc.Waveform, _extraPhases[i], pw, _random, phaseInc);
+                    float oscSample = osc.Wavetable != null
+                        ? osc.Wavetable.Sample(_extraPhases[i])
+                        : WaveformGenerator.Oscillator(osc.Waveform, _extraPhases[i], pw, _random, phaseInc);
                     _extraPhases[i] += phaseInc;
                     if (_extraPhases[i] >= 1f) _extraPhases[i] -= 1f;
 
@@ -939,7 +949,9 @@ public class SimpleSynth : ISynth
             {
                 float osc2PhaseInc = freq2 / sampleRate;
                 float pw2 = Math.Clamp(synth.Osc2PulseWidth + pwMod, 0.0001f, 0.9999f);
-                float osc2 = WaveformGenerator.Oscillator(synth.Osc2Waveform, _osc2Phase, pw2, _random, osc2PhaseInc) * synth.Osc2Level;
+                float osc2 = synth.Osc2Wavetable != null
+                    ? synth.Osc2Wavetable.Sample(_osc2Phase) * synth.Osc2Level
+                    : WaveformGenerator.Oscillator(synth.Osc2Waveform, _osc2Phase, pw2, _random, osc2PhaseInc) * synth.Osc2Level;
                 _osc2Phase += osc2PhaseInc;
                 if (_osc2Phase >= 1f) _osc2Phase -= 1f;
 

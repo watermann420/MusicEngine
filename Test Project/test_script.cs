@@ -21,12 +21,17 @@ ch1.Pan(0.0);
 ch1.Route(vital);
 ch1.Route(synth);
 
+// Create a VST effect instance (replace "Ozone 12 Equalizer" with your desired plugin name)
+var eq1 = CreateVstEffect("Ozone 12 Equalizer");
+ch1.Effect(eq1);
 
-
+var fx = CreateVstEffect("ValhallaSupermassive");
+ch1.Effect(fx);
 
 
 //midi setup
-midi.Device(0).to(synth); // MIDI channel 1 (0-based)
+midi.Device(0).to(vital); // MIDI channel 1 (0-based)
+
 Midi.Device(0).Pitchbend().to((Action<float>)(val => synth.PitchBend(val * 2f - 1f))); // map wheel to -1..1
 Midi.Device(0).Pitchbend().to((Action<float>)(val => piano.PitchBend(val * 2f - 1f))); // map wheel to -1..1
 Midi.Device(0).Pitchbend().to((Action<float>)(val => vital.PitchBend(val * 2f - 1f))); // -1..1

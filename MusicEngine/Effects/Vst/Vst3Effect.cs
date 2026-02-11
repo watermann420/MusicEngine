@@ -285,6 +285,10 @@ public sealed class Vst3Effect : IAudioEffect
         private float[]? _outputBuffer;
         private bool _inputBufferFromPool;
         private bool _outputBufferFromPool;
+        private float[]? _blockOutputBuffer;
+        private bool _blockOutputFromPool;
+        private int _blockOffset;
+        private int _blockAvailable;
         private bool _isSleeping;
         private long _lastActivityTick;
 
@@ -307,6 +311,12 @@ public sealed class Vst3Effect : IAudioEffect
 
             int frames = count / _waveFormat.Channels;
             if (frames <= 0) return 0;
+
+            int blockFrames = Math.Max(frames, Settings.VstProcessBlockFrames);
+            if (blockFrames > frames)
+            {
+                return ReadBuffered(buffer, offset, count, frames, blockFrames);
+            }
 
             EnsureSetup(frames);
 
@@ -358,10 +368,16 @@ public sealed class Vst3Effect : IAudioEffect
             {
                 ArrayPool<float>.Shared.Return(_outputBuffer);
             }
+            if (_blockOutputBuffer != null && _blockOutputFromPool)
+            {
+                ArrayPool<float>.Shared.Return(_blockOutputBuffer);
+            }
             _inputBuffer = null;
             _outputBuffer = null;
             _inputBufferFromPool = false;
             _outputBufferFromPool = false;
+            _blockOutputBuffer = null;
+            _blockOutputFromPool = false;
         }
 
         private void EnsureSetup(int frames)
@@ -447,6 +463,16 @@ public sealed class Vst3Effect : IAudioEffect
             return _outputBuffer;
         }
 
+        private float[] GetBlockOutputBuffer(int count)
+        {
+            if (_blockOutputBuffer == null || _blockOutputBuffer.Length < count)
+            {
+                _blockOutputBuffer = ArrayPool<float>.Shared.Rent(count);
+                _blockOutputFromPool = true;
+            }
+            return _blockOutputBuffer;
+        }
+
         private void UpdateSleepState(bool inputSilent, bool outputSilent)
         {
             if (!_owner.SleepWhenIdle) return;
@@ -468,6 +494,79 @@ public sealed class Vst3Effect : IAudioEffect
             {
                 _isSleeping = true;
             }
+        }
+
+        private int ReadBuffered(float[] buffer, int offset, int count, int frames, int blockFrames)
+        {
+            int samplesRequested = count;
+            int targetChannels = _waveFormat.Channels;
+            int blockInputSamples = blockFrames * _inputChannels;
+            int blockOutputSamples = blockFrames * _outputChannels;
+            var blockOutput = GetBlockOutputBuffer(blockOutputSamples);
+
+            int writeOffset = offset;
+            int remaining = samplesRequested;
+            while (remaining > 0)
+            {
+                if (_blockAvailable == 0)
+                {
+                    EnsureSetup(blockFrames);
+                    var inputTemp = GetInputBuffer(blockInputSamples);
+                    var outputTemp = blockOutput;
+
+                    int read = _input.Read(inputTemp, 0, blockInputSamples);
+                    if (read < blockInputSamples)
+                    {
+                        Array.Clear(inputTemp, read, blockInputSamples - read);
+                    }
+
+                    if (!Settings.VstEffectsEnabled)
+                    {
+                        CopyInputAsOutput(inputTemp, outputTemp, 0, blockFrames);
+                        _blockOffset = 0;
+                        _blockAvailable = blockOutputSamples;
+                    }
+                    else
+                    {
+                        var inputSilent = AudioSilence.IsSilent(inputTemp, 0, blockInputSamples, _owner.IdleThreshold);
+                        if (_owner.SleepWhenIdle && _isSleeping && inputSilent)
+                        {
+                            Array.Clear(outputTemp, 0, blockOutputSamples);
+                        }
+                        else
+                        {
+                            var ok = Process(inputTemp, outputTemp, blockFrames);
+                            if (!ok)
+                            {
+                                Array.Clear(outputTemp, 0, blockOutputSamples);
+                            }
+                        }
+
+                        var outputSilent = AudioSilence.IsSilent(outputTemp, 0, blockOutputSamples, _owner.IdleThreshold);
+                        UpdateSleepState(inputSilent, outputSilent);
+                        _blockOffset = 0;
+                        _blockAvailable = blockOutputSamples;
+                    }
+                }
+
+                int toCopy = Math.Min(remaining, _blockAvailable);
+                if (_outputChannels == targetChannels)
+                {
+                    Array.Copy(blockOutput, _blockOffset, buffer, writeOffset, toCopy);
+                }
+                else
+                {
+                    int framesToCopy = toCopy / _outputChannels;
+                    CopyOutput(blockOutput, buffer, writeOffset, framesToCopy);
+                }
+
+                _blockOffset += toCopy;
+                _blockAvailable -= toCopy;
+                writeOffset += toCopy;
+                remaining -= toCopy;
+            }
+
+            return count;
         }
 
         private void CopyInputAsOutput(float[] input, float[] target, int offset, int frames)

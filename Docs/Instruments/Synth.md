@@ -67,6 +67,22 @@ osc.PulseWidth = 0.2f;
 osc.ModToPitch = 0.5f;
 ```
 
+## Wavetables
+
+```csharp
+var synth = CreateSynth();
+
+// Built-in tables
+synth.Osc1Wavetable = Wavetable.Saw(2048);
+synth.Osc2Wavetable = Wavetable.WhiteNoise(2048);
+
+// Custom wavetable from file (first channel)
+var wt = Wavetable.FromFile("my_wave.wav", maxSamples: 2048);
+var osc = synth.Oscillator();
+osc.Wavetable = wt;
+osc.Enabled = true;
+```
+
 ## Shared Effects
 
 ```csharp

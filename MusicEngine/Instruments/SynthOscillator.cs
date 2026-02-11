@@ -22,6 +22,11 @@ public sealed class SynthOscillator
     public WaveType Waveform { get; set; } = WaveType.Sine;
 
     /// <summary>
+    /// Optional wavetable override.
+    /// </summary>
+    public Wavetable? Wavetable { get; set; }
+
+    /// <summary>
     /// Octave offset.
     /// </summary>
     public int Octave { get; set; } = 0;
