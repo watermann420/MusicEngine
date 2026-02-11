@@ -1,5 +1,5 @@
 File.Main();
-Audio.SetRenderer(asio, 1);
+
 
 
 Include synthInstance; // This includes the synthInstance.cs script which creates a basic synthesizer instance with default settings. You can customize it by editing that script.
