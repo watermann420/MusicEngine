@@ -110,6 +110,24 @@ var kick = samples.Kick;
 var clap = samples["Clap-01"];
 ```
 
+You can also point to a single file:
+
+```csharp
+var kick = GetSamples("Samples/Drums/Kick.wav");
+```
+
+## Git URLs (Auto Cache)
+
+```csharp
+Include "https://github.com/user/ME-Kits/scripts/synthInstance.cs";
+var synth = Include.synthInstance.synth;
+
+var drums = GetSamples("https://github.com/user/ME-Kits#samples/909");
+var kick = drums.Kick;
+```
+
+Git repositories are cached under the project folder in `.gitcache/` and updated automatically.
+
 ## VST Presets (State Snapshots)
 
 ```csharp

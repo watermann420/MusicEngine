@@ -5,7 +5,9 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
@@ -31,6 +33,7 @@ public sealed class ScriptHost
     private const string ScriptsFolderName = "Test Project";
     private const string LegacyScriptsFolderName = "Scripts";
     private const string ProjectDirectoryEnvVar = "MUSICENGINE_PROJECT_DIR";
+    private const string GitCacheFolderName = ".gitcache";
     /// <summary>
     /// When true, VST instances are disposed when clearing script state.
     /// </summary>
@@ -55,6 +58,8 @@ public sealed class ScriptHost
     private readonly List<string> _masterScriptOrder = new();
     private readonly Dictionary<string, string> _scriptAliases = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, VstBinding> _vstBindings = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _externalScriptRoots = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _gitRepoCache = new(StringComparer.OrdinalIgnoreCase);
     private HashSet<string>? _modulesExecutedThisRun;
     private string? _currentScriptFilePath;
     private Assembly? _libraryAssembly;
@@ -182,6 +187,17 @@ public sealed class ScriptHost
         if (_modulesExecutedThisRun != null && _modulesExecutedThisRun.Contains(scriptName))
         {
             return false;
+        }
+
+        var gitTarget = TryResolveGitTarget(scriptName);
+        if (gitTarget != null)
+        {
+            RegisterExternalScriptRoot(gitTarget.RepoRoot);
+            if (gitTarget.IsRepoRoot)
+            {
+                return true;
+            }
+            scriptName = gitTarget.TargetPath;
         }
 
         var path = ResolveScriptPath(scriptName);
@@ -396,6 +412,179 @@ public sealed class ScriptHost
         if (Directory.Exists(legacyDir)) return legacyDir;
 
         return baseDir;
+    }
+
+    private string? ResolveProjectDirectory()
+    {
+        var projectOverride = Environment.GetEnvironmentVariable(ProjectDirectoryEnvVar);
+        if (!string.IsNullOrWhiteSpace(projectOverride))
+        {
+            return projectOverride;
+        }
+
+        if (!string.IsNullOrWhiteSpace(_scriptFilePath))
+        {
+            var scriptDir = Path.GetDirectoryName(_scriptFilePath);
+            if (!string.IsNullOrWhiteSpace(scriptDir) &&
+                (string.Equals(Path.GetFileName(scriptDir), ScriptsFolderName, StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(Path.GetFileName(scriptDir), LegacyScriptsFolderName, StringComparison.OrdinalIgnoreCase)))
+            {
+                return Path.GetDirectoryName(scriptDir);
+            }
+
+            return scriptDir;
+        }
+
+        return AppContext.BaseDirectory;
+    }
+
+    private string? GetGitCacheRoot()
+    {
+        var projectDir = ResolveProjectDirectory();
+        return string.IsNullOrWhiteSpace(projectDir) ? null : Path.Combine(projectDir, GitCacheFolderName);
+    }
+
+    private void RegisterExternalScriptRoot(string root)
+    {
+        if (string.IsNullOrWhiteSpace(root)) return;
+        var fullPath = Path.GetFullPath(root);
+        if (Directory.Exists(fullPath))
+        {
+            _externalScriptRoots.Add(fullPath);
+        }
+    }
+
+    internal string ResolveExternalPath(string path)
+    {
+        var gitTarget = TryResolveGitTarget(path);
+        if (gitTarget != null)
+        {
+            RegisterExternalScriptRoot(gitTarget.RepoRoot);
+            return gitTarget.TargetPath;
+        }
+
+        return path;
+    }
+
+    private sealed record GitResolveResult(string RepoRoot, string TargetPath, bool IsRepoRoot);
+
+    private GitResolveResult? TryResolveGitTarget(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input)) return null;
+        if (!Uri.TryCreate(input, UriKind.Absolute, out var uri)) return null;
+        if (!string.Equals(uri.Scheme, "https", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(uri.Scheme, "http", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        if (!uri.Host.EndsWith("github.com", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var segments = uri.AbsolutePath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length < 2) return null;
+
+        var owner = segments[0];
+        var repo = segments[1];
+        if (repo.EndsWith(".git", StringComparison.OrdinalIgnoreCase))
+        {
+            repo = repo[..^4];
+        }
+
+        var repoUrl = $"{uri.Scheme}://{uri.Host}/{owner}/{repo}.git";
+        var cacheRoot = GetGitCacheRoot();
+        if (string.IsNullOrWhiteSpace(cacheRoot))
+        {
+            return null;
+        }
+
+        var repoDir = Path.Combine(cacheRoot, $"{owner}_{repo}");
+        if (!EnsureGitRepo(repoUrl, repoDir))
+        {
+            return null;
+        }
+
+        string? subPath = null;
+        if (!string.IsNullOrWhiteSpace(uri.Fragment))
+        {
+            subPath = uri.Fragment.TrimStart('#', '/');
+        }
+
+        if (string.IsNullOrWhiteSpace(subPath))
+        {
+            var startIndex = 2;
+            if (segments.Length > 3 &&
+                (string.Equals(segments[2], "blob", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(segments[2], "tree", StringComparison.OrdinalIgnoreCase)))
+            {
+                startIndex = 4;
+            }
+
+            if (segments.Length > startIndex)
+            {
+                subPath = string.Join("/", segments.Skip(startIndex));
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(subPath))
+        {
+            return new GitResolveResult(repoDir, repoDir, true);
+        }
+
+        var localPath = Path.Combine(repoDir, subPath.Replace('/', Path.DirectorySeparatorChar));
+        return new GitResolveResult(repoDir, localPath, false);
+    }
+
+    private bool EnsureGitRepo(string repoUrl, string repoDir)
+    {
+        if (_gitRepoCache.TryGetValue(repoUrl, out var cached))
+        {
+            return Directory.Exists(cached);
+        }
+
+        try
+        {
+            var gitFolder = Path.Combine(repoDir, ".git");
+            if (!Directory.Exists(gitFolder))
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(repoDir) ?? repoDir);
+                RunGit($"clone \"{repoUrl}\" \"{repoDir}\"");
+            }
+            else
+            {
+                RunGit($"-C \"{repoDir}\" pull --ff-only");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Git cache warning: {ex.Message}");
+        }
+
+        _gitRepoCache[repoUrl] = repoDir;
+        return Directory.Exists(repoDir);
+    }
+
+    private static void RunGit(string arguments)
+    {
+        try
+        {
+            var startInfo = new ProcessStartInfo("git", arguments)
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            using var process = Process.Start(startInfo);
+            if (process == null) return;
+            process.WaitForExit();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Git error: {ex.Message}");
+        }
     }
 
     private List<string> FindMainScripts()
@@ -662,8 +851,17 @@ public sealed class ScriptHost
 
         return Regex.Replace(
             code,
-            @"\binclude\s+(?<name>[A-Za-z_]\w*)\s*;",
-            "Use(\"${name}\", true).GetAwaiter().GetResult();",
+            @"\binclude\s+(?<value>(?:[A-Za-z_]\w*|""[^""]+""))\s*;",
+            match =>
+            {
+                var value = match.Groups["value"].Value.Trim();
+                if (value.StartsWith("\"", StringComparison.Ordinal))
+                {
+                    return $"Use({value}, true).GetAwaiter().GetResult();";
+                }
+
+                return $"Use(\"{value}\", true).GetAwaiter().GetResult();";
+            },
             RegexOptions.IgnoreCase);
     }
 
@@ -1314,6 +1512,15 @@ public sealed class ScriptHost
     internal string? ResolveScriptPath(string name)
     {
         if (string.IsNullOrWhiteSpace(name)) return null;
+        var gitTarget = TryResolveGitTarget(name);
+        if (gitTarget != null)
+        {
+            RegisterExternalScriptRoot(gitTarget.RepoRoot);
+            if (!gitTarget.IsRepoRoot && File.Exists(gitTarget.TargetPath))
+            {
+                return gitTarget.TargetPath;
+            }
+        }
         if (Path.IsPathRooted(name))
         {
             if (File.Exists(name)) return name;
@@ -1380,6 +1587,18 @@ public sealed class ScriptHost
 
         foreach (var candidate in candidates)
         {
+            foreach (var root in EnumerateExternalScriptRoots())
+            {
+                var scriptPath = Path.Combine(root, candidate);
+                if (File.Exists(scriptPath))
+                {
+                    return scriptPath;
+                }
+            }
+        }
+
+        foreach (var candidate in candidates)
+        {
             var scriptPath = Path.Combine(baseDir, candidate);
             if (File.Exists(scriptPath))
             {
@@ -1388,6 +1607,26 @@ public sealed class ScriptHost
         }
 
         return null;
+    }
+
+    private IEnumerable<string> EnumerateExternalScriptRoots()
+    {
+        foreach (var root in _externalScriptRoots)
+        {
+            if (Directory.Exists(root)) yield return root;
+
+            var scriptsDir = Path.Combine(root, "scripts");
+            if (Directory.Exists(scriptsDir)) yield return scriptsDir;
+
+            var scriptsUpperDir = Path.Combine(root, "Scripts");
+            if (Directory.Exists(scriptsUpperDir)) yield return scriptsUpperDir;
+
+            var testProjectDir = Path.Combine(root, ScriptsFolderName);
+            if (Directory.Exists(testProjectDir)) yield return testProjectDir;
+
+            var legacyDir = Path.Combine(root, LegacyScriptsFolderName);
+            if (Directory.Exists(legacyDir)) yield return legacyDir;
+        }
     }
 
     private void LogCompilationErrors(CompilationErrorException error)
@@ -1811,6 +2050,10 @@ public sealed class ScriptGlobals
     public dynamic GetSamples(string folder, string searchPattern = "*.*", bool recursive = true, bool audioOnly = true)
     {
         var resolved = ResolvePath(folder);
+        if (File.Exists(resolved))
+        {
+            return resolved;
+        }
         var samples = new SampleFolder(resolved, searchPattern, recursive, audioOnly);
         return new CaseInsensitiveProxy(samples);
     }
@@ -1818,6 +2061,11 @@ public sealed class ScriptGlobals
     private string ResolvePath(string path)
     {
         if (string.IsNullOrWhiteSpace(path)) return string.Empty;
+        var externalPath = Host?.ResolveExternalPath(path);
+        if (!string.IsNullOrWhiteSpace(externalPath))
+        {
+            path = externalPath;
+        }
         if (Path.IsPathRooted(path)) return path;
 
         var baseDir = !string.IsNullOrWhiteSpace(ScriptFilePath)
