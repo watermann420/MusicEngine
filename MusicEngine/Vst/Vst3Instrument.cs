@@ -37,7 +37,10 @@ public sealed class Vst3Instrument : IVstInstrument, IDisposable
     private ThreadingTimer? _autoSaveTimer;
     private bool _autoSaveEnabled = true;
     private string? _autoStatePath;
-    private double _autoSaveIntervalSeconds = 2.0;
+    private double _autoSaveIntervalSeconds = Settings.VstAutoSaveIntervalSeconds;
+    private byte[]? _stateBuffer;
+    private int _pendingAutoSave;
+    private long _lastAutoSaveTick;
 
     /// <summary>
     /// Create a VST3 instrument from a plugin path.
@@ -122,6 +125,22 @@ public sealed class Vst3Instrument : IVstInstrument, IDisposable
     public float Chorus { get; set; } = 0f;
 
     /// <summary>
+    /// Auto-save interval in seconds (set to 0 to effectively disable timer).
+    /// </summary>
+    public double AutoSaveIntervalSeconds
+    {
+        get => _autoSaveIntervalSeconds;
+        set
+        {
+            _autoSaveIntervalSeconds = Math.Max(0.5, value);
+            if (_autoSaveEnabled)
+            {
+                EnsureAutoSaveTimer();
+            }
+        }
+    }
+
+    /// <summary>
     /// Output format for this instrument.
     /// </summary>
     public WaveFormat WaveFormat => _waveFormat;
@@ -168,8 +187,14 @@ public sealed class Vst3Instrument : IVstInstrument, IDisposable
             {
                 Array.Clear(buffer, 0, count);
             }
-            ApplyVolumePan(buffer, 0, count);
-            UpdateSleepState(buffer, 0, count);
+            if (!IsUnity(Volume) || !IsZero(Pan))
+            {
+                ApplyVolumePan(buffer, 0, count);
+            }
+            if (SleepWhenIdle)
+            {
+                UpdateSleepState(buffer, 0, count);
+            }
             return count;
         }
 
@@ -178,8 +203,14 @@ public sealed class Vst3Instrument : IVstInstrument, IDisposable
         {
             Array.Clear(temp, 0, count);
         }
-        ApplyVolumePan(temp, 0, count);
-        UpdateSleepState(temp, 0, count);
+        if (!IsUnity(Volume) || !IsZero(Pan))
+        {
+            ApplyVolumePan(temp, 0, count);
+        }
+        if (SleepWhenIdle)
+        {
+            UpdateSleepState(temp, 0, count);
+        }
         Array.Copy(temp, 0, buffer, offset, count);
         return count;
     }
@@ -266,6 +297,10 @@ public sealed class Vst3Instrument : IVstInstrument, IDisposable
         }
 
         float pan = Math.Clamp(Pan, -1f, 1f);
+        if (IsUnity(volume) && IsZero(pan))
+        {
+            return;
+        }
         float panL = Math.Min(1f, 1f - pan);
         float panR = Math.Min(1f, 1f + pan);
 
@@ -432,18 +467,17 @@ public sealed class Vst3Instrument : IVstInstrument, IDisposable
         _lastBlockSize = frames;
     }
 
-    private bool Process(float[] buffer, int frames)
+    private unsafe bool Process(float[] buffer, int frames)
     {
-        var handle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
-        try
+        fixed (float* ptr = buffer)
         {
-            return Vst3Native.Vst3Host_Process(_hostHandle, handle.AddrOfPinnedObject(), frames, _outputChannels);
-        }
-        finally
-        {
-            handle.Free();
+            return Vst3Native.Vst3Host_Process(_hostHandle, (IntPtr)ptr, frames, _outputChannels);
         }
     }
+
+    private static bool IsUnity(float value) => Math.Abs(value - 1f) < 1e-6f;
+
+    private static bool IsZero(float value) => Math.Abs(value) < 1e-6f;
 
     private float[] GetTempBuffer(int count)
     {
@@ -490,7 +524,7 @@ public sealed class Vst3Instrument : IVstInstrument, IDisposable
         var due = TimeSpan.FromSeconds(Math.Max(1.0, _autoSaveIntervalSeconds));
         if (_autoSaveTimer == null)
         {
-            _autoSaveTimer = new ThreadingTimer(_ => SaveStateOnce(_autoStatePath), null, due, due);
+            _autoSaveTimer = new ThreadingTimer(_ => QueueAutoSave(), null, due, due);
         }
         else
         {
@@ -522,6 +556,8 @@ public sealed class Vst3Instrument : IVstInstrument, IDisposable
             return;
         }
 
+        TryRunAutoSave();
+
         if (IdleTimeoutSeconds <= 0)
         {
             _isSleeping = true;
@@ -535,11 +571,31 @@ public sealed class Vst3Instrument : IVstInstrument, IDisposable
         }
     }
 
+    private void QueueAutoSave()
+    {
+        if (!_autoSaveEnabled || string.IsNullOrWhiteSpace(_autoStatePath)) return;
+        Interlocked.Exchange(ref _pendingAutoSave, 1);
+    }
+
+    private void TryRunAutoSave()
+    {
+        if (Interlocked.Exchange(ref _pendingAutoSave, 0) == 0) return;
+        if (string.IsNullOrWhiteSpace(_autoStatePath)) return;
+        if (_activeNotes > 0) return;
+        var now = Environment.TickCount64;
+        if (_lastAutoSaveTick != 0 && now - _lastAutoSaveTick < 500)
+        {
+            Interlocked.Exchange(ref _pendingAutoSave, 1);
+            return;
+        }
+        _lastAutoSaveTick = now;
+        SaveStateOnce(_autoStatePath);
+    }
+
     private void SaveStateOnce(string path)
     {
         if (string.IsNullOrWhiteSpace(path)) return;
-        var data = GetState();
-        if (data.Length == 0) return;
+        if (!TryGetStateInternal(out var data, out var written) || written <= 0) return;
         var dir = Path.GetDirectoryName(path);
         if (!string.IsNullOrWhiteSpace(dir))
         {
@@ -547,7 +603,8 @@ public sealed class Vst3Instrument : IVstInstrument, IDisposable
         }
         try
         {
-            File.WriteAllBytes(path, data);
+            using var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read);
+            stream.Write(data, 0, written);
         }
         catch
         {
@@ -651,39 +708,60 @@ public sealed class Vst3Instrument : IVstInstrument, IDisposable
         return Path.Combine(baseDir, ".musicengine", "states", safeScript);
     }
 
-    private byte[] GetStateInternal()
+    private unsafe bool TryGetStateInternal(out byte[] buffer, out int written)
     {
         int size = Vst3Native.Vst3Host_GetStateSize(_hostHandle);
-        if (size <= 0) return Array.Empty<byte>();
-
-        var data = new byte[size];
-        var handle = GCHandle.Alloc(data, GCHandleType.Pinned);
-        try
+        if (size <= 0)
         {
-            int written = Vst3Native.Vst3Host_GetState(_hostHandle, handle.AddrOfPinnedObject(), size);
-            if (written <= 0) return Array.Empty<byte>();
-            if (written == size) return data;
-            var trimmed = new byte[written];
-            Array.Copy(data, trimmed, written);
-            return trimmed;
+            buffer = Array.Empty<byte>();
+            written = 0;
+            return false;
         }
-        finally
+
+        if (_stateBuffer == null || _stateBuffer.Length < size)
         {
-            handle.Free();
+            _stateBuffer = new byte[size];
+        }
+        buffer = _stateBuffer;
+
+        fixed (byte* ptr = buffer)
+        {
+            written = Vst3Native.Vst3Host_GetState(_hostHandle, (IntPtr)ptr, size);
+            if (written <= 0)
+            {
+                buffer = Array.Empty<byte>();
+                written = 0;
+                return false;
+            }
+            if (written > size)
+            {
+                written = size;
+            }
+            return true;
         }
     }
 
-    private void SetStateInternal(byte[] data)
+    private unsafe void SetStateInternal(byte[] data)
     {
-        var handle = GCHandle.Alloc(data, GCHandleType.Pinned);
-        try
+        fixed (byte* ptr = data)
         {
-            Vst3Native.Vst3Host_SetState(_hostHandle, handle.AddrOfPinnedObject(), data.Length);
+            Vst3Native.Vst3Host_SetState(_hostHandle, (IntPtr)ptr, data.Length);
         }
-        finally
+    }
+
+    private byte[] GetStateInternal()
+    {
+        if (!TryGetStateInternal(out var data, out var written)) return Array.Empty<byte>();
+        if (written == data.Length)
         {
-            handle.Free();
+            var copy = new byte[written];
+            Array.Copy(data, copy, written);
+            return copy;
         }
+
+        var trimmed = new byte[written];
+        Array.Copy(data, trimmed, written);
+        return trimmed;
     }
 
     private string GetStateBase64()

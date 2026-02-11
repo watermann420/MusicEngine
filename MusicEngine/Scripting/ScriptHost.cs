@@ -26,6 +26,8 @@ namespace MusicEngine.Scripting;
 /// </summary>
 public sealed class ScriptHost
 {
+    private const string ScriptsFolderName = "Test Project";
+    private const string LegacyScriptsFolderName = "Scripts";
     /// <summary>
     /// When true, VST instances are disposed when clearing script state.
     /// </summary>
@@ -108,7 +110,7 @@ public sealed class ScriptHost
         try
         {
             await RunMasterScriptsAsync();
-            return await RunScriptAsync(code, skipIfUnchanged, clearState: false, filePath: _scriptFilePath,
+            return await RunScriptAsync(code, skipIfUnchanged: false, clearState: false, filePath: _scriptFilePath,
                 cacheKey: null);
         }
         finally
@@ -349,10 +351,34 @@ public sealed class ScriptHost
 
     private string? ResolveScriptsDirectory()
     {
-        var baseDir = !string.IsNullOrWhiteSpace(_scriptFilePath)
-            ? Path.GetDirectoryName(_scriptFilePath)
-            : AppContext.BaseDirectory;
-        return string.IsNullOrWhiteSpace(baseDir) ? null : baseDir;
+        string? baseDir;
+        if (!string.IsNullOrWhiteSpace(_scriptFilePath))
+        {
+            var scriptDir = Path.GetDirectoryName(_scriptFilePath);
+            if (!string.IsNullOrWhiteSpace(scriptDir) &&
+                (string.Equals(Path.GetFileName(scriptDir), ScriptsFolderName, StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(Path.GetFileName(scriptDir), LegacyScriptsFolderName, StringComparison.OrdinalIgnoreCase)))
+            {
+                baseDir = Path.GetDirectoryName(scriptDir);
+            }
+            else
+            {
+                baseDir = scriptDir;
+            }
+        }
+        else
+        {
+            baseDir = AppContext.BaseDirectory;
+        }
+        if (string.IsNullOrWhiteSpace(baseDir)) return null;
+
+        var scriptsDir = Path.Combine(baseDir, ScriptsFolderName);
+        if (Directory.Exists(scriptsDir)) return scriptsDir;
+
+        var legacyDir = Path.Combine(baseDir, LegacyScriptsFolderName);
+        if (Directory.Exists(legacyDir)) return legacyDir;
+
+        return baseDir;
     }
 
     private List<string> FindMainScripts()
@@ -384,7 +410,7 @@ public sealed class ScriptHost
                 }
             }
 
-            if (MainFileBuilderRegex.IsMatch(code))
+            if (MainFileBuilderRegex.IsMatch(code) || MainFileCallRegex.IsMatch(code))
             {
                 results.Add(Path.GetFileNameWithoutExtension(file));
             }
@@ -403,7 +429,9 @@ public sealed class ScriptHost
             RegexOptions.Compiled);
     private static readonly Regex MainFileBuilderRegex =
         new(@"\bFile\s*\.Main\s*\(\s*\)\s*\.Name\s*\(\s*(?:\""([^\""]+)\""|([A-Za-z_]\w*))\s*\)",
-            RegexOptions.Compiled);
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex MainFileCallRegex =
+        new(@"\bFile\s*\.Main\s*\(\s*\)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private string PreprocessCode(string code)
     {
@@ -414,6 +442,7 @@ public sealed class ScriptHost
         code = PreprocessVstAliasCalls(code);
         code = PreprocessNoteNameCalls(code);
         code = PreprocessFriendlyNoteArgs(code);
+        code = PreprocessIncludeCalls(code);
         return code;
     }
 
@@ -578,6 +607,17 @@ public sealed class ScriptHost
             RegexOptions.IgnoreCase);
 
         return code;
+    }
+
+    private static string PreprocessIncludeCalls(string code)
+    {
+        if (string.IsNullOrWhiteSpace(code)) return code;
+
+        return Regex.Replace(
+            code,
+            @"\binclude\s+(?<name>[A-Za-z_]\w*)\s*;",
+            "Use(\"${name}\", true).GetAwaiter().GetResult();",
+            RegexOptions.IgnoreCase);
     }
 
     private static string ExpandNoteShorthand(string args)
@@ -951,7 +991,8 @@ public sealed class ScriptHost
         {
             var scriptDir = Path.GetDirectoryName(_scriptFilePath);
             if (!string.IsNullOrWhiteSpace(scriptDir) &&
-                string.Equals(Path.GetFileName(scriptDir), "Scripts", StringComparison.OrdinalIgnoreCase))
+                (string.Equals(Path.GetFileName(scriptDir), ScriptsFolderName, StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(Path.GetFileName(scriptDir), LegacyScriptsFolderName, StringComparison.OrdinalIgnoreCase)))
             {
                 baseDir = Path.GetDirectoryName(scriptDir);
             }
@@ -969,7 +1010,8 @@ public sealed class ScriptHost
             return null;
         }
 
-        var scriptsDir = Path.Combine(baseDir, "Scripts");
+        var scriptsDir = Path.Combine(baseDir, ScriptsFolderName);
+        var legacyScriptsDir = Path.Combine(baseDir, LegacyScriptsFolderName);
         var candidates = new[]
         {
             name,
@@ -980,6 +1022,15 @@ public sealed class ScriptHost
         foreach (var candidate in candidates)
         {
             var scriptPath = Path.Combine(scriptsDir, candidate);
+            if (File.Exists(scriptPath))
+            {
+                return scriptPath;
+            }
+        }
+
+        foreach (var candidate in candidates)
+        {
+            var scriptPath = Path.Combine(legacyScriptsDir, candidate);
             if (File.Exists(scriptPath))
             {
                 return scriptPath;
@@ -1390,6 +1441,19 @@ public sealed class ScriptGlobals
     public dynamic File => _library ??= new ScriptLibrary(Host ?? throw new InvalidOperationException("Host missing."));
 
     /// <summary>
+    /// Alias for File (dynamic).
+    /// </summary>
+    public dynamic Include => File;
+    /// <summary>
+    /// Alias for File (dynamic).
+    /// </summary>
+    public dynamic include => Include;
+    /// <summary>
+    /// Alias for File (dynamic).
+    /// </summary>
+    public dynamic INCLUDE => Include;
+
+    /// <summary>
     /// Shared script library (typed access).
     /// </summary>
     public ScriptLibrary Library => _library ??= new ScriptLibrary(Host ?? throw new InvalidOperationException("Host missing."));
@@ -1424,6 +1488,15 @@ public sealed class ScriptGlobals
     {
         if (Host == null) return Task.FromResult(false);
         return Host.ExecuteModuleAsync(name);
+    }
+
+    /// <summary>
+    /// Load and run a module script by name with optional force reload.
+    /// </summary>
+    public Task<bool> Use(string name, bool force)
+    {
+        if (Host == null) return Task.FromResult(false);
+        return Host.ExecuteModuleAsync(name, skipIfUnchanged: !force);
     }
 
     /// <summary>

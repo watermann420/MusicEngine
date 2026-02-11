@@ -34,9 +34,6 @@ if (args.Length > 0 && args[0].Equals("--ipc", StringComparison.OrdinalIgnoreCas
     using var server = new EngineIpcServer(engine);
     server.Start();
 
-    Console.WriteLine("IPC server running.");
-    Console.WriteLine($"State pipe: {EngineIpcServer.StatePipeName}");
-    Console.WriteLine($"Events pipe: {EngineIpcServer.EventsPipeName}");
     Console.WriteLine("Press Ctrl+C to stop.");
 
     var done = new TaskCompletionSource<bool>();

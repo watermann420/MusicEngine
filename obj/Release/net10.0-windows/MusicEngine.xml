@@ -218,6 +218,21 @@
             <param name="enabled">True to enable MIDI input.</param>
             <param name="sendAllNotesOff">Send all-notes-off when disabling.</param>
         </member>
+        <member name="M:MusicEngine.Core.AudioEngine.SetMidiDeviceEnabled(System.Int32,System.Boolean,System.Boolean)">
+            <summary>
+            Enable or disable a specific MIDI input device.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.SetMidiChannelEnabled(System.Int32,System.Int32,System.Boolean,System.Boolean)">
+            <summary>
+            Enable or disable a specific MIDI input channel on a device.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.AudioEngine.SetMidiRouteEnabled(System.Int32,System.Int32,MusicEngine.Core.ISynth,System.Boolean,System.Boolean)">
+            <summary>
+            Enable or disable a specific MIDI route to a synth.
+            </summary>
+        </member>
         <member name="M:MusicEngine.Core.AudioEngine.SetEditorMode(System.Boolean)">
             <summary>
             Toggle editor mode for patterns and MIDI routing.
@@ -661,6 +676,21 @@
             </summary>
             <param name="enabled">True to enable.</param>
             <param name="sendAllNotesOff">Send all-notes-off on disable.</param>
+        </member>
+        <member name="M:MusicEngine.Core.MidiRouter.SetDeviceEnabled(System.Int32,System.Boolean,System.Boolean)">
+            <summary>
+            Enable or disable a specific MIDI device.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.MidiRouter.SetChannelEnabled(System.Int32,System.Int32,System.Boolean,System.Boolean)">
+            <summary>
+            Enable or disable a specific MIDI device channel.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.MidiRouter.SetRouteEnabled(System.Int32,System.Int32,MusicEngine.Core.ISynth,System.Boolean,System.Boolean)">
+            <summary>
+            Enable or disable a specific routed synth on a device/channel.
+            </summary>
         </member>
         <member name="M:MusicEngine.Core.MidiRouter.SetEditorMode(System.Boolean)">
             <summary>
@@ -1167,6 +1197,36 @@
             Global sample rate in Hz for playback and processing.
             </summary>
         </member>
+        <member name="P:MusicEngine.Core.Settings.BufferSizeFrames">
+            <summary>
+            Default buffer size in frames.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Settings.AutoBufferEnabled">
+            <summary>
+            Enable or disable automatic extra buffering.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Settings.AutoBufferExtraLatencyMs">
+            <summary>
+            Extra output latency in milliseconds when auto buffering is enabled.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Settings.AutoBufferExtraBuffers">
+            <summary>
+            Extra output buffers when auto buffering is enabled.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Settings.OutputLatencyMs">
+            <summary>
+            Output latency in milliseconds for the main audio device.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Settings.OutputBufferCount">
+            <summary>
+            Output buffer count for the main audio device.
+            </summary>
+        </member>
         <member name="P:MusicEngine.Core.Settings.WavBitDepth">
             <summary>
             Default WAV bit depth for recordings.
@@ -1185,6 +1245,11 @@
         <member name="P:MusicEngine.Core.Settings.OutputBitDepth">
             <summary>
             Output bit depth for engine audio (set to 32 to disable quantization).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Settings.VirtualOutputLatencyMs">
+            <summary>
+            Default latency in milliseconds for virtual outputs.
             </summary>
         </member>
         <member name="P:MusicEngine.Core.Settings.MasterSafetyEnabled">
@@ -1235,6 +1300,66 @@
         <member name="P:MusicEngine.Core.Settings.VstIdleTimeoutSeconds">
             <summary>
             Default idle timeout in seconds for VST sleep detection.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Settings.VstAutoSaveIntervalSeconds">
+            <summary>
+            Default auto-save interval in seconds for VST instruments.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Settings.VstEditorBlockSize">
+            <summary>
+            Default VST editor block size in frames.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Core.Settings.VstCloseOnDispose">
+            <summary>
+            Close native VST instances on dispose (disable if plugins crash on close).
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Settings.Buffer(System.Int32)">
+            <summary>
+            Update buffer size and return a configurator for related settings.
+            </summary>
+        </member>
+        <member name="T:MusicEngine.Core.Settings.BufferConfig">
+            <summary>
+            Buffer settings helper for chaining configuration.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Settings.BufferConfig.Buffer(System.Int32)">
+            <summary>
+            Set output latency in milliseconds.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Settings.BufferConfig.buffer(System.Int32)">
+            <summary>
+            Set output latency in milliseconds.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Settings.BufferConfig.Buffers(System.Int32)">
+            <summary>
+            Set output buffer count.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Settings.BufferConfig.buffers(System.Int32)">
+            <summary>
+            Set output buffer count.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Settings.BufferConfig.Virtual(System.Int32)">
+            <summary>
+            Set virtual output latency in milliseconds.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Settings.BufferConfig.virtual_(System.Int32)">
+            <summary>
+            Set virtual output latency in milliseconds.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Core.Settings.BufferConfig.VstEditor(System.Int32)">
+            <summary>
+            Set VST editor block size in frames.
             </summary>
         </member>
         <member name="T:MusicEngine.Core.TimeMasterController">
@@ -1583,6 +1708,21 @@
         <member name="M:MusicEngine.Effects.Midi.MidiSend.ClearEffects">
             <summary>
             Clear all MIDI effects.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Effects.Midi.MidiSend.Active(System.Boolean,System.Boolean)">
+            <summary>
+            Enable or disable this specific route.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Effects.Midi.MidiSend.Enable(System.Boolean)">
+            <summary>
+            Enable this specific route.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Effects.Midi.MidiSend.Disable(System.Boolean)">
+            <summary>
+            Disable this specific route.
             </summary>
         </member>
         <member name="M:MusicEngine.Effects.Midi.MidiSend.NoteOn(System.Int32,System.Int32)">
@@ -2064,6 +2204,9 @@
         <member name="P:MusicEngine.Instruments.SimpleSynth.Osc1PulseWidth">
             <summary>Oscillator 1 pulse width for pulse wave (0.1 to 0.9)</summary>
         </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.Osc1Enabled">
+            <summary>Enable oscillator 1</summary>
+        </member>
         <member name="P:MusicEngine.Instruments.SimpleSynth.Osc2Waveform">
             <summary>Oscillator 2 waveform type</summary>
         </member>
@@ -2091,8 +2234,14 @@
         <member name="P:MusicEngine.Instruments.SimpleSynth.SubOscWaveform">
             <summary>Sub oscillator waveform (Sine or Square)</summary>
         </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.SubOscEnabled">
+            <summary>Enable sub oscillator</summary>
+        </member>
         <member name="P:MusicEngine.Instruments.SimpleSynth.NoiseLevel">
             <summary>Noise level (0 to 1)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.NoiseEnabled">
+            <summary>Enable noise</summary>
         </member>
         <member name="P:MusicEngine.Instruments.SimpleSynth.Cutoff">
             <summary>Filter cutoff frequency normalized (0 to 1, maps to 0..Nyquist)</summary>
@@ -2198,6 +2347,24 @@
         </member>
         <member name="P:MusicEngine.Instruments.SimpleSynth.VelocitySensitivity">
             <summary>Velocity sensitivity (0 to 1)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.VoiceSoftClipEnabled">
+            <summary>Enable per-voice soft clipping for extra safety</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.VoiceSoftClipAmount">
+            <summary>Per-voice soft clip amount (0 to 1)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.LimiterEnabled">
+            <summary>Enable the master safety limiter</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.LimiterThreshold">
+            <summary>Limiter threshold (0 to 1)</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.LimiterAttackMs">
+            <summary>Limiter attack time in milliseconds</summary>
+        </member>
+        <member name="P:MusicEngine.Instruments.SimpleSynth.LimiterReleaseMs">
+            <summary>Limiter release time in milliseconds</summary>
         </member>
         <member name="P:MusicEngine.Instruments.SimpleSynth.Name">
             <summary>Synth name for identification</summary>
@@ -2438,7 +2605,7 @@
             Minimal engine launcher for script-driven sessions.
             </summary>
         </member>
-        <member name="M:MusicEngine.Scripting.EngineLauncher.LaunchAsync(System.String,System.Boolean,System.Boolean,System.Boolean,System.Boolean)">
+        <member name="M:MusicEngine.Scripting.EngineLauncher.LaunchAsync(System.String,System.Boolean,System.Boolean,System.Boolean,System.Boolean,System.Boolean)">
             <summary>
             Launch the engine with optional default script and runtime options.
             </summary>
@@ -2447,6 +2614,7 @@
             <param name="startSequencerOnStartup">Start the sequencer immediately.</param>
             <param name="startSleeping">Start with audio output suspended.</param>
             <param name="editorMode">Enable editor mode hooks.</param>
+            <param name="enableIpc">Enable IPC server for editor integration.</param>
         </member>
         <member name="T:MusicEngine.Scripting.EngineScriptInterfaceOptions">
             <summary>
@@ -2466,6 +2634,11 @@
         <member name="P:MusicEngine.Scripting.EngineScriptInterfaceOptions.SampleRate">
             <summary>
             Optional sample rate override for the audio engine.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.EngineScriptInterfaceOptions.ScriptFilePath">
+            <summary>
+            Optional script file path for refresh and error mapping.
             </summary>
         </member>
         <member name="T:MusicEngine.Scripting.IEngineScriptInterface">
@@ -3578,6 +3751,26 @@
             Access a specific MIDI channel on this device.
             </summary>
         </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.DeviceControl.Active(System.Boolean,System.Boolean)">
+            <summary>
+            Enable or disable this device.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.DeviceControl.active(System.Boolean,System.Boolean)">
+            <summary>
+            Enable or disable this device.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.DeviceControl.Enable(System.Boolean)">
+            <summary>
+            Enable this device.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.DeviceControl.Disable(System.Boolean)">
+            <summary>
+            Disable this device.
+            </summary>
+        </member>
         <member name="M:MusicEngine.Scripting.FluentApi.DeviceControl.pitchbend">
             <summary>
             Map pitch bend to a control action.
@@ -3706,6 +3899,26 @@
         <member name="M:MusicEngine.Scripting.FluentApi.ChannelControl.Jog(MusicEngine.Scripting.MidiMap,System.String,MusicEngine.Scripting.FluentApi.JogMode,System.Int32)">
             <summary>
             Map a jog wheel control using a named mapping.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.ChannelControl.Active(System.Boolean,System.Boolean)">
+            <summary>
+            Enable or disable this device channel.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.ChannelControl.active(System.Boolean,System.Boolean)">
+            <summary>
+            Enable or disable this device channel.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.ChannelControl.Enable(System.Boolean)">
+            <summary>
+            Enable this device channel.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.FluentApi.ChannelControl.Disable(System.Boolean)">
+            <summary>
+            Disable this device channel.
             </summary>
         </member>
         <member name="T:MusicEngine.Scripting.FluentApi.JogMode">
@@ -4022,6 +4235,11 @@
         <member name="M:MusicEngine.Scripting.ScriptHost.RefreshScriptAsync(System.String,System.Boolean)">
             <summary>
             Clear state then execute script code.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptHost.RefreshScriptFromFileAsync(System.Boolean)">
+            <summary>
+            Clear state then execute the configured script file, if available.
             </summary>
         </member>
         <member name="M:MusicEngine.Scripting.ScriptHost.ClearState">
@@ -4359,6 +4577,21 @@
             Shared script library (dynamic).
             </summary>
         </member>
+        <member name="P:MusicEngine.Scripting.ScriptGlobals.Include">
+            <summary>
+            Alias for File (dynamic).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.ScriptGlobals.include">
+            <summary>
+            Alias for File (dynamic).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.ScriptGlobals.INCLUDE">
+            <summary>
+            Alias for File (dynamic).
+            </summary>
+        </member>
         <member name="P:MusicEngine.Scripting.ScriptGlobals.Library">
             <summary>
             Shared script library (typed access).
@@ -4392,6 +4625,11 @@
         <member name="M:MusicEngine.Scripting.ScriptGlobals.Use(System.String)">
             <summary>
             Load and run a module script by name.
+            </summary>
+        </member>
+        <member name="M:MusicEngine.Scripting.ScriptGlobals.Use(System.String,System.Boolean)">
+            <summary>
+            Load and run a module script by name with optional force reload.
             </summary>
         </member>
         <member name="P:MusicEngine.Scripting.ScriptGlobals.audio">
@@ -4982,6 +5220,11 @@
         <member name="P:MusicEngine.Vst.Vst3Instrument.Chorus">
             <summary>
             Chorus amount (0..1).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Vst.Vst3Instrument.AutoSaveIntervalSeconds">
+            <summary>
+            Auto-save interval in seconds (set to 0 to effectively disable timer).
             </summary>
         </member>
         <member name="P:MusicEngine.Vst.Vst3Instrument.WaveFormat">

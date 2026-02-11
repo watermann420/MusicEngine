@@ -127,7 +127,8 @@ public sealed class Vst3EditorWindow : Form
             }
 
             _processChannels = Math.Max(1, Vst3Native.Vst3Host_GetOutputChannels(_hostHandle));
-            Vst3Native.Vst3Host_SetupAudio(_hostHandle, Settings.SampleRate, 512);
+            var blockSize = Math.Max(1, Settings.VstEditorBlockSize);
+            Vst3Native.Vst3Host_SetupAudio(_hostHandle, Settings.SampleRate, blockSize);
         }
 
         bool opened = false;

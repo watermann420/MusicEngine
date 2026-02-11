@@ -155,6 +155,7 @@ public sealed class MidiRouter
         }
     }
 
+
     /// <summary>
     /// Enable or disable a specific MIDI device.
     /// </summary>

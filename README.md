@@ -278,15 +278,32 @@ pattern.Play();
 - Install Visual Studio 2022 with Desktop development with C++ (for the native VST3 host).
 - Rider works fine, but MSBuild from Visual Studio Build Tools is still required for the native layer.
 
+Settings reference: `Docs/Settings.md`
+
 ## Build
 
 **Managed build (C#):**
 - Open the solution in Rider or Visual Studio and build the `MusicEngine` project.
 
 **Native VST3 host (C++):**
+- First-time setup (pull the Steinberg SDK into `external/vst3sdk`):
+  - `git clone https://github.com/steinbergmedia/vst3sdk.git external/vst3sdk`
+  - `git -C external/vst3sdk submodule update --init --recursive`
 - Rider: open `MusicEngine.CppLayer/native/MusicEngine.CppLayer.Native.vcxproj` and build x64 Debug/Release.
 - Visual Studio: open the same `.vcxproj`, select x64 + Debug/Release, then Build.
-- Command line (PowerShell): `./build_native.ps1 -Configuration Debug`
+- Command line (PowerShell):
+  - `& "C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe" "MusicEngine.CppLayer\native\MusicEngine.CppLayer.Native.vcxproj" /p:Configuration=Release /p:Platform=x64`
+
+The native build copies `MusicEngine.CppLayer.Native.dll` into `MusicEngine\` automatically (and C# build copies it to the output).
+
+**Troubleshooting native build:**
+- Error: `Cannot open include file: public.sdk/source/vst/hosting/module.h`
+  - The SDK submodules are missing or empty. Run:
+    - `git -C external/vst3sdk submodule update --init --recursive`
+    - If the submodules are present but empty, reset them:
+      - `git -C external/vst3sdk/public.sdk reset --hard`
+      - `git -C external/vst3sdk/base reset --hard`
+      - `git -C external/vst3sdk/pluginterfaces reset --hard`
 
 ## Mentions
 

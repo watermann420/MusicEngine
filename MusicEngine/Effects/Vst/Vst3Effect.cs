@@ -20,10 +20,11 @@ namespace MusicEngine.Effects.Vst;
 public sealed class Vst3Effect : IAudioEffect
 {
     private readonly string _pluginPath;
-    private readonly IntPtr _hostHandle;
+    private IntPtr _hostHandle;
     private readonly int _inputChannels;
     private readonly int _outputChannels;
     private readonly object _stateLock = new();
+    private int _disposeState;
     private bool _disposed;
     private bool _attached;
     private Vst3EffectProcessor? _processor;
@@ -186,11 +187,17 @@ public sealed class Vst3Effect : IAudioEffect
     /// </summary>
     public void Dispose()
     {
-        if (_disposed) return;
+        if (System.Threading.Interlocked.Exchange(ref _disposeState, 1) != 0) return;
         _disposed = true;
+        Detach();
+        if (!Settings.VstCloseOnDispose) return;
         VstUiContext.Shared.Invoke(() =>
         {
-            Vst3Native.Vst3Host_Close(_hostHandle);
+            if (_hostHandle != IntPtr.Zero)
+            {
+                Vst3Native.Vst3Host_Close(_hostHandle);
+                _hostHandle = IntPtr.Zero;
+            }
             return 0;
         });
     }
@@ -222,38 +229,28 @@ public sealed class Vst3Effect : IAudioEffect
         _parameterMap = map;
     }
 
-    private byte[] GetStateInternal()
+    private unsafe byte[] GetStateInternal()
     {
         int size = Vst3Native.Vst3Host_GetStateSize(_hostHandle);
         if (size <= 0) return Array.Empty<byte>();
 
         var data = new byte[size];
-        var handle = GCHandle.Alloc(data, GCHandleType.Pinned);
-        try
+        fixed (byte* ptr = data)
         {
-            int written = Vst3Native.Vst3Host_GetState(_hostHandle, handle.AddrOfPinnedObject(), size);
+            int written = Vst3Native.Vst3Host_GetState(_hostHandle, (IntPtr)ptr, size);
             if (written <= 0) return Array.Empty<byte>();
             if (written == size) return data;
             var trimmed = new byte[written];
             Array.Copy(data, trimmed, written);
             return trimmed;
         }
-        finally
-        {
-            handle.Free();
-        }
     }
 
-    private void SetStateInternal(byte[] data)
+    private unsafe void SetStateInternal(byte[] data)
     {
-        var handle = GCHandle.Alloc(data, GCHandleType.Pinned);
-        try
+        fixed (byte* ptr = data)
         {
-            Vst3Native.Vst3Host_SetState(_hostHandle, handle.AddrOfPinnedObject(), data.Length);
-        }
-        finally
-        {
-            handle.Free();
+            Vst3Native.Vst3Host_SetState(_hostHandle, (IntPtr)ptr, data.Length);
         }
     }
 
@@ -380,25 +377,21 @@ public sealed class Vst3Effect : IAudioEffect
             _lastActivityTick = Environment.TickCount64;
         }
 
-        private bool Process(float[] input, float[] output, int frames)
+        private unsafe bool Process(float[] input, float[] output, int frames)
         {
-            var inputHandle = GCHandle.Alloc(input, GCHandleType.Pinned);
-            var outputHandle = GCHandle.Alloc(output, GCHandleType.Pinned);
-            try
+            fixed (float* outputPtr = output)
             {
                 if (_inputChannels <= 0)
                 {
-                    return Vst3Native.Vst3Host_Process(_owner._hostHandle, outputHandle.AddrOfPinnedObject(),
+                    return Vst3Native.Vst3Host_Process(_owner._hostHandle, (IntPtr)outputPtr,
                         frames, _outputChannels);
                 }
 
-                return Vst3Native.Vst3Host_ProcessWithInput(_owner._hostHandle, inputHandle.AddrOfPinnedObject(),
-                    outputHandle.AddrOfPinnedObject(), frames, _inputChannels, _outputChannels);
-            }
-            finally
-            {
-                inputHandle.Free();
-                outputHandle.Free();
+                fixed (float* inputPtr = input)
+                {
+                    return Vst3Native.Vst3Host_ProcessWithInput(_owner._hostHandle, (IntPtr)inputPtr,
+                        (IntPtr)outputPtr, frames, _inputChannels, _outputChannels);
+                }
             }
         }
 

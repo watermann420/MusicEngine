@@ -109,10 +109,17 @@ public sealed class AudioEngine : IDisposable
     public void Initialize()
     {
         if (_initialized) return;
+        var latencyMs = Math.Max(1, Settings.OutputLatencyMs);
+        var bufferCount = Math.Max(1, Settings.OutputBufferCount);
+        if (Settings.AutoBufferEnabled)
+        {
+            latencyMs = Math.Max(1, latencyMs + Math.Max(0, Settings.AutoBufferExtraLatencyMs));
+            bufferCount = Math.Max(1, bufferCount + Math.Max(0, Settings.AutoBufferExtraBuffers));
+        }
         _output = new WaveOutEvent
         {
-            DesiredLatency = 100,
-            NumberOfBuffers = 3
+            DesiredLatency = latencyMs,
+            NumberOfBuffers = bufferCount
         };
         _output.Init(_masterTap);
         _output.Play();
@@ -327,6 +334,7 @@ public sealed class AudioEngine : IDisposable
         _midiRouter.SetEnabled(enabled, sendAllNotesOff);
     }
 
+
     /// <summary>
     /// Enable or disable a specific MIDI input device.
     /// </summary>
@@ -403,8 +411,9 @@ public sealed class AudioEngine : IDisposable
     /// <summary>
     /// Start a virtual output from the master chain to a render device (e.g. VB-CABLE).
     /// </summary>
-    public bool StartMasterVirtualOutput(int deviceIndex, int latencyMs = 80)
+    public bool StartMasterVirtualOutput(int deviceIndex, int latencyMs = -1)
     {
+        if (latencyMs <= 0) latencyMs = Settings.VirtualOutputLatencyMs;
         var device = TryGetOutputDevice(deviceIndex);
         if (device == null) return false;
         AddVirtualOutput(_masterVirtualOutputs, device, latencyMs, 0);
@@ -414,8 +423,9 @@ public sealed class AudioEngine : IDisposable
     /// <summary>
     /// Start a virtual output from the master chain to a render device with channel offset.
     /// </summary>
-    public bool StartMasterVirtualOutput(int deviceIndex, int outputChannelOffset, int latencyMs = 80)
+    public bool StartMasterVirtualOutput(int deviceIndex, int outputChannelOffset, int latencyMs = -1)
     {
+        if (latencyMs <= 0) latencyMs = Settings.VirtualOutputLatencyMs;
         var device = TryGetOutputDevice(deviceIndex);
         if (device == null) return false;
         AddVirtualOutput(_masterVirtualOutputs, device, latencyMs, outputChannelOffset);
@@ -425,8 +435,9 @@ public sealed class AudioEngine : IDisposable
     /// <summary>
     /// Start a virtual output from the master chain to a render device by name.
     /// </summary>
-    public bool StartMasterVirtualOutput(string deviceName, int latencyMs = 80)
+    public bool StartMasterVirtualOutput(string deviceName, int latencyMs = -1)
     {
+        if (latencyMs <= 0) latencyMs = Settings.VirtualOutputLatencyMs;
         var device = TryGetOutputDevice(deviceName);
         if (device == null) return false;
         AddVirtualOutput(_masterVirtualOutputs, device, latencyMs, 0);
@@ -436,8 +447,9 @@ public sealed class AudioEngine : IDisposable
     /// <summary>
     /// Start a virtual output from the master chain to a render device by name with channel offset.
     /// </summary>
-    public bool StartMasterVirtualOutput(string deviceName, int outputChannelOffset, int latencyMs = 80)
+    public bool StartMasterVirtualOutput(string deviceName, int outputChannelOffset, int latencyMs = -1)
     {
+        if (latencyMs <= 0) latencyMs = Settings.VirtualOutputLatencyMs;
         var device = TryGetOutputDevice(deviceName);
         if (device == null) return false;
         AddVirtualOutput(_masterVirtualOutputs, device, latencyMs, outputChannelOffset);
@@ -574,9 +586,10 @@ public sealed class AudioEngine : IDisposable
     /// <summary>
     /// Start a virtual output from a channel to a render device.
     /// </summary>
-    public bool StartChannelVirtualOutput(int channelIndex, int deviceIndex, int latencyMs = 80)
+    public bool StartChannelVirtualOutput(int channelIndex, int deviceIndex, int latencyMs = -1)
     {
         if (channelIndex < 1) channelIndex = 1;
+        if (latencyMs <= 0) latencyMs = Settings.VirtualOutputLatencyMs;
         var device = TryGetOutputDevice(deviceIndex);
         if (device == null) return false;
         var outputs = GetOrCreateChannelVirtualOutputs(channelIndex);
@@ -587,9 +600,10 @@ public sealed class AudioEngine : IDisposable
     /// <summary>
     /// Start a virtual output from a channel to a render device with channel offset.
     /// </summary>
-    public bool StartChannelVirtualOutput(int channelIndex, int deviceIndex, int outputChannelOffset, int latencyMs = 80)
+    public bool StartChannelVirtualOutput(int channelIndex, int deviceIndex, int outputChannelOffset, int latencyMs = -1)
     {
         if (channelIndex < 1) channelIndex = 1;
+        if (latencyMs <= 0) latencyMs = Settings.VirtualOutputLatencyMs;
         var device = TryGetOutputDevice(deviceIndex);
         if (device == null) return false;
         var outputs = GetOrCreateChannelVirtualOutputs(channelIndex);
@@ -600,9 +614,10 @@ public sealed class AudioEngine : IDisposable
     /// <summary>
     /// Start a virtual output from a channel to a render device by name.
     /// </summary>
-    public bool StartChannelVirtualOutput(int channelIndex, string deviceName, int latencyMs = 80)
+    public bool StartChannelVirtualOutput(int channelIndex, string deviceName, int latencyMs = -1)
     {
         if (channelIndex < 1) channelIndex = 1;
+        if (latencyMs <= 0) latencyMs = Settings.VirtualOutputLatencyMs;
         var device = TryGetOutputDevice(deviceName);
         if (device == null) return false;
         var outputs = GetOrCreateChannelVirtualOutputs(channelIndex);
@@ -613,9 +628,10 @@ public sealed class AudioEngine : IDisposable
     /// <summary>
     /// Start a virtual output from a channel to a render device by name with channel offset.
     /// </summary>
-    public bool StartChannelVirtualOutput(int channelIndex, string deviceName, int outputChannelOffset, int latencyMs = 80)
+    public bool StartChannelVirtualOutput(int channelIndex, string deviceName, int outputChannelOffset, int latencyMs = -1)
     {
         if (channelIndex < 1) channelIndex = 1;
+        if (latencyMs <= 0) latencyMs = Settings.VirtualOutputLatencyMs;
         var device = TryGetOutputDevice(deviceName);
         if (device == null) return false;
         var outputs = GetOrCreateChannelVirtualOutputs(channelIndex);

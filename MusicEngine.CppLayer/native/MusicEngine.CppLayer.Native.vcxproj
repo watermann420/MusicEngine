@@ -108,4 +108,8 @@
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+
+  <PropertyGroup>
+    <PostBuildEvent>copy /Y "$(OutDir)MusicEngine.CppLayer.Native.dll" "$(ProjectDir)..\..\MusicEngine\MusicEngine.CppLayer.Native.dll"</PostBuildEvent>
+  </PropertyGroup>
 </Project>

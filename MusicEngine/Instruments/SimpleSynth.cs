@@ -20,6 +20,7 @@ namespace MusicEngine.Instruments;
 /// </summary>
 public class SimpleSynth : ISynth
 {
+    private static readonly float[] NoteFrequencies = BuildNoteFrequencies();
     private readonly WaveFormat _waveFormat;
     private readonly ConcurrentDictionary<int, Voice> _voices = new(); // Key = MIDI note (lock-free)
     private readonly ConcurrentQueue<Voice> _voicesToRelease = new(); // Queue for voices to move to releasing
@@ -36,6 +37,9 @@ public class SimpleSynth : ISynth
     private readonly float _outputSmoothing;
     private float _lastOutL;
     private float _lastOutR;
+    private readonly float _voiceGainSmoothing;
+    private float _voiceGain = 1f;
+    private float _limiterGain = 1f;
 
     #region ========== OSCILLATOR 1 SETTINGS ==========
 
@@ -56,6 +60,9 @@ public class SimpleSynth : ISynth
 
     /// <summary>Oscillator 1 pulse width for pulse wave (0.1 to 0.9)</summary>
     public float Osc1PulseWidth { get; set; } = 0.5f;
+
+    /// <summary>Enable oscillator 1</summary>
+    public bool Osc1Enabled { get; set; } = true;
 
     #endregion
 
@@ -92,8 +99,14 @@ public class SimpleSynth : ISynth
     /// <summary>Sub oscillator waveform (Sine or Square)</summary>
     public WaveType SubOscWaveform { get; set; } = WaveType.Sine;
 
+    /// <summary>Enable sub oscillator</summary>
+    public bool SubOscEnabled { get; set; } = true;
+
     /// <summary>Noise level (0 to 1)</summary>
     public float NoiseLevel { get; set; } = 0f;
+
+    /// <summary>Enable noise</summary>
+    public bool NoiseEnabled { get; set; } = true;
 
     #endregion
 
@@ -229,6 +242,24 @@ public class SimpleSynth : ISynth
     /// <summary>Velocity sensitivity (0 to 1)</summary>
     public float VelocitySensitivity { get; set; } = 0.7f;
 
+    /// <summary>Enable per-voice soft clipping for extra safety</summary>
+    public bool VoiceSoftClipEnabled { get; set; } = true;
+
+    /// <summary>Per-voice soft clip amount (0 to 1)</summary>
+    public float VoiceSoftClipAmount { get; set; } = 0.2f;
+
+    /// <summary>Enable the master safety limiter</summary>
+    public bool LimiterEnabled { get; set; } = true;
+
+    /// <summary>Limiter threshold (0 to 1)</summary>
+    public float LimiterThreshold { get; set; } = 0.98f;
+
+    /// <summary>Limiter attack time in milliseconds</summary>
+    public float LimiterAttackMs { get; set; } = 1.0f;
+
+    /// <summary>Limiter release time in milliseconds</summary>
+    public float LimiterReleaseMs { get; set; } = 120f;
+
     #endregion
 
     /// <summary>Synth name for identification</summary>
@@ -287,7 +318,18 @@ public class SimpleSynth : ISynth
         int rate = sampleRate ?? Settings.SampleRate;
         _waveFormat = WaveFormat.CreateIeeeFloatWaveFormat(rate, Settings.Channels);
 
-        _outputSmoothing = 1f - MathF.Exp(-1f / (rate * 0.001f)); // ~1ms de-zipper
+        _outputSmoothing = 1f - MathF.Exp(-1f / (rate * 0.003f)); // ~3ms de-zipper
+        _voiceGainSmoothing = 1f - MathF.Exp(-1f / (rate * 0.01f)); // ~10ms voice gain smoothing
+    }
+
+    private static float[] BuildNoteFrequencies()
+    {
+        var table = new float[128];
+        for (int i = 0; i < table.Length; i++)
+        {
+            table[i] = 440f * (float)Math.Pow(2, (i - 69) / 12f);
+        }
+        return table;
     }
 
     /// <summary>
@@ -310,27 +352,65 @@ public class SimpleSynth : ISynth
             return;
         }
 
+        // If the same note is currently releasing, force a fast stop so new note has priority
+        lock (_releaseLock)
+        {
+            for (int i = _releasingVoices.Count - 1; i >= 0; i--)
+            {
+                var releasingVoice = _releasingVoices[i];
+                if (releasingVoice.Note == note)
+                {
+                    releasingVoice.ForceStop();
+                }
+            }
+        }
+
         // Voice stealing: if at max polyphony, steal oldest voice
         int currentCount = Interlocked.CompareExchange(ref _activeVoiceCount, 0, 0);
         if (currentCount >= MaxPolyphony)
         {
-            // Find oldest voice
-            int oldestNote = -1;
-            long oldestTime = long.MaxValue;
-            foreach (var kvp in _voices)
+            Voice? candidate = null;
+            int candidateNote = -1;
+            float lowestAmp = float.MaxValue;
+
+            // Prefer stealing the quietest releasing voice
+            lock (_releaseLock)
             {
-                if (kvp.Value.StartTime < oldestTime)
+                foreach (var releasingVoice in _releasingVoices)
                 {
-                    oldestTime = kvp.Value.StartTime;
-                    oldestNote = kvp.Key;
+                    float amp = releasingVoice.CurrentAmp;
+                    if (amp < lowestAmp)
+                    {
+                        lowestAmp = amp;
+                        candidate = releasingVoice;
+                        candidateNote = releasingVoice.Note;
+                    }
                 }
             }
 
-            if (oldestNote >= 0 && _voices.TryRemove(oldestNote, out var stolen))
+            if (candidate != null)
             {
-                Interlocked.Decrement(ref _activeVoiceCount);
-                stolen.TriggerRelease();
-                _voicesToRelease.Enqueue(stolen);
+                candidate.ForceStop();
+            }
+            else
+            {
+                // Otherwise steal the quietest active voice
+                foreach (var kvp in _voices)
+                {
+                    float amp = kvp.Value.CurrentAmp;
+                    if (amp < lowestAmp)
+                    {
+                        lowestAmp = amp;
+                        candidateNote = kvp.Key;
+                    }
+                }
+
+                if (candidateNote >= 0 && _voices.TryRemove(candidateNote, out var stolen))
+                {
+                    Interlocked.Decrement(ref _activeVoiceCount);
+                    stolen.ForceStop();
+                    _voicesToRelease.Enqueue(stolen);
+                }
             }
         }
 
@@ -396,6 +476,7 @@ public class SimpleSynth : ISynth
             case "osc1fine": Osc1Fine = value; break;
             case "osc1level": Osc1Level = value; break;
             case "osc1pulsewidth": Osc1PulseWidth = Math.Clamp(value, 0.0001f, 0.9999f); break;
+            case "osc1enabled": Osc1Enabled = value > 0.5f; break;
 
             case "osc2waveform": Osc2Waveform = (WaveType)(int)Math.Clamp(value, 0, 5); break;
             case "osc2octave": Osc2Octave = (int)value; break;
@@ -405,7 +486,9 @@ public class SimpleSynth : ISynth
             case "osc2enabled": Osc2Enabled = value > 0.5f; break;
 
             case "subosclevel": SubOscLevel = value; break;
+            case "suboscenabled": SubOscEnabled = value > 0.5f; break;
             case "noiselevel": NoiseLevel = value; break;
+            case "noiseenabled": NoiseEnabled = value > 0.5f; break;
 
             // Filter
             case "cutoff": Cutoff = Math.Max(0f, value); break;
@@ -452,6 +535,12 @@ public class SimpleSynth : ISynth
             case "channel": Channel = (int)value; break;
             case "maxpolyphony": MaxPolyphony = (int)Math.Max(1, value); break;
             case "velocitysensitivity": VelocitySensitivity = value; break;
+            case "voicesoftclip": VoiceSoftClipEnabled = value > 0.5f; break;
+            case "voicesoftclipamount": VoiceSoftClipAmount = Math.Clamp(value, 0f, 1f); break;
+            case "limiterenabled": LimiterEnabled = value > 0.5f; break;
+            case "limiterthreshold": LimiterThreshold = Math.Clamp(value, 0f, 1f); break;
+            case "limiterattackms": LimiterAttackMs = Math.Max(0.1f, value); break;
+            case "limiterreleasems": LimiterReleaseMs = Math.Max(1f, value); break;
         }
     }
 
@@ -486,7 +575,10 @@ public class SimpleSynth : ISynth
         {
             return count;
         }
-        float voiceGain = 0.7f / MathF.Sqrt(Math.Max(1, voiceCount));
+        float targetVoiceGain = 0.55f / MathF.Sqrt(Math.Max(1, voiceCount));
+        float limiterThreshold = Math.Clamp(LimiterThreshold, 0.5f, 0.999f);
+        float limiterAttack = 1f - MathF.Exp(-1f / (sampleRate * (LimiterAttackMs * 0.001f)));
+        float limiterRelease = 1f - MathF.Exp(-1f / (sampleRate * (LimiterReleaseMs * 0.001f)));
 
         // Process LFO
         float lfoRate = Math.Abs(LfoRate);
@@ -513,10 +605,13 @@ public class SimpleSynth : ISynth
             float mixL = 0f;
             float mixR = 0f;
 
+            float osc1Ratio = (float)Math.Pow(2, Osc1Octave + Osc1Semi / 12f + Osc1Fine / 1200f);
+            float osc2Ratio = (float)Math.Pow(2, Osc2Octave + Osc2Semi / 12f + Osc2Fine / 1200f);
+
             // Process active voices (ConcurrentDictionary is safe to iterate)
             foreach (var voice in _voices.Values)
             {
-                var (left, right) = voice.Process(sampleRate, pitchMod, filterMod, pwMod, this);
+                var (left, right) = voice.Process(sampleRate, pitchMod, filterMod, pwMod, osc1Ratio, osc2Ratio, this);
                 mixL += left * ampMod;
                 mixR += right * ampMod;
             }
@@ -532,15 +627,27 @@ public class SimpleSynth : ISynth
                         _releasingVoices.RemoveAt(i);
                         continue;
                     }
-                    var (left, right) = voice.Process(sampleRate, pitchMod, filterMod, pwMod, this);
+                    var (left, right) = voice.Process(sampleRate, pitchMod, filterMod, pwMod, osc1Ratio, osc2Ratio, this);
                     mixL += left * ampMod;
                     mixR += right * ampMod;
                 }
             }
 
-            // Normalize for high polyphony headroom
-            mixL *= voiceGain;
-            mixR *= voiceGain;
+            // Normalize for high polyphony headroom (smoothed)
+            _voiceGain += _voiceGainSmoothing * (targetVoiceGain - _voiceGain);
+            mixL *= _voiceGain;
+            mixR *= _voiceGain;
+
+            // Fast safety limiter to absorb sudden spikes
+            if (LimiterEnabled)
+            {
+                float peak = Math.Max(Math.Abs(mixL), Math.Abs(mixR));
+                float desiredGain = peak > limiterThreshold ? limiterThreshold / peak : 1f;
+                float coeff = desiredGain < _limiterGain ? limiterAttack : limiterRelease;
+                _limiterGain += coeff * (desiredGain - _limiterGain);
+                mixL *= _limiterGain;
+                mixR *= _limiterGain;
+            }
 
             // Apply pan
             float panL = Math.Min(1f, 1f - Pan);
@@ -594,6 +701,7 @@ public class SimpleSynth : ISynth
         public int Note { get; }
         public long StartTime { get; }
         public bool IsFinished { get; private set; }
+        public float CurrentAmp => _currentAmp;
 
         private readonly SimpleSynth _synth;
         private float _velocity;
@@ -611,12 +719,17 @@ public class SimpleSynth : ISynth
         // Unison phases
         private readonly float[] _unisonPhases = new float[8];
         private readonly float[] _unisonDetunes = new float[8];
+        private readonly float[] _unisonRatios = new float[8];
+        private float _lastUnisonDetune = float.NaN;
+        private int _lastUnisonVoices;
 
         // Envelopes
         private float _ampEnv;
         private float _filterEnv;
         private int _ampStage; // 0=attack, 1=decay, 2=sustain, 3=release
         private int _filterStage;
+        private float _ampSmooth;
+        private float _ampSmoothCoeff;
 
         // Filter state (stereo one-pole lowpass)
         private float _filterState1; // Left channel
@@ -626,8 +739,16 @@ public class SimpleSynth : ISynth
         // Anti-click ramp for voice start/end
         private float _startRamp;
         private float _endRamp = 1f;
-        private const float StartRampRate = 0.005f; // ~0.2ms ramp at 44.1kHz - fast but avoids click
-        private const float EndRampRate = 0.002f;   // ~0.5ms end ramp - fast enough to avoid long tail but prevents pop
+        private bool _endRampActive;
+        private int _releaseWaitSamples;
+        private float _lastMonoSample;
+        private float _currentAmp;
+
+        // DC blocker state (prevents low-frequency pops)
+        private float _dcPrevInL;
+        private float _dcPrevOutL;
+        private float _dcPrevInR;
+        private float _dcPrevOutR;
 
         private readonly Random _random = new();
 
@@ -639,12 +760,18 @@ public class SimpleSynth : ISynth
             _targetNote = note;
             _currentNote = startNote;
             StartTime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            _ampSmooth = 0f;
+            _ampSmoothCoeff = 1f - MathF.Exp(-1f / (sampleRate * 0.002f)); // ~2ms smoothing
 
             // Initialize unison detunes
             for (int i = 0; i < 8; i++)
             {
                 _unisonDetunes[i] = (i - 3.5f) / 3.5f; // Spread from -1 to +1
+                _unisonPhases[i] = (float)_random.NextDouble();
             }
+
+            _osc2Phase = (float)_random.NextDouble();
+            _subPhase = (float)_random.NextDouble();
         }
 
         public void Retrigger(float velocity)
@@ -659,10 +786,16 @@ public class SimpleSynth : ISynth
             {
                 _ampEnv = 0.001f; // Start just above zero to avoid click
                 _filterEnv = 0.001f;
-                _startRamp = 0f; // Reset start ramp for new attack
+                _startRamp = 0f; // Ramp in only when the voice is near silent
+            }
+            else
+            {
+                _startRamp = 1f;
             }
             // Reset end ramp in case voice was fading out
             _endRamp = 1f;
+            _endRampActive = false;
+            _releaseWaitSamples = 0;
             // Don't reset filter state - keeps continuity
         }
 
@@ -672,7 +805,17 @@ public class SimpleSynth : ISynth
             _filterStage = 3;
         }
 
-        public (float left, float right) Process(int sampleRate, float pitchMod, float filterMod, float pwMod, SimpleSynth synth)
+        public void ForceStop()
+        {
+            _ampStage = 3;
+            _filterStage = 3;
+            _ampEnv = Math.Min(_ampEnv, 0.01f);
+            _endRamp = 1f;
+            _endRampActive = true;
+            _releaseWaitSamples = 0;
+        }
+
+        public (float left, float right) Process(int sampleRate, float pitchMod, float filterMod, float pwMod, float osc1Ratio, float osc2Ratio, SimpleSynth synth)
         {
             if (IsFinished) return (0, 0);
 
@@ -689,39 +832,62 @@ public class SimpleSynth : ISynth
             }
 
             // Calculate base frequency
-            float baseFreq = 440f * (float)Math.Pow(2, (_currentNote - 69 + pitchMod) / 12f);
+            int noteFloor = (int)MathF.Floor(_currentNote);
+            noteFloor = Math.Clamp(noteFloor, 0, 127);
+            int noteCeil = Math.Min(127, noteFloor + 1);
+            float noteFrac = Math.Clamp(_currentNote - noteFloor, 0f, 1f);
+            float baseFreq = NoteFrequencies[noteFloor] + (NoteFrequencies[noteCeil] - NoteFrequencies[noteFloor]) * noteFrac;
+            baseFreq *= (float)Math.Pow(2, pitchMod / 12f);
+            float safeFreq = Math.Max(1f, baseFreq);
+            float startRampTime = Math.Clamp(2f / safeFreq, 0.0035f, 0.012f);
+            float freqEndRamp = Math.Clamp(3f / safeFreq, 0.004f, 0.02f);
+            float releaseEndRamp = Math.Clamp(synth.Release * 0.2f, 0.01f, 0.08f);
+            float endRampTime = Math.Max(freqEndRamp, releaseEndRamp);
+            float startRampRate = 1f / (sampleRate * startRampTime);
+            float endRampRate = 1f / (sampleRate * endRampTime);
 
             // Calculate oscillator frequencies with octave/semi/fine
-            float freq1 = baseFreq * (float)Math.Pow(2, synth.Osc1Octave + synth.Osc1Semi / 12f + synth.Osc1Fine / 1200f);
-            float freq2 = baseFreq * (float)Math.Pow(2, synth.Osc2Octave + synth.Osc2Semi / 12f + synth.Osc2Fine / 1200f);
+            float freq1 = baseFreq * osc1Ratio;
+            float freq2 = baseFreq * osc2Ratio;
             float subFreq = baseFreq * 0.5f;
 
             float signalL = 0f;
             float signalR = 0f;
 
-            // Unison processing
-            int unisonCount = Math.Max(1, synth.UnisonVoices);
-            float unisonGain = 1f / (float)Math.Sqrt(unisonCount);
-
-            for (int u = 0; u < unisonCount; u++)
+            // Unison processing (oscillator 1)
+            if (synth.Osc1Enabled)
             {
-                float detuneCents = _unisonDetunes[u] * synth.UnisonDetune;
-                float detuneRatio = (float)Math.Pow(2, detuneCents / 1200f);
-                float osc1PhaseInc = freq1 * detuneRatio / sampleRate;
+                int unisonCount = Math.Max(1, synth.UnisonVoices);
+                float unisonGain = 1f / (float)Math.Sqrt(unisonCount);
+                if (_lastUnisonVoices != unisonCount || Math.Abs(_lastUnisonDetune - synth.UnisonDetune) > 0.0001f)
+                {
+                    _lastUnisonVoices = unisonCount;
+                    _lastUnisonDetune = synth.UnisonDetune;
+                    for (int u = 0; u < unisonCount; u++)
+                    {
+                        float detuneCents = _unisonDetunes[u] * _lastUnisonDetune;
+                        _unisonRatios[u] = (float)Math.Pow(2.0, detuneCents / 1200.0);
+                    }
+                }
 
-                // Oscillator 1 with band-limiting
-                float pw1 = Math.Clamp(synth.Osc1PulseWidth + pwMod, 0.0001f, 0.9999f);
-                float osc1 = WaveformGenerator.Oscillator(synth.Waveform, _unisonPhases[u], pw1, _random, osc1PhaseInc) * synth.Osc1Level;
-                _unisonPhases[u] += osc1PhaseInc;
-                if (_unisonPhases[u] >= 1f) _unisonPhases[u] -= 1f;
+                for (int u = 0; u < unisonCount; u++)
+                {
+                    float osc1PhaseInc = freq1 * _unisonRatios[u] / sampleRate;
 
-                // Calculate stereo position for unison
-                float unisonPan = (u - (unisonCount - 1) / 2f) / Math.Max(1, (unisonCount - 1) / 2f) * synth.UnisonSpread;
-                float panL = Math.Min(1f, 1f - unisonPan);
-                float panR = Math.Min(1f, 1f + unisonPan);
+                    // Oscillator 1 with band-limiting
+                    float pw1 = Math.Clamp(synth.Osc1PulseWidth + pwMod, 0.0001f, 0.9999f);
+                    float osc1 = WaveformGenerator.Oscillator(synth.Waveform, _unisonPhases[u], pw1, _random, osc1PhaseInc) * synth.Osc1Level;
+                    _unisonPhases[u] += osc1PhaseInc;
+                    if (_unisonPhases[u] >= 1f) _unisonPhases[u] -= 1f;
 
-                signalL += osc1 * panL * unisonGain;
-                signalR += osc1 * panR * unisonGain;
+                    // Calculate stereo position for unison
+                    float unisonPan = (u - (unisonCount - 1) / 2f) / Math.Max(1, (unisonCount - 1) / 2f) * synth.UnisonSpread;
+                    float panL = Math.Min(1f, 1f - unisonPan);
+                    float panR = Math.Min(1f, 1f + unisonPan);
+
+                    signalL += osc1 * panL * unisonGain;
+                    signalR += osc1 * panR * unisonGain;
+                }
             }
 
             var extraOscs = synth._extraOscillators;
@@ -743,7 +909,7 @@ public class SimpleSynth : ISynth
                     var osc = extraOscs[i];
                     if (!osc.Enabled) continue;
 
-                    float oscFreq = baseFreq * (float)Math.Pow(2, osc.Octave + osc.Semi / 12f + osc.Fine / 1200f);
+                    float oscFreq = baseFreq * osc.GetPitchRatio();
                     float phaseInc = oscFreq / sampleRate;
                     float pw = Math.Clamp(osc.PulseWidth + pwMod, 0.0001f, 0.9999f);
                     float oscSample = WaveformGenerator.Oscillator(osc.Waveform, _extraPhases[i], pw, _random, phaseInc);
@@ -782,7 +948,7 @@ public class SimpleSynth : ISynth
             }
 
             // Sub oscillator with band-limiting
-            if (synth.SubOscLevel > 0)
+            if (synth.SubOscEnabled && synth.SubOscLevel > 0)
             {
                 float subPhaseInc = subFreq / sampleRate;
                 float sub = WaveformGenerator.Oscillator(synth.SubOscWaveform, _subPhase, 0.5f, _random, subPhaseInc) * synth.SubOscLevel;
@@ -794,7 +960,7 @@ public class SimpleSynth : ISynth
             }
 
             // Noise
-            if (synth.NoiseLevel > 0)
+            if (synth.NoiseEnabled && synth.NoiseLevel > 0)
             {
                 float noise = ((float)_random.NextDouble() * 2f - 1f) * synth.NoiseLevel;
                 signalL += noise;
@@ -806,16 +972,19 @@ public class SimpleSynth : ISynth
             _filterEnv = EnvelopeGenerator.Process(_filterStage, _filterEnv, synth.FilterAttack, synth.FilterDecay, synth.FilterSustain, synth.FilterRelease, sampleRate, ref _filterStage);
 
             // Check if voice is finished
-            if (_ampStage == 3 && _ampEnv <= 0.0001f)
+            if (_ampStage == 3 && _ampEnv <= 0.005f)
             {
-                // Envelope has fully released - apply end ramp to smoothly terminate
-                _endRamp -= EndRampRate;
-                if (_endRamp <= 0f)
+                if (_releaseWaitSamples == 0)
                 {
-                    _endRamp = 0f;
-                    IsFinished = true;
-                    return (0, 0);
+                    _releaseWaitSamples = Math.Max(1, (int)(sampleRate * 0.03f));
+                    _endRampActive = false;
                 }
+            }
+            else
+            {
+                _endRamp = 1f;
+                _endRampActive = false;
+                _releaseWaitSamples = 0;
             }
 
             // Calculate filter cutoff
@@ -861,25 +1030,72 @@ public class SimpleSynth : ISynth
             signalL *= extraAmpScale;
             signalR *= extraAmpScale;
             float ampMult = _ampEnv * _velocity;
-            signalL *= ampMult;
-            signalR *= ampMult;
+            _ampSmooth += _ampSmoothCoeff * (ampMult - _ampSmooth);
+            _currentAmp = _ampSmooth;
+            signalL *= _ampSmooth;
+            signalR *= _ampSmooth;
 
             // Apply anti-click start ramp
             if (_startRamp < 1f)
             {
-                _startRamp = Math.Min(1f, _startRamp + StartRampRate);
+                _startRamp = Math.Min(1f, _startRamp + startRampRate);
                 signalL *= _startRamp;
                 signalR *= _startRamp;
             }
 
             // Apply end ramp for smooth voice termination
-            if (_endRamp < 1f)
+            if (_ampStage == 3 && _ampEnv <= 0.005f)
             {
+                float mono = (signalL + signalR) * 0.5f;
+                bool crossedZero = (mono == 0f) || (_lastMonoSample > 0f && mono <= 0f) || (_lastMonoSample < 0f && mono >= 0f);
+                bool nearZero = Math.Abs(mono) <= 0.0005f;
+                if (!_endRampActive)
+                {
+                    _releaseWaitSamples = Math.Max(0, _releaseWaitSamples - 1);
+                    if (crossedZero || nearZero || _releaseWaitSamples == 0)
+                    {
+                        _endRampActive = true;
+                    }
+                }
+                _lastMonoSample = mono;
+            }
+            else
+            {
+                _lastMonoSample = (signalL + signalR) * 0.5f;
+            }
+
+            if (_endRampActive)
+            {
+                _endRamp -= endRampRate;
+                if (_endRamp <= 0f)
+                {
+                    _endRamp = 0f;
+                    IsFinished = true;
+                    return (0, 0);
+                }
                 signalL *= _endRamp;
                 signalR *= _endRamp;
             }
 
-            return (signalL, signalR);
+            // Optional per-voice soft clip for extra headroom
+            if (synth.VoiceSoftClipEnabled && synth.VoiceSoftClipAmount > 0f)
+            {
+                float drive = 1f + synth.VoiceSoftClipAmount * 2f;
+                float norm = 1f / MathF.Tanh(drive);
+                signalL = MathF.Tanh(signalL * drive) * norm;
+                signalR = MathF.Tanh(signalR * drive) * norm;
+            }
+
+            // DC blocker to remove low-frequency pops
+            const float dcR = 0.995f;
+            float outL = signalL - _dcPrevInL + dcR * _dcPrevOutL;
+            _dcPrevInL = signalL;
+            _dcPrevOutL = outL;
+            float outR = signalR - _dcPrevInR + dcR * _dcPrevOutR;
+            _dcPrevInR = signalR;
+            _dcPrevOutR = outR;
+
+            return (outL, outR);
         }
 
     }

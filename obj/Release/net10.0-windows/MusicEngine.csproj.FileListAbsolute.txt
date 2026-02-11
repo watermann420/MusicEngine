@@ -80,3 +80,4 @@ C:\Users\water\RiderProjects\MusicEngine\obj\Release\net10.0-windows\MusicEngine
 C:\Users\water\RiderProjects\MusicEngine\obj\Release\net10.0-windows\MusicEngine.pdb
 C:\Users\water\RiderProjects\MusicEngine\obj\Release\net10.0-windows\MusicEngine.genruntimeconfig.cache
 C:\Users\water\RiderProjects\MusicEngine\obj\Release\net10.0-windows\ref\MusicEngine.dll
+C:\Users\water\RiderProjects\MusicEngine\bin\Release\net10.0-windows\MusicEngine\MusicEngine.CppLayer.Native.dll

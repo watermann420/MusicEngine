@@ -28,6 +28,7 @@ public static class EnvelopeGenerator
         float sustain, float release, int sampleRate, ref int stageRef)
     {
         const float minTime = 0.002f;
+        const float minReleaseTime = 0.01f;
 
         switch (stage)
         {
@@ -63,7 +64,7 @@ public static class EnvelopeGenerator
                 }
                 break;
             case 3:
-                float releaseTime = Math.Max(release, minTime);
+                float releaseTime = Math.Max(release, minReleaseTime);
                 float releaseCoeff = (float)Math.Exp(-1.0 / (releaseTime * sampleRate));
                 current *= releaseCoeff;
                 if (current < 0.0001f)

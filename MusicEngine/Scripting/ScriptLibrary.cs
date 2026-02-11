@@ -129,7 +129,17 @@ public sealed class ScriptLibrary : DynamicObject
     /// <summary>
     /// Register the current script or an alias as main.
     /// </summary>
-    public ScriptFileBuilder Main() => new ScriptFileBuilder(this, "Main", master: true);
+    public ScriptFileBuilder Main()
+    {
+        var currentName = HostCurrentScriptName;
+        if (!string.IsNullOrWhiteSpace(currentName))
+        {
+            RegisterScript(currentName, currentName, master: true);
+            return new ScriptFileBuilder(this, currentName, master: true);
+        }
+
+        return new ScriptFileBuilder(this, "Main", master: true);
+    }
 
     /// <summary>
     /// Register the current script or an alias as main.
@@ -209,6 +219,37 @@ public sealed class ScriptLibrary : DynamicObject
 
             Set(binder.Name, value);
             result = value;
+            return true;
+        }
+
+        result = null;
+        return false;
+    }
+
+    public override bool TryInvoke(InvokeBinder binder, object?[]? args, out object? result)
+    {
+        args ??= Array.Empty<object?>();
+        if (args.Length == 0)
+        {
+            result = File();
+            return true;
+        }
+
+        if (args.Length == 1 && args[0] is string name)
+        {
+            result = File(name);
+            return true;
+        }
+
+        if (args.Length == 2 && args[0] is string alias && args[1] is string scriptName)
+        {
+            result = File(alias, scriptName);
+            return true;
+        }
+
+        if (args.Length == 3 && args[0] is string alias3 && args[1] is string scriptName3 && args[2] is bool master)
+        {
+            result = File(alias3, scriptName3, master);
             return true;
         }
 

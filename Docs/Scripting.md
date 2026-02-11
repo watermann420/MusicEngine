@@ -21,11 +21,12 @@ MusicEngine/
 
 ## Load Another Script
 
-Use `Use("name")` or `File.Use("name")` from any script:
+Use `Use("name")`, `File.Use("name")`, or the shorthand `include name;` from any script:
 
 ```csharp
 await Use("instruments");
 await Use("patterns");
+include instruments; // forces a reload each refresh
 ```
 
 This loads `Scripts/instruments.cs` and `Scripts/patterns.cs` (or the same directory as the main script).
@@ -64,9 +65,10 @@ var bass = Library.Get<SimpleSynth>("Bass");
 
 ```csharp
 // MainScript.cs
-File.Main().Name(MainScript); // register main script
-File.Name(Instruments);       // load Instruments.cs / Instruments.csx (not main)
-midi.Device(0).to(File.Instruments.Synth1);
+File.Main(); // register main script (namespace = file name)
+include instruments;
+var inst = Include.Instruments; // Include is an alias for File
+midi.Device(0).to(inst.Synth1);
 
 // Instruments.cs
 var file = File(); // uses file name (Instruments) and exposes File.Instruments

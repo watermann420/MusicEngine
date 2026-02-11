@@ -11,6 +11,11 @@ namespace MusicEngine.Instruments;
 /// </summary>
 public sealed class SynthOscillator
 {
+    private float _cachedRatio = 1f;
+    private int _cachedOctave;
+    private int _cachedSemi;
+    private float _cachedFine;
+    private bool _cacheValid;
     /// <summary>
     /// Oscillator waveform.
     /// </summary>
@@ -70,4 +75,17 @@ public sealed class SynthOscillator
     /// Modulate pulse width (audio-rate).
     /// </summary>
     public float ModToPulseWidth { get; set; } = 0f;
+
+    internal float GetPitchRatio()
+    {
+        if (!_cacheValid || _cachedOctave != Octave || _cachedSemi != Semi || Math.Abs(_cachedFine - Fine) > 0.0001f)
+        {
+            _cachedOctave = Octave;
+            _cachedSemi = Semi;
+            _cachedFine = Fine;
+            _cachedRatio = (float)Math.Pow(2.0, _cachedOctave + _cachedSemi / 12.0 + _cachedFine / 1200.0);
+            _cacheValid = true;
+        }
+        return _cachedRatio;
+    }
 }

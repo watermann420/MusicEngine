@@ -71,9 +71,6 @@ public static class EngineLauncher
         {
             ipcServer = new EngineIpcServer(engine);
             ipcServer.Start();
-            Console.WriteLine("IPC server running.");
-            Console.WriteLine($"State pipe: {EngineIpcServer.StatePipeName}");
-            Console.WriteLine($"Events pipe: {EngineIpcServer.EventsPipeName}");
         }
 
         var outputDevices = audioEngine.ListOutputDevices();
@@ -119,6 +116,21 @@ public static class EngineLauncher
             for (int i = 0; i < MidiIn.NumberOfDevices; i++)
             {
                 var info = MidiIn.DeviceInfo(i);
+                Console.WriteLine($"  [{i}] {info.ProductName}");
+            }
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("MIDI Outputs:");
+        if (MidiOut.NumberOfDevices == 0)
+        {
+            Console.WriteLine("  (none)");
+        }
+        else
+        {
+            for (int i = 0; i < MidiOut.NumberOfDevices; i++)
+            {
+                var info = MidiOut.DeviceInfo(i);
                 Console.WriteLine($"  [{i}] {info.ProductName}");
             }
         }

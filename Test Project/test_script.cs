@@ -1,28 +1,28 @@
-File.Main().Name(MainScript);
-audio.all.gain(1);  // Adjust as needed // Default is 0.1 is 10% volume
+File.Main();
+
+Include synthInstance; // This includes the synthInstance.cs script which creates a basic synthesizer instance with default settings. You can customize it by editing that script.
+var synth = Include.synthInstance.synth; // The above line gives us access to the 'synth' variable defined in synthInstance.cs, which is our synthesizer instance with default settings. We can now route MIDI and effects to it, and play patterns on it.
+Include general_instruments; // This includes the general_instruments.cs script which creates a basic piano instance with default settings. You can customize it by editing that script.
+var GM = Include.general_instruments.piano; // The above line gives us access to the 'piano' variable defined in general_instruments.cs, which is our General MIDI piano instance. We can route MIDI and effects to it, and play patterns on it.
+
+Audio.master.Gain(0.1); // Set master gain to a safe level (adjust as needed)
 
 
 
 
-// Create the synthesizer instance
-var synth = CreateSynth();
 
 
 // Create a VST instrument instance (replace "Vital" with your desired plugin name)
 var vital = CreateVst("Vital");
 var ch1 = Audio.CreateChannel(1);
 ch1.to(master);
-ch1.Gain(0.8);
+ch1.Gain(1.0);
 ch1.Pan(0.0); 
 ch1.Route(vital);
 ch1.Route(synth);
-var fx2 = CreateVstEffect("ValhallaSupermassive");
-ch1.Effect(fx2);
-var fx = CreateVstEffect("Ozone 12 Equalizer");
-ch1.Effect(fx);
 
-// --- Windows GM instrument ---
-var piano = CreateGeneralMidi();
+
+
 
 
 //midi setup

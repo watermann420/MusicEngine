@@ -8,6 +8,7 @@
         <UseWindowsForms>true</UseWindowsForms>
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
         <NoWarn>1591</NoWarn>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     </PropertyGroup>
 
     <ItemGroup>
@@ -25,10 +26,14 @@
       <Compile Remove="MusicEngine.Installer\**\*.cs" />
       <Compile Remove="Scripts\**\*.cs" />
       <Compile Remove="**\Scripts\**\*.cs" />
+      <Compile Remove="Test Project\**\*.cs" />
+      <Compile Remove="**\Test Project\**\*.cs" />
     </ItemGroup>
 
     <ItemGroup>
       <None Include="Scripts\**\*.cs" />
+      <None Include="Test Project\**\*.cs" />
+      <None Include="MusicEngine\MusicEngine.CppLayer.Native.dll" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
 
     <ItemGroup>
