@@ -3,9 +3,8 @@
 // Description: Wavetable helper for custom oscillator shapes.
 
 using System;
-using System.Collections.Generic;
 using System.IO;
-using NAudio.Wave;
+using MusicEngine.Core;
 
 namespace MusicEngine.Instruments.Modules;
 
@@ -49,20 +48,7 @@ public sealed class Wavetable
         if (string.IsNullOrWhiteSpace(path)) throw new ArgumentException("Path is required.", nameof(path));
         if (!File.Exists(path)) throw new FileNotFoundException("Wavetable file not found.", path);
 
-        using var reader = new AudioFileReader(path);
-        int channels = reader.WaveFormat.Channels;
-        var buffer = new float[reader.WaveFormat.SampleRate * channels];
-        var samples = new List<float>();
-        int read;
-        while ((read = reader.Read(buffer, 0, buffer.Length)) > 0)
-        {
-            for (int i = 0; i < read; i += channels)
-            {
-                samples.Add(buffer[i]);
-            }
-        }
-
-        var data = samples.ToArray();
+        var data = AudioFileLoader.Load(path, targetChannels: 1).Samples;
         if (maxSamples.HasValue && maxSamples.Value > 1 && data.Length > maxSamples.Value)
         {
             int target = maxSamples.Value;

@@ -2,12 +2,15 @@
 // Copyright (c) 2025-2026 Yannis Watermann (watermann420, nullonebinary)
 // Description: Shared STA context for VST UI actions.
 
+#if WINDOWS
 using System;
 using System.Threading;
 using System.Windows.Forms;
+#endif
 
 namespace MusicEngine.Vst;
 
+#if WINDOWS
 internal sealed class VstUiContext
 {
     private static readonly Lazy<VstUiContext> LazyInstance = new(() => new VstUiContext());
@@ -75,3 +78,4 @@ internal sealed class VstUiContext
         _invoker.BeginInvoke(new MethodInvoker(action));
     }
 }
+#endif

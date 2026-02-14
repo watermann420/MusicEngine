@@ -3,7 +3,9 @@
 // https://github.com/watermann420/MusicEngine
 // Description: Minimal VST3 editor host bridge.
 
+#if defined(_WIN32)
 #include <windows.h>
+#endif
 
 #include "public.sdk/source/vst/hosting/module.h"
 #include "public.sdk/source/vst/hosting/plugprovider.h"
@@ -36,7 +38,7 @@ namespace
 class PlugFrame final : public IPlugFrame
 {
 public:
-	explicit PlugFrame (HWND hwnd) : hwnd_ (hwnd) {}
+	explicit PlugFrame (void* hwnd) : hwnd_ (hwnd) {}
 
 	tresult PLUGIN_API resizeView (IPlugView* view, ViewRect* newSize) override
 	{
@@ -44,11 +46,13 @@ public:
 			return kInvalidArgument;
 		const int width = newSize->right - newSize->left;
 		const int height = newSize->bottom - newSize->top;
-		::SetWindowPos (hwnd_, nullptr, 0, 0, width, height, SWP_NOZORDER | SWP_NOMOVE);
+#if defined(_WIN32)
+		::SetWindowPos (static_cast<HWND> (hwnd_), nullptr, 0, 0, width, height, SWP_NOZORDER | SWP_NOMOVE);
+#endif
 		return kResultTrue;
 	}
 
-	HWND hwnd () const { return hwnd_; }
+	void* hwnd () const { return hwnd_; }
 
 private:
 	tresult PLUGIN_API queryInterface (const TUID _iid, void** obj) override
@@ -66,7 +70,7 @@ private:
 	uint32 PLUGIN_API addRef () override { return 1000; }
 	uint32 PLUGIN_API release () override { return 1000; }
 
-	HWND hwnd_ {nullptr};
+	void* hwnd_ {nullptr};
 };
 
 class ComponentHandler final : public IComponentHandler
@@ -187,8 +191,12 @@ struct Vst3HostInstance
 		return true;
 	}
 
-	bool openEditor (HWND hwnd)
+	bool openEditor (void* hwnd)
 	{
+#if !defined(_WIN32)
+		(void) hwnd;
+		return false;
+#else
 		if (!controller)
 			return false;
 
@@ -205,7 +213,7 @@ struct Vst3HostInstance
 		frame = std::make_unique<PlugFrame> (hwnd);
 		view->setFrame (frame.get ());
 
-		if (view->attached (hwnd, kPlatformTypeHWND) != kResultTrue)
+		if (view->attached (static_cast<HWND> (hwnd), kPlatformTypeHWND) != kResultTrue)
 		{
 			suspendProcessing.store (false, std::memory_order_release);
 			return false;
@@ -216,11 +224,12 @@ struct Vst3HostInstance
 		{
 			const int width = size.right - size.left;
 			const int height = size.bottom - size.top;
-			::SetWindowPos (hwnd, nullptr, 0, 0, width, height, SWP_NOZORDER | SWP_NOMOVE);
+			::SetWindowPos (static_cast<HWND> (hwnd), nullptr, 0, 0, width, height, SWP_NOZORDER | SWP_NOMOVE);
 		}
 
 		suspendProcessing.store (false, std::memory_order_release);
 		return true;
+#endif
 	}
 
 	void closeEditor ()
@@ -477,6 +486,9 @@ struct Vst3HostInstance
 	{
 		if (!view || width <= 0 || height <= 0)
 			return false;
+#if !defined(_WIN32)
+		return false;
+#else
 		if (view->canResize () == kResultFalse)
 			return false;
 
@@ -492,14 +504,45 @@ struct Vst3HostInstance
 			{
 				const int newWidth = newSize.right - newSize.left;
 				const int newHeight = newSize.bottom - newSize.top;
-				::SetWindowPos (hwnd, nullptr, 0, 0, newWidth, newHeight, SWP_NOZORDER | SWP_NOMOVE);
+				::SetWindowPos (static_cast<HWND> (hwnd), nullptr, 0, 0, newWidth, newHeight, SWP_NOZORDER | SWP_NOMOVE);
 			}
 		}
 		return true;
+#endif
 	}
 
 	int32 getOutputChannels () const { return outputChannelCount > 0 ? outputChannelCount : 2; }
 	int32 getInputChannels () const { return inputChannelCount > 0 ? inputChannelCount : 0; }
+
+	int32 getStateSize ()
+	{
+		std::vector<uint8> data;
+		if (!getStateBlob (data))
+			return 0;
+		return static_cast<int32> (data.size ());
+	}
+
+	int32 copyStateToBuffer (uint8_t* buffer, int32 bufferSize)
+	{
+		if (!buffer || bufferSize <= 0)
+			return 0;
+
+		std::vector<uint8> data;
+		if (!getStateBlob (data))
+			return 0;
+		if (static_cast<int32> (data.size ()) > bufferSize)
+			return 0;
+
+		memcpy (buffer, data.data (), data.size ());
+		return static_cast<int32> (data.size ());
+	}
+
+	bool applyStateFromBuffer (const uint8_t* data, int32 size)
+	{
+		if (!data || size <= 0)
+			return false;
+		return setStateBlob (data, static_cast<size_t> (size));
+	}
 
 	bool getStateBlob (std::vector<uint8>& outData)
 	{
@@ -785,7 +828,7 @@ __declspec (dllexport) bool __cdecl Vst3Host_OpenEditor (void* handle, void* hwn
 		return false;
 
 	auto instance = reinterpret_cast<Vst3HostInstance*> (handle);
-	return instance->openEditor (reinterpret_cast<HWND> (hwnd));
+	return instance->openEditor (hwnd);
 }
 
 __declspec (dllexport) void __cdecl Vst3Host_Close (void* handle)
@@ -929,10 +972,18 @@ __declspec (dllexport) int __cdecl Vst3Host_GetStateSize (void* handle)
 	if (!handle)
 		return 0;
 	auto instance = reinterpret_cast<Vst3HostInstance*> (handle);
-	std::vector<uint8> data;
-	if (!instance->getStateBlob (data))
+#if defined(_WIN32)
+	__try
+	{
+#endif
+	return static_cast<int> (instance->getStateSize ());
+#if defined(_WIN32)
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER)
+	{
 		return 0;
-	return static_cast<int> (data.size ());
+	}
+#endif
 }
 
 __declspec (dllexport) int __cdecl Vst3Host_GetState (void* handle, uint8_t* buffer, int bufferSize)
@@ -940,13 +991,18 @@ __declspec (dllexport) int __cdecl Vst3Host_GetState (void* handle, uint8_t* buf
 	if (!handle || !buffer || bufferSize <= 0)
 		return 0;
 	auto instance = reinterpret_cast<Vst3HostInstance*> (handle);
-	std::vector<uint8> data;
-	if (!instance->getStateBlob (data))
+#if defined(_WIN32)
+	__try
+	{
+#endif
+	return static_cast<int> (instance->copyStateToBuffer (buffer, bufferSize));
+#if defined(_WIN32)
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER)
+	{
 		return 0;
-	if (static_cast<int> (data.size ()) > bufferSize)
-		return 0;
-	memcpy (buffer, data.data (), data.size ());
-	return static_cast<int> (data.size ());
+	}
+#endif
 }
 
 __declspec (dllexport) bool __cdecl Vst3Host_SetState (void* handle, const uint8_t* data, int size)
@@ -954,6 +1010,17 @@ __declspec (dllexport) bool __cdecl Vst3Host_SetState (void* handle, const uint8
 	if (!handle || !data || size <= 0)
 		return false;
 	auto instance = reinterpret_cast<Vst3HostInstance*> (handle);
-	return instance->setStateBlob (data, static_cast<size_t> (size));
+#if defined(_WIN32)
+	__try
+	{
+#endif
+	return instance->applyStateFromBuffer (data, size);
+#if defined(_WIN32)
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER)
+	{
+		return false;
+	}
+#endif
 }
 }

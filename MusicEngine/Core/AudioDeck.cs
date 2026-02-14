@@ -3,10 +3,8 @@
 // Description: Sample-accurate audio deck for scrubbing and scratch playback.
 
 using System;
-using System.Collections.Generic;
 using System.IO;
 using NAudio.Wave;
-using NAudio.Wave.SampleProviders;
 
 namespace MusicEngine.Core;
 
@@ -78,34 +76,9 @@ public sealed class AudioDeck : ISampleProvider
         if (string.IsNullOrWhiteSpace(path)) throw new ArgumentException("Audio path is required.", nameof(path));
         if (!File.Exists(path)) throw new FileNotFoundException($"Audio file not found: {path}", path);
 
-        using var reader = new AudioFileReader(path);
-        ISampleProvider provider = reader;
-
-        if (provider.WaveFormat.SampleRate != _waveFormat.SampleRate)
-        {
-            provider = new WdlResamplingSampleProvider(provider, _waveFormat.SampleRate);
-        }
-
-        if (provider.WaveFormat.Channels != _waveFormat.Channels)
-        {
-            provider = provider.WaveFormat.Channels == 1
-                ? new MonoToStereoSampleProvider(provider)
-                : new StereoToMonoSampleProvider(provider);
-        }
-
-        var buffer = new float[_waveFormat.SampleRate * _waveFormat.Channels];
-        var data = new List<float>(buffer.Length);
-        int read;
-        while ((read = provider.Read(buffer, 0, buffer.Length)) > 0)
-        {
-            for (int i = 0; i < read; i++)
-            {
-                data.Add(buffer[i]);
-            }
-        }
-
-        _data = data.ToArray();
-        _frameCount = _waveFormat.Channels == 0 ? 0 : _data.Length / _waveFormat.Channels;
+        var loaded = AudioFileLoader.Load(path, _waveFormat.SampleRate, _waveFormat.Channels);
+        _data = loaded.Samples;
+        _frameCount = loaded.Channels == 0 ? 0 : _data.Length / loaded.Channels;
         _positionFrames = 0f;
     }
 

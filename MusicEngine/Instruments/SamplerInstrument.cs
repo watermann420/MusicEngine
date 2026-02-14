@@ -8,7 +8,6 @@ using System.Collections.Generic;
 using System.IO;
 using MusicEngine.Core;
 using NAudio.Wave;
-using NAudio.Wave.SampleProviders;
 
 namespace MusicEngine.Instruments;
 
@@ -390,38 +389,14 @@ public sealed class SamplerInstrument : ISynth
 
     private SampleData ReadSampleData(string path)
     {
-        using var reader = new AudioFileReader(path);
-        ISampleProvider provider = reader;
-
-        if (provider.WaveFormat.SampleRate != _waveFormat.SampleRate)
-        {
-            provider = new WdlResamplingSampleProvider(provider, _waveFormat.SampleRate);
-        }
-
-        if (provider.WaveFormat.Channels != _waveFormat.Channels)
-        {
-            provider = provider.WaveFormat.Channels == 1
-                ? new MonoToStereoSampleProvider(provider)
-                : new StereoToMonoSampleProvider(provider);
-        }
-
-        var buffer = new float[_waveFormat.SampleRate * _waveFormat.Channels];
-        var data = new List<float>(buffer.Length);
-        int read;
-        while ((read = provider.Read(buffer, 0, buffer.Length)) > 0)
-        {
-            for (int i = 0; i < read; i++)
-            {
-                data.Add(buffer[i]);
-            }
-        }
+        var loaded = AudioFileLoader.Load(path, _waveFormat.SampleRate, _waveFormat.Channels);
 
         return new SampleData
         {
             Path = path,
-            Data = data.ToArray(),
-            Channels = _waveFormat.Channels,
-            SampleRate = _waveFormat.SampleRate
+            Data = loaded.Samples,
+            Channels = loaded.Channels,
+            SampleRate = loaded.SampleRate
         };
     }
 

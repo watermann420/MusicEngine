@@ -6,11 +6,14 @@
 using System;
 using System.Buffers;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using MusicEngine.Effects.Audio;
-using NAudio.CoreAudioApi;
 using NAudio.Midi;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
+#if WINDOWS
+using NAudio.CoreAudioApi;
+#endif
 
 namespace MusicEngine.Core;
 
@@ -45,7 +48,7 @@ public sealed class AudioEngine : IDisposable
     private ISampleProvider? _asioMasterMapping;
     private int _asioMasterOffset;
     private readonly Dictionary<int, ISampleProvider> _asioChannelMappings = new();
-    private IWavePlayer? _output;
+    private IAudioOutput? _output;
     private string _activeRenderer = Settings.OutputRenderer;
     private bool _initialized;
     private bool _outputRunning;
@@ -164,9 +167,13 @@ public sealed class AudioEngine : IDisposable
     /// </summary>
     public bool SetOutputRenderer(string renderer, int deviceIndex)
     {
+#if !WINDOWS
+        return false;
+#else
         var driver = GetAsioDriverName(deviceIndex);
         if (driver == null) return false;
         return SetOutputRenderer(renderer, driver);
+#endif
     }
 
     /// <summary>
@@ -174,11 +181,15 @@ public sealed class AudioEngine : IDisposable
     /// </summary>
     public bool SetOutputRenderer(string renderer, int driverIndex, int outputPairIndex)
     {
+#if !WINDOWS
+        return false;
+#else
         var driver = GetAsioDriverName(driverIndex);
         if (driver == null) return false;
         Settings.AsioOutputChannelOffset = Math.Max(0, outputPairIndex * 2);
         UpdateAsioMasterMapping();
         return SetOutputRenderer(renderer, driver);
+#endif
     }
 
     /// <summary>
@@ -186,8 +197,12 @@ public sealed class AudioEngine : IDisposable
     /// </summary>
     public void SetAsioMasterOutputPair(int outputPairIndex)
     {
+#if !WINDOWS
+        return;
+#else
         Settings.AsioOutputChannelOffset = Math.Max(0, outputPairIndex * 2);
         UpdateAsioMasterMapping();
+#endif
     }
 
     /// <summary>
@@ -195,6 +210,9 @@ public sealed class AudioEngine : IDisposable
     /// </summary>
     public bool RouteChannelToAsioOutput(int channelIndex, int outputPairIndex, bool unrouteFromMaster = true)
     {
+#if !WINDOWS
+        return false;
+#else
         if (channelIndex < 1) return false;
         if (outputPairIndex < 0) return false;
 
@@ -228,6 +246,7 @@ public sealed class AudioEngine : IDisposable
         }
 
         return true;
+#endif
     }
 
     /// <summary>
@@ -235,6 +254,9 @@ public sealed class AudioEngine : IDisposable
     /// </summary>
     public void ClearChannelAsioOutput(int channelIndex)
     {
+#if !WINDOWS
+        return;
+#else
         if (channelIndex < 1) return;
         lock (_asioLock)
         {
@@ -245,6 +267,7 @@ public sealed class AudioEngine : IDisposable
                 _asioChannelMappings.Remove(channelIndex);
             }
         }
+#endif
     }
 
     /// <summary>
@@ -252,6 +275,7 @@ public sealed class AudioEngine : IDisposable
     /// </summary>
     public IReadOnlyList<string> ListAsioDrivers()
     {
+#if WINDOWS
         try
         {
             return AsioOut.GetDriverNames();
@@ -260,6 +284,9 @@ public sealed class AudioEngine : IDisposable
         {
             return Array.Empty<string>();
         }
+#else
+        return Array.Empty<string>();
+#endif
     }
 
     /// <summary>
@@ -304,15 +331,7 @@ public sealed class AudioEngine : IDisposable
     private void InitializeOutput(bool startPlayback)
     {
         var output = CreateOutput();
-        if (output is AsioOut)
-        {
-            var asioProvider = GetAsioOutputProvider();
-            output.Init(new SampleToWaveProvider(asioProvider));
-        }
-        else
-        {
-            output.Init(_masterTap);
-        }
+        output.Init(_masterTap);
 
         _output = output;
         _initialized = true;
@@ -349,9 +368,10 @@ public sealed class AudioEngine : IDisposable
         _outputRunning = false;
     }
 
-    private IWavePlayer CreateOutput()
+    private IAudioOutput CreateOutput()
     {
         var renderer = NormalizeRenderer(Settings.OutputRenderer);
+#if WINDOWS
         if (renderer == "asio")
         {
             var driver = Settings.AsioDeviceName?.Trim();
@@ -365,7 +385,8 @@ public sealed class AudioEngine : IDisposable
                 driver = drivers[0];
             }
 
-            var asio = new AsioOut(driver);
+            var asioProvider = GetAsioOutputProvider();
+            var asio = new AsioOutput(driver, asioProvider);
             if (!asio.IsSampleRateSupported(_waveFormat.SampleRate))
             {
                 asio.Dispose();
@@ -373,6 +394,7 @@ public sealed class AudioEngine : IDisposable
             }
             return asio;
         }
+#endif
 
         var latencyMs = Math.Max(1, Settings.OutputLatencyMs);
         var bufferCount = Math.Max(1, Settings.OutputBufferCount);
@@ -381,16 +403,22 @@ public sealed class AudioEngine : IDisposable
             latencyMs = Math.Max(1, latencyMs + Math.Max(0, Settings.AutoBufferExtraLatencyMs));
             bufferCount = Math.Max(1, bufferCount + Math.Max(0, Settings.AutoBufferExtraBuffers));
         }
-        return new WaveOutEvent
-        {
-            DesiredLatency = latencyMs,
-            NumberOfBuffers = bufferCount
-        };
+#if WINDOWS
+        return new WaveOutOutput(latencyMs, bufferCount);
+#else
+        return new PortAudioOutput();
+#endif
     }
 
     private static string NormalizeRenderer(string renderer)
     {
         var normalized = renderer.Trim().ToLowerInvariant();
+#if !WINDOWS
+        if (normalized == "asio")
+        {
+            return "portaudio";
+        }
+#endif
         return normalized switch
         {
             "wave" => "waveout",
@@ -403,23 +431,32 @@ public sealed class AudioEngine : IDisposable
 
     private string? GetAsioDriverName(int index)
     {
+#if WINDOWS
         if (index < 0) return null;
         var drivers = ListAsioDrivers();
         if (index >= drivers.Count) return null;
         return drivers[index];
+#else
+        return null;
+#endif
     }
 
     private ISampleProvider GetAsioOutputProvider()
     {
+#if WINDOWS
         lock (_asioLock)
         {
             EnsureAsioMixerLocked();
             return _asioMixer!;
         }
+#else
+        return _masterTap;
+#endif
     }
 
     private void EnsureAsioMixerLocked()
     {
+#if WINDOWS
         var outputChannels = Math.Max(2, Settings.AsioOutputChannels);
         if (_asioMixer != null && _asioMixer.WaveFormat.Channels == outputChannels)
         {
@@ -432,10 +469,12 @@ public sealed class AudioEngine : IDisposable
         _asioMixer = mixer;
         _asioChannelMappings.Clear();
         UpdateAsioMasterMappingLocked(outputChannels);
+#endif
     }
 
     private void UpdateAsioMasterMapping()
     {
+#if WINDOWS
         lock (_asioLock)
         {
             if (_asioMixer == null)
@@ -444,10 +483,12 @@ public sealed class AudioEngine : IDisposable
             }
             UpdateAsioMasterMappingLocked(_asioMixer.WaveFormat.Channels);
         }
+#endif
     }
 
     private void UpdateAsioMasterMappingLocked(int outputChannels)
     {
+#if WINDOWS
         int sourceChannels = _waveFormat.Channels;
         int outputOffset = Math.Max(0, Settings.AsioOutputChannelOffset);
         if (outputOffset >= outputChannels)
@@ -468,6 +509,7 @@ public sealed class AudioEngine : IDisposable
         _asioMasterOffset = outputOffset;
         _asioMasterMapping = new ChannelMappingSampleProvider(_masterTap, outputChannels, outputOffset);
         _asioMixer!.AddMixerInput(_asioMasterMapping);
+#endif
     }
 
     /// <summary>
@@ -680,6 +722,7 @@ public sealed class AudioEngine : IDisposable
     /// </summary>
     /// <param name="path">Target file path.</param>
     /// <param name="format">Optional format override.</param>
+    /// <param name="options">Optional recording options.</param>
     /// <returns>Recording session instance.</returns>
     public RecordingSession StartMasterRecording(string path, string? format = null, RecordingOptions? options = null)
     {
@@ -700,6 +743,7 @@ public sealed class AudioEngine : IDisposable
     /// </summary>
     public IReadOnlyList<AudioOutputDeviceInfo> ListOutputDevices()
     {
+#if WINDOWS
         using var enumerator = new MMDeviceEnumerator();
         var devices = enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active);
         var list = new List<AudioOutputDeviceInfo>();
@@ -710,6 +754,21 @@ public sealed class AudioEngine : IDisposable
             list.Add(new AudioOutputDeviceInfo(i, device.ID, device.FriendlyName, format.Channels, format.SampleRate));
         }
         return list;
+#else
+        var list = new List<AudioOutputDeviceInfo>();
+        PortAudioNative.EnsureInitialized();
+        var count = PortAudioNative.GetDeviceCount();
+        for (var i = 0; i < count; i++)
+        {
+            var info = PortAudioNative.GetDeviceInfo(i);
+            if (info == null) continue;
+            if (info.Value.maxOutputChannels <= 0) continue;
+            var name = Marshal.PtrToStringAnsi(info.Value.name) ?? $"Device {i}";
+            list.Add(new AudioOutputDeviceInfo(i, $"pa:{i}", name, info.Value.maxOutputChannels,
+                (int)Math.Round(info.Value.defaultSampleRate)));
+        }
+        return list;
+#endif
     }
 
     /// <summary>
@@ -717,11 +776,15 @@ public sealed class AudioEngine : IDisposable
     /// </summary>
     public bool StartMasterVirtualOutput(int deviceIndex, int latencyMs = -1)
     {
+#if !WINDOWS
+        return false;
+#else
         if (latencyMs <= 0) latencyMs = Settings.VirtualOutputLatencyMs;
         var device = TryGetOutputDevice(deviceIndex);
         if (device == null) return false;
         AddVirtualOutput(_masterVirtualOutputs, device, latencyMs, 0);
         return true;
+#endif
     }
 
     /// <summary>
@@ -729,11 +792,15 @@ public sealed class AudioEngine : IDisposable
     /// </summary>
     public bool StartMasterVirtualOutput(int deviceIndex, int outputChannelOffset, int latencyMs = -1)
     {
+#if !WINDOWS
+        return false;
+#else
         if (latencyMs <= 0) latencyMs = Settings.VirtualOutputLatencyMs;
         var device = TryGetOutputDevice(deviceIndex);
         if (device == null) return false;
         AddVirtualOutput(_masterVirtualOutputs, device, latencyMs, outputChannelOffset);
         return true;
+#endif
     }
 
     /// <summary>
@@ -741,11 +808,15 @@ public sealed class AudioEngine : IDisposable
     /// </summary>
     public bool StartMasterVirtualOutput(string deviceName, int latencyMs = -1)
     {
+#if !WINDOWS
+        return false;
+#else
         if (latencyMs <= 0) latencyMs = Settings.VirtualOutputLatencyMs;
         var device = TryGetOutputDevice(deviceName);
         if (device == null) return false;
         AddVirtualOutput(_masterVirtualOutputs, device, latencyMs, 0);
         return true;
+#endif
     }
 
     /// <summary>
@@ -753,11 +824,15 @@ public sealed class AudioEngine : IDisposable
     /// </summary>
     public bool StartMasterVirtualOutput(string deviceName, int outputChannelOffset, int latencyMs = -1)
     {
+#if !WINDOWS
+        return false;
+#else
         if (latencyMs <= 0) latencyMs = Settings.VirtualOutputLatencyMs;
         var device = TryGetOutputDevice(deviceName);
         if (device == null) return false;
         AddVirtualOutput(_masterVirtualOutputs, device, latencyMs, outputChannelOffset);
         return true;
+#endif
     }
 
     /// <summary>
@@ -892,6 +967,9 @@ public sealed class AudioEngine : IDisposable
     /// </summary>
     public bool StartChannelVirtualOutput(int channelIndex, int deviceIndex, int latencyMs = -1)
     {
+#if !WINDOWS
+        return false;
+#else
         if (channelIndex < 1) channelIndex = 1;
         if (latencyMs <= 0) latencyMs = Settings.VirtualOutputLatencyMs;
         var device = TryGetOutputDevice(deviceIndex);
@@ -899,6 +977,7 @@ public sealed class AudioEngine : IDisposable
         var outputs = GetOrCreateChannelVirtualOutputs(channelIndex);
         AddVirtualOutput(outputs, device, latencyMs, 0);
         return true;
+#endif
     }
 
     /// <summary>
@@ -906,6 +985,9 @@ public sealed class AudioEngine : IDisposable
     /// </summary>
     public bool StartChannelVirtualOutput(int channelIndex, int deviceIndex, int outputChannelOffset, int latencyMs = -1)
     {
+#if !WINDOWS
+        return false;
+#else
         if (channelIndex < 1) channelIndex = 1;
         if (latencyMs <= 0) latencyMs = Settings.VirtualOutputLatencyMs;
         var device = TryGetOutputDevice(deviceIndex);
@@ -913,6 +995,7 @@ public sealed class AudioEngine : IDisposable
         var outputs = GetOrCreateChannelVirtualOutputs(channelIndex);
         AddVirtualOutput(outputs, device, latencyMs, outputChannelOffset);
         return true;
+#endif
     }
 
     /// <summary>
@@ -920,6 +1003,9 @@ public sealed class AudioEngine : IDisposable
     /// </summary>
     public bool StartChannelVirtualOutput(int channelIndex, string deviceName, int latencyMs = -1)
     {
+#if !WINDOWS
+        return false;
+#else
         if (channelIndex < 1) channelIndex = 1;
         if (latencyMs <= 0) latencyMs = Settings.VirtualOutputLatencyMs;
         var device = TryGetOutputDevice(deviceName);
@@ -927,6 +1013,7 @@ public sealed class AudioEngine : IDisposable
         var outputs = GetOrCreateChannelVirtualOutputs(channelIndex);
         AddVirtualOutput(outputs, device, latencyMs, 0);
         return true;
+#endif
     }
 
     /// <summary>
@@ -934,6 +1021,9 @@ public sealed class AudioEngine : IDisposable
     /// </summary>
     public bool StartChannelVirtualOutput(int channelIndex, string deviceName, int outputChannelOffset, int latencyMs = -1)
     {
+#if !WINDOWS
+        return false;
+#else
         if (channelIndex < 1) channelIndex = 1;
         if (latencyMs <= 0) latencyMs = Settings.VirtualOutputLatencyMs;
         var device = TryGetOutputDevice(deviceName);
@@ -941,6 +1031,7 @@ public sealed class AudioEngine : IDisposable
         var outputs = GetOrCreateChannelVirtualOutputs(channelIndex);
         AddVirtualOutput(outputs, device, latencyMs, outputChannelOffset);
         return true;
+#endif
     }
 
     /// <summary>
@@ -1039,6 +1130,7 @@ public sealed class AudioEngine : IDisposable
     /// <param name="index">1-based channel index.</param>
     /// <param name="path">Target file path.</param>
     /// <param name="format">Optional format override.</param>
+    /// <param name="options">Optional recording options.</param>
     /// <returns>Recording session instance.</returns>
     public RecordingSession StartChannelRecording(int index, string path, string? format = null, RecordingOptions? options = null)
     {
@@ -1198,6 +1290,9 @@ public sealed class AudioEngine : IDisposable
 
     private void EnsureMidiInput(int deviceIndex)
     {
+#if !WINDOWS
+        return;
+#else
         if (_midiInputs.ContainsKey(deviceIndex)) return;
         if (deviceIndex < 0 || deviceIndex >= MidiIn.NumberOfDevices) return;
 
@@ -1206,11 +1301,16 @@ public sealed class AudioEngine : IDisposable
         midiIn.ErrorReceived += (_, _) => { };
         midiIn.Start();
         _midiInputs[deviceIndex] = midiIn;
+#endif
     }
 
     private void HandleMidiMessage(int deviceIndex, MidiInMessageEventArgs args)
     {
+#if !WINDOWS
+        return;
+#else
         _midiRouter.HandleMidiMessage(deviceIndex, args);
+#endif
     }
 
     /// <summary>
@@ -1416,6 +1516,7 @@ public sealed class AudioEngine : IDisposable
     /// </summary>
     public IReadOnlyList<AudioInputDeviceInfo> ListInputDevices()
     {
+#if WINDOWS
         using var enumerator = new MMDeviceEnumerator();
         var devices = enumerator.EnumerateAudioEndPoints(DataFlow.Capture, DeviceState.Active);
         var list = new List<AudioInputDeviceInfo>();
@@ -1425,6 +1526,20 @@ public sealed class AudioEngine : IDisposable
             list.Add(new AudioInputDeviceInfo(i, device.ID, device.FriendlyName));
         }
         return list;
+#else
+        var list = new List<AudioInputDeviceInfo>();
+        PortAudioNative.EnsureInitialized();
+        var count = PortAudioNative.GetDeviceCount();
+        for (var i = 0; i < count; i++)
+        {
+            var info = PortAudioNative.GetDeviceInfo(i);
+            if (info == null) continue;
+            if (info.Value.maxInputChannels <= 0) continue;
+            var name = Marshal.PtrToStringAnsi(info.Value.name) ?? $"Device {i}";
+            list.Add(new AudioInputDeviceInfo(i, $"pa:{i}", name));
+        }
+        return list;
+#endif
     }
 
     /// <summary>
@@ -1432,6 +1547,9 @@ public sealed class AudioEngine : IDisposable
     /// </summary>
     public AudioInput CreateInput(int deviceIndex)
     {
+#if !WINDOWS
+        throw new PlatformNotSupportedException("Audio input is not yet supported on Linux.");
+#else
         var device = TryGetInputDevice(deviceIndex);
         if (device == null)
         {
@@ -1441,6 +1559,7 @@ public sealed class AudioEngine : IDisposable
         var input = new AudioInput(device, deviceIndex);
         _audioInputs.Add(input);
         return input;
+#endif
     }
 
     /// <summary>
@@ -1448,6 +1567,9 @@ public sealed class AudioEngine : IDisposable
     /// </summary>
     public AudioInput CreateInput(string deviceName)
     {
+#if !WINDOWS
+        throw new PlatformNotSupportedException("Audio input is not yet supported on Linux.");
+#else
         var device = TryGetInputDevice(deviceName);
         if (device == null)
         {
@@ -1457,6 +1579,7 @@ public sealed class AudioEngine : IDisposable
         var input = new AudioInput(device, -1);
         _audioInputs.Add(input);
         return input;
+#endif
     }
 
     private void OnMasterSamples(float[] buffer, int offset, int count)
@@ -1516,6 +1639,7 @@ public sealed class AudioEngine : IDisposable
         }
     }
 
+    #if WINDOWS
     private void AddVirtualOutput(List<AudioVirtualOutput> outputs, MMDevice device, int latencyMs, int outputChannelOffset)
     {
         lock (_virtualOutputLock)
@@ -1556,6 +1680,7 @@ public sealed class AudioEngine : IDisposable
         }
         return null;
     }
+    #endif
 
     /// <summary>
     /// Output device info (index, ID, name, channels, sample rate).
@@ -1566,6 +1691,7 @@ public sealed class AudioEngine : IDisposable
     /// </summary>
     public readonly record struct AudioInputDeviceInfo(int Index, string Id, string Name);
 
+    #if WINDOWS
     private static MMDevice? TryGetInputDevice(int index)
     {
         using var enumerator = new MMDeviceEnumerator();
@@ -1588,4 +1714,5 @@ public sealed class AudioEngine : IDisposable
         }
         return null;
     }
+    #endif
 }

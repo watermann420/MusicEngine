@@ -3,12 +3,15 @@
 // Description: Live audio input source (mic/line-in).
 
 using System;
+#if WINDOWS
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
+#endif
 
 namespace MusicEngine.Core;
 
+#if WINDOWS
 /// <summary>
 /// Live audio input source (mic/line-in).
 /// </summary>
@@ -197,3 +200,4 @@ public sealed class AudioInput : ISampleProvider, IInstrumentControls, IDisposab
         }
     }
 }
+#endif

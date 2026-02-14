@@ -50,7 +50,7 @@ public sealed class LibraryInstrumentProxy : DynamicObject, ISynth
         return count;
     }
 
-    public override bool TryInvokeMember(InvokeMemberBinder binder, object?[] args, out object? result)
+    public override bool TryInvokeMember(InvokeMemberBinder binder, object?[]? args, out object? result)
     {
         LogMissing();
         result = null;

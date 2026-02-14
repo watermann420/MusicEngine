@@ -3,15 +3,18 @@
 // https://github.com/watermann420/MusicEngine
 // Description: WinForms host window for VST3 editors.
 
+#if WINDOWS
 using System;
 using System.Drawing;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using MusicEngine.Core;
+#endif
 
 namespace MusicEngine.Vst;
 
+#if WINDOWS
 /// <summary>
 /// WinForms host window for VST3 editors.
 /// </summary>
@@ -347,3 +350,4 @@ public sealed class Vst3EditorWindow : Form
         Console.WriteLine($"[VST3] {message}");
     }
 }
+#endif

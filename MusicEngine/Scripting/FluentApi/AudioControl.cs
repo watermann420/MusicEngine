@@ -1042,7 +1042,7 @@ public sealed class RecordingControl
     public bool OneShot { get; set; }
 
     /// <summary>
-    /// Duration for one-shot recording (seconds). Ignored if <= 0.
+    /// Duration for one-shot recording (seconds). Ignored if less than or equal to 0.
     /// </summary>
     public double DurationSeconds { get; set; }
 

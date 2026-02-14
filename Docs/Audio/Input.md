@@ -1,5 +1,7 @@
 # Audio Input
 
+Audio input is Windows-only right now (Linux support is planned).
+
 Live audio inputs (microphones, line-in, audio interfaces) can be routed like any other source.
 Use WASAPI capture devices and route them to channels or the master.
 

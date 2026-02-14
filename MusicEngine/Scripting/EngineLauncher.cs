@@ -7,7 +7,9 @@ using System;
 using System.IO;
 using System.Threading.Tasks;
 using MusicEngine.Core;
+#if WINDOWS
 using NAudio.Midi;
+#endif
 using MusicEngine.Vst;
 
 namespace MusicEngine.Scripting;
@@ -128,6 +130,7 @@ public static class EngineLauncher
 
         Console.WriteLine();
         Console.WriteLine("MIDI Inputs:");
+        #if WINDOWS
         if (MidiIn.NumberOfDevices == 0)
         {
             Console.WriteLine("  (none)");
@@ -140,9 +143,13 @@ public static class EngineLauncher
                 Console.WriteLine($"  [{i}] {info.ProductName}");
             }
         }
+        #else
+        Console.WriteLine("  (not supported on this platform)");
+        #endif
 
         Console.WriteLine();
         Console.WriteLine("MIDI Outputs:");
+        #if WINDOWS
         if (MidiOut.NumberOfDevices == 0)
         {
             Console.WriteLine("  (none)");
@@ -155,6 +162,9 @@ public static class EngineLauncher
                 Console.WriteLine($"  [{i}] {info.ProductName}");
             }
         }
+        #else
+        Console.WriteLine("  (not supported on this platform)");
+        #endif
 
         Console.WriteLine();
         if (registry == null || registry.Plugins.Count == 0)

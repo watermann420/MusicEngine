@@ -1,3 +1,4 @@
+#if WINDOWS
 // MusicEngine License (MEL) - Honor-Based Commercial Support
 // Copyright (c) 2025-2026 Yannis Watermann (watermann420, nullonebinary)
 // Description: Lightweight audio recording helpers.
@@ -414,3 +415,4 @@ internal sealed class RecordingTap : ISampleProvider
         }
     }
 }
+#endif

@@ -71,6 +71,7 @@ public sealed class ScriptHost
     /// <param name="engine">Audio engine instance.</param>
     /// <param name="sequencer">Sequencer instance.</param>
     /// <param name="vstRegistry">Optional VST registry.</param>
+    /// <param name="scriptFilePath">Optional script file path.</param>
     public ScriptHost(AudioEngine engine, Sequencer sequencer, Vst3Registry? vstRegistry = null,
         string? scriptFilePath = null)
     {
@@ -2265,6 +2266,15 @@ public sealed class ScriptGlobals
     /// Audio renderer keyword for WaveOut/MME output.
     /// </summary>
     public string MME => waveout;
+
+    /// <summary>
+    /// Audio renderer keyword for PortAudio output (Linux).
+    /// </summary>
+    public string portaudio => "portaudio";
+    /// <summary>
+    /// Audio renderer keyword for PortAudio output (Linux).
+    /// </summary>
+    public string PortAudio => portaudio;
 
     /// <summary>
     /// Create a fallback target for priority MIDI routing.

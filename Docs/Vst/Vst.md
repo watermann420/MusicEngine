@@ -4,8 +4,8 @@ VST3 plugins are loaded through a native host and exposed as `ISynth`.
 
 ## Setup
 
-- Default scan paths are standard Windows VST3 folders.
-- Optional: set `MUSICENGINE_VST3_PATHS` (semicolon-separated) to scan custom locations.
+- Default scan paths cover Windows and Linux VST3 folders.
+- Optional: set `MUSICENGINE_VST3_PATHS` (path-separator separated) to scan custom locations.
 
 ## Syntax Example (Script)
 
@@ -24,7 +24,7 @@ pattern.Note(67, 1.0, 1.0, 110);
 pattern.Play();
 ```
 
-## Editor and Parameters
+## Editor and Parameters (Windows)
 
 ```csharp
 vst.OpenEditor();
@@ -35,6 +35,8 @@ drive(0.7f);
 Console shortcuts:
 - `open vital` opens the editor for the VST variable `vital`.
 - Typing `vital` alone does the same (as long as it is not a console command).
+
+On Linux, VST UI embedding is not supported yet (audio and parameters still work).
 
 ## Save / Load State
 
@@ -64,7 +66,7 @@ Action NextPreset = () =>
 
 Notes:
 - The inline `State()` call is updated on refresh or exit, so you can copy/share the script.
-- States are stored per script under `%LocalAppData%/MusicEngine/States/<Project>/<Script>/<Name>.state`.
+- States are stored per script under the local app data folder.
 - Missing VSTs warn and stay silent instead of crashing.
 - Commenting out a VST line keeps the state cached; removing the line deletes it.
 

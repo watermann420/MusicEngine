@@ -98,7 +98,12 @@ public sealed class EngineIpcServer : IDisposable
         while (!token.IsCancellationRequested)
         {
             await using var pipe = new NamedPipeServerStream(StatePipeName, PipeDirection.InOut, 1,
-                PipeTransmissionMode.Message, PipeOptions.Asynchronous);
+#if WINDOWS
+                PipeTransmissionMode.Message,
+#else
+                PipeTransmissionMode.Byte,
+#endif
+                PipeOptions.Asynchronous);
             await pipe.WaitForConnectionAsync(token).ConfigureAwait(false);
 
             using var reader = new StreamReader(pipe, Encoding.UTF8, false, 4096, leaveOpen: true);
@@ -184,7 +189,12 @@ public sealed class EngineIpcServer : IDisposable
         while (!token.IsCancellationRequested)
         {
             await using var pipe = new NamedPipeServerStream(EventsPipeName, PipeDirection.Out, 1,
-                PipeTransmissionMode.Message, PipeOptions.Asynchronous);
+#if WINDOWS
+                PipeTransmissionMode.Message,
+#else
+                PipeTransmissionMode.Byte,
+#endif
+                PipeOptions.Asynchronous);
             await pipe.WaitForConnectionAsync(token).ConfigureAwait(false);
 
             using var writer = new StreamWriter(pipe, new UTF8Encoding(false), 4096, leaveOpen: true)

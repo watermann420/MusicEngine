@@ -51,6 +51,7 @@ public sealed class Vst3Instrument : IVstInstrument, IDisposable
     /// </summary>
     /// <param name="pluginPath">Path to the VST3 plugin.</param>
     /// <param name="name">Display name for the instance.</param>
+    /// <param name="statePath">Optional custom state file path.</param>
     public Vst3Instrument(string pluginPath, string name, string? statePath = null)
     {
         if (string.IsNullOrWhiteSpace(pluginPath))
@@ -680,7 +681,8 @@ public sealed class Vst3Instrument : IVstInstrument, IDisposable
     private void SaveStateOnce(string path)
     {
         if (string.IsNullOrWhiteSpace(path)) return;
-        if (!TryGetStateInternal(out var data, out var written) || written <= 0) return;
+        var data = GetStateSnapshotForSave();
+        if (data.Length == 0) return;
         var dir = Path.GetDirectoryName(path);
         if (!string.IsNullOrWhiteSpace(dir))
         {
@@ -689,7 +691,7 @@ public sealed class Vst3Instrument : IVstInstrument, IDisposable
         try
         {
             using var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read);
-            stream.Write(data, 0, written);
+            stream.Write(data, 0, data.Length);
         }
         catch
         {
@@ -853,6 +855,24 @@ public sealed class Vst3Instrument : IVstInstrument, IDisposable
     {
         var data = GetState();
         return data.Length == 0 ? string.Empty : Convert.ToBase64String(data);
+    }
+
+    private byte[] GetStateSnapshotForSave()
+    {
+        try
+        {
+            return VstUiContext.Shared.Invoke(() =>
+            {
+                lock (_stateLock)
+                {
+                    return GetStateInternal();
+                }
+            });
+        }
+        catch
+        {
+            return Array.Empty<byte>();
+        }
     }
 
     private void SetStateBase64(string base64)

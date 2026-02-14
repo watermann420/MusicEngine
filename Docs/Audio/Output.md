@@ -13,10 +13,11 @@ Default routing behavior:
 Audio.Output.List(); // "0: Speakers ... (2ch @ 48000Hz)" etc.
 ```
 
-## Output Renderer (WaveOut / ASIO)
+## Output Renderer (Windows / Linux)
 
 ```csharp
-Audio.SetRenderer(waveout); // default
+Audio.SetRenderer(waveout);   // Windows default
+Audio.SetRenderer(portaudio); // Linux default
 
 Audio.Output.ListAsio();    // "0: Focusrite USB ASIO" etc.
 Audio.SetRenderer(asio, "Focusrite USB ASIO");
@@ -24,7 +25,12 @@ Audio.SetRenderer(asio, 0); // by index from ListAsio
 Audio.SetRenderer(asio, 0, 1); // driver index + master output pair (3/4)
 ```
 
-## Per-Channel Outputs (Multiple Devices)
+Notes:
+- ASIO is Windows-only.
+- On Linux, PortAudio uses the default device (device selection is planned).
+- `Audio.Output.ListAsio()` is Windows-only.
+
+## Per-Channel Outputs (Multiple Devices, Windows)
 
 ```csharp
 var ch1 = Audio.CreateChannel(1);
@@ -34,7 +40,7 @@ ch1.SetRenderer(waveout, 0); // channel 1 -> output device 0
 ch2.SetRenderer(waveout, 1); // channel 2 -> output device 1
 ```
 
-## Per-Channel Outputs (ASIO Multi-Out)
+## Per-Channel Outputs (ASIO Multi-Out, Windows)
 
 ```csharp
 Audio.SetRenderer(asio, 0); // enable ASIO renderer first
@@ -63,7 +69,7 @@ var ch1 = Audio.CreateChannel(1);
 ch1.Route(Master); // or ch1.To(Master)
 ```
 
-## Multi-Output Soundcards (Channel Offsets)
+## Multi-Output Soundcards (Channel Offsets, Windows)
 
 If a device exposes multiple output channels, you can target a specific pair with an offset:
 
@@ -119,6 +125,6 @@ cue.CueOff();  // back to headphones-only
 ```
 
 Notes:
-- Use multiple channel virtual outs to route to multiple devices.
+- Use multiple channel virtual outs to route to multiple devices (Windows).
 - Windows exposes each render endpoint as a separate output device.
 - For multi-output interfaces, use `outputChannelOffset` to target specific pairs.

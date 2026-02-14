@@ -4,12 +4,17 @@
 
 using System;
 using System.Buffers;
+#if WINDOWS
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
+#else
+using NAudio.Wave;
+#endif
 
 namespace MusicEngine.Core;
 
+#if WINDOWS
 internal sealed class AudioVirtualOutput : IDisposable
 {
     private readonly MMDevice _device;
@@ -111,6 +116,7 @@ internal sealed class AudioVirtualOutput : IDisposable
         _device.Dispose();
     }
 }
+#endif
 
 internal sealed class ChannelMappingSampleProvider : ISampleProvider
 {

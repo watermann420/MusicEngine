@@ -5,8 +5,10 @@
 
 using System;
 using MusicEngine.Core;
+#if WINDOWS
 using NAudio.Midi;
 using NAudio.Wave;
+#endif
 
 namespace MusicEngine.Instruments;
 
@@ -145,6 +147,7 @@ public enum GeneralMidiProgram
     Gunshot = 127
 }
 
+#if WINDOWS
 /// <summary>
 /// Simple General MIDI synth wrapper backed by the system MIDI out device.
 /// </summary>
@@ -416,3 +419,4 @@ public sealed class GeneralMidiInstrument : ISampleProvider, ISynth, IDisposable
 
     private int GetMidiChannel() => Math.Clamp(_channel, 0, 15);
 }
+#endif

@@ -14,10 +14,15 @@ internal sealed class MultiTargetProxy : DynamicObject
         _targets = targets.Where(target => target != null).ToArray()!;
     }
 
-    public override bool TryInvokeMember(InvokeMemberBinder binder, object[] args, out object? result)
+    public override bool TryInvokeMember(InvokeMemberBinder binder, object?[]? args, out object? result)
     {
         result = null;
         if (_targets.Length == 0)
+        {
+            return true;
+        }
+
+        if (args == null)
         {
             return true;
         }
@@ -36,7 +41,7 @@ internal sealed class MultiTargetProxy : DynamicObject
         return true;
     }
 
-    private static MethodInfo? FindMethod(object target, string name, object[] args, out object?[] convertedArgs)
+    private static MethodInfo? FindMethod(object target, string name, object?[] args, out object?[] convertedArgs)
     {
         convertedArgs = Array.Empty<object?>();
         var type = target.GetType();
@@ -64,7 +69,7 @@ internal sealed class MultiTargetProxy : DynamicObject
         return null;
     }
 
-    private static bool TryConvertArgs(object[] args, ParameterInfo[] parameters, out object?[] convertedArgs)
+    private static bool TryConvertArgs(object?[] args, ParameterInfo[] parameters, out object?[] convertedArgs)
     {
         convertedArgs = new object?[args.Length];
         for (var i = 0; i < args.Length; i++)
@@ -100,4 +105,3 @@ internal sealed class MultiTargetProxy : DynamicObject
         return true;
     }
 }
-

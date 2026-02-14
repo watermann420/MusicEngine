@@ -241,6 +241,8 @@ public sealed class Pattern
     /// <param name="beat">Beat position within the loop.</param>
     /// <param name="duration">Duration in beats.</param>
     /// <param name="velocity">MIDI velocity.</param>
+    /// <param name="slideTo">Optional slide target note.</param>
+    /// <param name="slideTimeMs">Optional slide time in milliseconds.</param>
     /// <returns>This pattern for chaining.</returns>
     public Pattern Note(int note, double beat, double duration, int velocity, int? slideTo = null, double? slideTimeMs = null)
     {

@@ -37,6 +37,7 @@ public sealed class ConsoleInterface
     /// <param name="scriptFilePath">Optional script file path.</param>
     /// <param name="vst3Registry">Optional VST3 registry for listing/opening plugins.</param>
     /// <param name="editorMode">Enable editor mode commands.</param>
+    /// <param name="useMainScripts">True to refresh all main scripts instead of a single script.</param>
     public ConsoleInterface(ScriptHost host, string scriptContent, Action onExit, string? scriptFilePath = null,
         Vst3Registry? vst3Registry = null, bool editorMode = false, bool useMainScripts = false)
     {

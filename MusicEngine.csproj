@@ -2,18 +2,29 @@
 
     <PropertyGroup>
         <OutputType>Exe</OutputType>
-        <TargetFramework>net10.0-windows</TargetFramework>
+        <TargetFrameworks>net10.0;net10.0-windows</TargetFrameworks>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
-        <UseWindowsForms>true</UseWindowsForms>
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
         <NoWarn>1591</NoWarn>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     </PropertyGroup>
 
+    <PropertyGroup Condition="'$(TargetFramework)'=='net10.0-windows'">
+        <UseWindowsForms>true</UseWindowsForms>
+    </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="4.12.0" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)'=='net10.0-windows'">
     <PackageReference Include="NAudio" Version="2.2.1" />
+    <PackageReference Include="NAudio.Midi" Version="2.2.1" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)'=='net10.0'">
+    <PackageReference Include="NAudio.Core" Version="2.2.1" />
     <PackageReference Include="NAudio.Midi" Version="2.2.1" />
   </ItemGroup>
 
@@ -42,7 +53,7 @@
       <EditorConfigFiles Include="Settings\.editorconfig" />
     </ItemGroup>
 
-    <Target Name="CopyNativeVstHost" AfterTargets="Build">
+    <Target Name="CopyNativeVstHost" AfterTargets="Build" Condition="'$(TargetFramework)'=='net10.0-windows'">
       <PropertyGroup>
         <NativeVstHostDll>$(MSBuildProjectDirectory)\MusicEngine.CppLayer\native\x64\$(Configuration)\MusicEngine.CppLayer.Native.dll</NativeVstHostDll>
       </PropertyGroup>
@@ -52,9 +63,20 @@
       <Copy SourceFiles="@(NativeVstHostFiles)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
     </Target>
 
+    <Target Name="CopyNativeVstHostLinux" AfterTargets="Build" Condition="'$(TargetFramework)'=='net10.0'">
+      <PropertyGroup>
+        <NativeVstHostSo>$(MSBuildProjectDirectory)\MusicEngine.CppLayer\native\build\$(Configuration)\libMusicEngine.CppLayer.Native.so</NativeVstHostSo>
+      </PropertyGroup>
+      <ItemGroup>
+        <NativeVstHostFiles Include="$(NativeVstHostSo)" Condition="Exists('$(NativeVstHostSo)')" />
+      </ItemGroup>
+      <Copy SourceFiles="@(NativeVstHostFiles)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
+    </Target>
+
     <Target Name="CopyLibraryContent" AfterTargets="Build">
       <PropertyGroup>
-        <LibraryOutputDir>$(MSBuildProjectDirectory)\..\MusicEngine.Library\bin\$(Configuration)\net10.0-windows10.0.19041.0</LibraryOutputDir>
+        <LibraryOutputDir Condition="'$(TargetFramework)'=='net10.0'">$(MSBuildProjectDirectory)\..\MusicEngine.Library\bin\$(Configuration)\net10.0</LibraryOutputDir>
+        <LibraryOutputDir Condition="'$(TargetFramework)'=='net10.0-windows'">$(MSBuildProjectDirectory)\..\MusicEngine.Library\bin\$(Configuration)\net10.0-windows10.0.19041.0</LibraryOutputDir>
         <LibraryFallbackDir>$(MSBuildProjectDirectory)\..\MusicEngine.Library\bin\$(Configuration)\net10.0-windows</LibraryFallbackDir>
         <LibraryDll>$(LibraryOutputDir)\MusicEngine.Library.dll</LibraryDll>
       </PropertyGroup>

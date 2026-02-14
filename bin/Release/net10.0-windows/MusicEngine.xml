@@ -300,6 +300,7 @@
             </summary>
             <param name="path">Target file path.</param>
             <param name="format">Optional format override.</param>
+            <param name="options">Optional recording options.</param>
             <returns>Recording session instance.</returns>
         </member>
         <member name="M:MusicEngine.Core.AudioEngine.StopMasterRecording(MusicEngine.Core.RecordingSession)">
@@ -431,6 +432,7 @@
             <param name="index">1-based channel index.</param>
             <param name="path">Target file path.</param>
             <param name="format">Optional format override.</param>
+            <param name="options">Optional recording options.</param>
             <returns>Recording session instance.</returns>
         </member>
         <member name="M:MusicEngine.Core.AudioEngine.StopChannelRecording(System.Int32,MusicEngine.Core.RecordingSession)">
@@ -1862,6 +1864,8 @@
             <param name="beat">Beat position within the loop.</param>
             <param name="duration">Duration in beats.</param>
             <param name="velocity">MIDI velocity.</param>
+            <param name="slideTo">Optional slide target note.</param>
+            <param name="slideTimeMs">Optional slide time in milliseconds.</param>
             <returns>This pattern for chaining.</returns>
         </member>
         <member name="M:MusicEngine.Core.Pattern.NoteMs(System.Int32,System.Double,System.Double,System.Int32,System.Nullable{System.Int32},System.Nullable{System.Double})">
@@ -3554,6 +3558,7 @@
             <param name="scriptFilePath">Optional script file path.</param>
             <param name="vst3Registry">Optional VST3 registry for listing/opening plugins.</param>
             <param name="editorMode">Enable editor mode commands.</param>
+            <param name="useMainScripts">True to refresh all main scripts instead of a single script.</param>
         </member>
         <member name="M:MusicEngine.Scripting.ConsoleInterface.RunAsync">
             <summary>
@@ -4760,7 +4765,11 @@
             If true, Stop happens automatically after DurationSeconds.
             </summary>
         </member>
-        <!-- Badly formed XML comment ignored for member "P:MusicEngine.Scripting.FluentApi.RecordingControl.DurationSeconds" -->
+        <member name="P:MusicEngine.Scripting.FluentApi.RecordingControl.DurationSeconds">
+            <summary>
+            Duration for one-shot recording (seconds). Ignored if less than or equal to 0.
+            </summary>
+        </member>
         <member name="P:MusicEngine.Scripting.FluentApi.RecordingControl.DefaultFormat">
             <summary>
             Default format used when no format/extension is supplied.
@@ -5721,6 +5730,7 @@
             <param name="engine">Audio engine instance.</param>
             <param name="sequencer">Sequencer instance.</param>
             <param name="vstRegistry">Optional VST registry.</param>
+            <param name="scriptFilePath">Optional script file path.</param>
         </member>
         <member name="M:MusicEngine.Scripting.ScriptHost.ExecuteScriptAsync(System.String)">
             <summary>
@@ -6195,6 +6205,16 @@
         <member name="P:MusicEngine.Scripting.ScriptGlobals.MME">
             <summary>
             Audio renderer keyword for WaveOut/MME output.
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.ScriptGlobals.portaudio">
+            <summary>
+            Audio renderer keyword for PortAudio output (Linux).
+            </summary>
+        </member>
+        <member name="P:MusicEngine.Scripting.ScriptGlobals.PortAudio">
+            <summary>
+            Audio renderer keyword for PortAudio output (Linux).
             </summary>
         </member>
         <member name="M:MusicEngine.Scripting.ScriptGlobals.Fallback(MusicEngine.Core.ISynth)">
@@ -6776,6 +6796,7 @@
             </summary>
             <param name="pluginPath">Path to the VST3 plugin.</param>
             <param name="name">Display name for the instance.</param>
+            <param name="statePath">Optional custom state file path.</param>
         </member>
         <member name="P:MusicEngine.Vst.Vst3Instrument.Name">
             <summary>
@@ -6982,7 +7003,7 @@
         </member>
         <member name="T:MusicEngine.Vst.Vst3Scanner">
             <summary>
-            VST3 scanner for Windows search paths.
+            VST3 scanner for platform-specific search paths.
             </summary>
         </member>
         <member name="M:MusicEngine.Vst.Vst3Scanner.Scan">

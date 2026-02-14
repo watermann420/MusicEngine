@@ -2,6 +2,8 @@
 
 MusicEngine can record the master output or any channel in real time. "Render" here means finalize the recording to disk (not offline/bounce).
 
+Note: recording is Windows-only right now.
+
 ## Master Recording
 
 ```csharp

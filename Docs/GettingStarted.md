@@ -22,7 +22,7 @@ The engine will look for `Test Project/` (and the legacy `Scripts/`) inside that
 2. Create or edit a main script in `Test Project/` (add `File.Main();`).
 3. In the console, press `S` to refresh and run all main scripts.
 4. Use `exit` to quit and persist VST state.
-5. Open VST editors by variable name: `open vital` or just `vital`.
+5. Open VST editors by variable name: `open vital` or just `vital` (Windows only).
 
 ## 3) First Sound (Synth)
 

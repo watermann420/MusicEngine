@@ -9,7 +9,7 @@
 
 # MusicEngine
 
-Scriptable C# music engine for realtime playback, instruments, and VST3 hosting. It can also record mics and music, render audio, and cover a full DAW-like workflow if you know what you’re doing.
+Scriptable C# music engine for realtime playback, instruments, and VST3 hosting. It can also record mics and music, render audio, and cover a full DAW-like workflow if you know what you're doing.
 
 ## What makes MusicEngine different?
 
@@ -161,6 +161,8 @@ pattern.Note(67, 1.0, 1.0, 110);
 pattern.Play();
 ```
 
+Note: VST UI embedding is Windows-only for now. Linux runs VST audio + parameters without the editor window.
+
 ## VST State Save/Load
 
 ```csharp
@@ -198,6 +200,8 @@ Notes:
 - In Discord, set Input Device to the virtual cable.
 
 ## Audio Input (Mics / Line-In)
+
+Note: audio input is Windows-only right now.
 
 ```csharp
 Audio.Input.List(); // list capture devices
@@ -278,7 +282,7 @@ pattern.Play();
 
 - **Lighting and show control:** DMX512, Art-Net, sACN (E1.31), MIDI Show Control.
 - **MIDI and timing:** MIDI 1.0, MIDI 2.0, MTC, SMPTE/LTC sync, OSC control, MIDI screen/LED feedback with live data.
-- **Audio routing:** ASIO, WASAPI, CoreAudio, JACK, ALSA, loopback/virtual devices.
+- **Audio routing:** Windows ASIO/WaveOut plus virtual outputs, Linux PortAudio (default device).
 - **Game engine integration:** Unity/Unreal hooks, custom engine integration, realtime music logic control.
 - **Modular control:** CV rack-style modularity via code for every variable and setting.
 - **DSP and hardware:** planned DSP control surface and library to drive custom sound cards for full flexibility.
@@ -286,7 +290,7 @@ pattern.Play();
 ## Notes
 
 - The project uses NAudio for audio/MIDI and provides its own instrument wrappers.
-- VST3 scanning can be configured via `MUSICENGINE_VST3_PATHS` (semicolon-separated).
+- VST3 scanning can be configured via `MUSICENGINE_VST3_PATHS` (path-separator separated).
 - Extra free instruments, kits, and tools live in the companion library:
 - [MusicEngine.Library](https://github.com/watermann420/MusicEngine.Library)
 
@@ -309,10 +313,18 @@ Missing library instruments are skipped and stay silent (no crash), similar to m
 ## Install
 
 - Install .NET SDK 10.0 (or newer).
-- Install Visual Studio 2022 with Desktop development with C++ (for the native VST3 host).
-- Rider works fine, but MSBuild from Visual Studio Build Tools is still required for the native layer.
+- Windows: install Visual Studio 2022 with Desktop development with C++ (for the native VST3 host).
+- Linux: install `cmake`, `build-essential`, and the PortAudio dev package (e.g. `portaudio19-dev`).
+- Rider works fine, but MSBuild from Visual Studio Build Tools is still required for the Windows native layer.
 
 Settings reference: `Docs/Settings.md`
+
+## Linux Notes
+
+- Output uses PortAudio (default device).
+- VST UI embedding is not supported yet.
+- Audio input/recording are not supported yet.
+- Sample loading currently supports WAV (PCM/float) only.
 
 ## Script Location
 
@@ -335,12 +347,18 @@ The engine looks for `Test Project/` first and then the legacy `Scripts/` folder
 - First-time setup (pull the Steinberg SDK into `external/vst3sdk`):
   - `git clone https://github.com/steinbergmedia/vst3sdk.git external/vst3sdk`
   - `git -C external/vst3sdk submodule update --init --recursive`
+
+**Windows build (MSBuild):**
 - Rider: open `MusicEngine.CppLayer/native/MusicEngine.CppLayer.Native.vcxproj` and build x64 Debug/Release.
 - Visual Studio: open the same `.vcxproj`, select x64 + Debug/Release, then Build.
 - Command line (PowerShell):
   - `& "C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe" "MusicEngine.CppLayer\native\MusicEngine.CppLayer.Native.vcxproj" /p:Configuration=Release /p:Platform=x64`
 
-The native build copies `MusicEngine.CppLayer.Native.dll` into `MusicEngine\` automatically (and C# build copies it to the output).
+**Linux build (CMake):**
+- `cmake -S MusicEngine.CppLayer/native -B MusicEngine.CppLayer/native/build -DCMAKE_BUILD_TYPE=Release`
+- `cmake --build MusicEngine.CppLayer/native/build --config Release`
+
+The native build copies `MusicEngine.CppLayer.Native.dll` or `libMusicEngine.CppLayer.Native.so` into `MusicEngine\` automatically (and C# build copies it to the output).
 
 **Troubleshooting native build:**
 - Error: `Cannot open include file: public.sdk/source/vst/hosting/module.h`

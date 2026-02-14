@@ -12,7 +12,11 @@ namespace MusicEngine.Vst;
 
 internal static class Vst3Native
 {
+#if WINDOWS
     private const string DllName = "MusicEngine.CppLayer.Native.dll";
+#else
+    private const string DllName = "libMusicEngine.CppLayer.Native.so";
+#endif
     private const string CreateExport = "Vst3Host_Create";
     private const string OpenExport = "Vst3Host_OpenEditor";
     private const string CloseExport = "Vst3Host_Close";
@@ -93,8 +97,13 @@ internal static class Vst3Native
 
         var candidates = new[]
         {
+#if WINDOWS
             Path.Combine(root, "MusicEngine.CppLayer", "native", "x64", "Debug", DllName),
             Path.Combine(root, "MusicEngine.CppLayer", "native", "x64", "Release", DllName)
+#else
+            Path.Combine(root, "MusicEngine.CppLayer", "native", "build", "Debug", DllName),
+            Path.Combine(root, "MusicEngine.CppLayer", "native", "build", "Release", DllName)
+#endif
         };
 
         foreach (var candidate in candidates)

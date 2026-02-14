@@ -13,7 +13,11 @@ namespace MusicEngine.Core;
 /// </summary>
 public sealed class AudioClip : ISampleProvider, IDisposable
 {
+#if WINDOWS
     private readonly AudioFileReader _reader;
+#else
+    private readonly SimpleWaveFileReader _reader;
+#endif
     private bool _disposed;
 
     /// <summary>
@@ -26,7 +30,11 @@ public sealed class AudioClip : ISampleProvider, IDisposable
             throw new ArgumentException("Audio file path is required.", nameof(path));
         }
 
+#if WINDOWS
         _reader = new AudioFileReader(path);
+#else
+        _reader = new SimpleWaveFileReader(path);
+#endif
     }
 
     /// <summary>

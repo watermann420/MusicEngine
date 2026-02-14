@@ -1,24 +1,33 @@
 // MusicEngine License (MEL) - Honor-Based Commercial Support
 // Copyright (c) 2025-2026 Yannis Watermann (watermann420, nullonebinary)
 // https://github.com/watermann420/MusicEngine
-// Description: VST3 scanner for Windows paths.
+// Description: VST3 scanner for platform-specific paths.
 
 namespace MusicEngine.Vst;
 
 /// <summary>
-/// VST3 scanner for Windows search paths.
+/// VST3 scanner for platform-specific search paths.
 /// </summary>
 public static class Vst3Scanner
 {
     private const string Vst3PathsEnvVar = "MUSICENGINE_VST3_PATHS";
 
     private static readonly string[] DefaultPaths =
-    {
-        @"C:\Program Files\Common Files\VST3",
-        @"C:\Program Files\VST3",
-        @"C:\Program Files\Steinberg\VST3",
-        @"C:\Program Files (x86)\Common Files\VST3"
-    };
+        OperatingSystem.IsWindows()
+            ? new[]
+            {
+                @"C:\Program Files\Common Files\VST3",
+                @"C:\Program Files\VST3",
+                @"C:\Program Files\Steinberg\VST3",
+                @"C:\Program Files (x86)\Common Files\VST3"
+            }
+            : new[]
+            {
+                "/usr/lib/vst3",
+                "/usr/local/lib/vst3",
+                "/usr/lib/x86_64-linux-gnu/vst3",
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".vst3")
+            };
 
     /// <summary>
     /// Scan for VST3 plugins on disk.
@@ -53,7 +62,7 @@ public static class Vst3Scanner
         var env = Environment.GetEnvironmentVariable(Vst3PathsEnvVar);
         if (!string.IsNullOrWhiteSpace(env))
         {
-            return env.Split(';', StringSplitOptions.RemoveEmptyEntries)
+            return env.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
                 .Select(p => p.Trim())
                 .Where(p => p.Length > 0)
                 .Distinct(StringComparer.OrdinalIgnoreCase)

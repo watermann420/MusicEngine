@@ -3,11 +3,14 @@
 // https://github.com/watermann420/MusicEngine
 // Description: Shared MIDI output pool to avoid double-opening devices.
 
+#if WINDOWS
 using System.Collections.Generic;
 using NAudio.Midi;
+#endif
 
 namespace MusicEngine.Core;
 
+#if WINDOWS
 internal static class MidiOutPool
 {
     private static readonly object LockObj = new();
@@ -69,3 +72,4 @@ internal static class MidiOutPool
         }
     }
 }
+#endif
