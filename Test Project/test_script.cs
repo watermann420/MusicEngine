@@ -26,8 +26,6 @@ ch1.Route(piano);
 // Create a VST effect instance (replace "Ozone 12 Equalizer" with your desired plugin name)
 var eq1 = CreateVstEffect("Ozone 12 Equalizer");
 ch1.Effect(eq1);
-var fx = CreateVstEffect("ValhallaSupermassive");
-ch1.Effect(fx);
 
 
 //midi setup
@@ -99,5 +97,3 @@ if (playTetris)
 
     tetris.Play();
 }
-
-

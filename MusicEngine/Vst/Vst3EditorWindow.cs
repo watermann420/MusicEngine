@@ -5,6 +5,7 @@
 
 #if WINDOWS
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -25,6 +26,8 @@ public sealed class Vst3EditorWindow : Form
     private const int DwmwaUseImmersiveDarkMode = 20;
     private const uint ShgfiIcon = 0x000000100;
     private const uint ShgfiSmallIcon = 0x000000001;
+    private static readonly object ExistingWindowsLock = new();
+    private static readonly Dictionary<IntPtr, WeakReference<Vst3EditorWindow>> ExistingWindows = new();
 
     [DllImport("user32.dll")]
     private static extern bool SetForegroundWindow(IntPtr hWnd);
@@ -76,7 +79,21 @@ public sealed class Vst3EditorWindow : Form
 
     private static void OpenOnUiThread(string pluginPath, string displayName, IntPtr existingHandle, bool ownsHandle)
     {
+        if (!ownsHandle && existingHandle != IntPtr.Zero)
+        {
+            Vst3EditorWindow? existingWindow = TryGetExistingWindow(existingHandle);
+            if (existingWindow != null)
+            {
+                existingWindow.EnsureFront();
+                return;
+            }
+        }
+
         var window = new Vst3EditorWindow(pluginPath, displayName, existingHandle, ownsHandle);
+        if (!ownsHandle && existingHandle != IntPtr.Zero)
+        {
+            RegisterExistingWindow(existingHandle, window);
+        }
         window.Show();
     }
 
@@ -167,8 +184,25 @@ public sealed class Vst3EditorWindow : Form
         TryResizeEditorToClient();
     }
 
+    protected override void OnFormClosing(FormClosingEventArgs e)
+    {
+        if (!_ownsHandle && e.CloseReason == CloseReason.UserClosing)
+        {
+            e.Cancel = true;
+            Hide();
+            return;
+        }
+
+        base.OnFormClosing(e);
+    }
+
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
+        if (!_ownsHandle && _hostHandle != IntPtr.Zero)
+        {
+            UnregisterExistingWindow(_hostHandle, this);
+        }
+
         if (_hostHandle != IntPtr.Zero && _ownsHandle)
         {
             _processTimer?.Stop();
@@ -253,6 +287,11 @@ public sealed class Vst3EditorWindow : Form
 
     private void EnsureFront()
     {
+        if (!Visible)
+        {
+            Show();
+        }
+
         if (Handle == IntPtr.Zero) return;
         ShowWindow(Handle, SwRestore);
         ShowWindow(Handle, SwShow);
@@ -348,6 +387,49 @@ public sealed class Vst3EditorWindow : Form
     private static void LogError(string message)
     {
         Console.WriteLine($"[VST3] {message}");
+    }
+
+    private static Vst3EditorWindow? TryGetExistingWindow(IntPtr hostHandle)
+    {
+        lock (ExistingWindowsLock)
+        {
+            if (!ExistingWindows.TryGetValue(hostHandle, out WeakReference<Vst3EditorWindow>? weakRef))
+            {
+                return null;
+            }
+
+            if (!weakRef.TryGetTarget(out Vst3EditorWindow? window) || window.IsDisposed)
+            {
+                ExistingWindows.Remove(hostHandle);
+                return null;
+            }
+
+            return window;
+        }
+    }
+
+    private static void RegisterExistingWindow(IntPtr hostHandle, Vst3EditorWindow window)
+    {
+        lock (ExistingWindowsLock)
+        {
+            ExistingWindows[hostHandle] = new WeakReference<Vst3EditorWindow>(window);
+        }
+    }
+
+    private static void UnregisterExistingWindow(IntPtr hostHandle, Vst3EditorWindow window)
+    {
+        lock (ExistingWindowsLock)
+        {
+            if (!ExistingWindows.TryGetValue(hostHandle, out WeakReference<Vst3EditorWindow>? weakRef))
+            {
+                return;
+            }
+
+            if (!weakRef.TryGetTarget(out Vst3EditorWindow? current) || ReferenceEquals(current, window))
+            {
+                ExistingWindows.Remove(hostHandle);
+            }
+        }
     }
 }
 #endif

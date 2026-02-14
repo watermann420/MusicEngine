@@ -639,6 +639,8 @@ public sealed class ScriptHost
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex MainFileCallRegex =
         new(@"\bFile\s*\.Main\s*\(\s*\)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex EditorShowWindowCommandRegex =
+        new(@"\b[A-Za-z_]\w*\s*\.\s*showwindow\s*\(\s*\)\s*;?", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private string PreprocessCode(string code)
     {
@@ -647,6 +649,7 @@ public sealed class ScriptHost
         code = FileOneArgRegex.Replace(code, "File(\"$1\")");
         code = PreprocessFileNameCalls(code);
         code = PreprocessVstAliasCalls(code);
+        code = PreprocessEditorOnlyCommands(code);
         code = PreprocessNoteNameCalls(code);
         code = PreprocessFriendlyNoteArgs(code);
         code = PreprocessFallbackCalls(code);
@@ -654,6 +657,16 @@ public sealed class ScriptHost
         code = PreprocessMultiTargetCalls(code);
         code = PreprocessIncludeCalls(code);
         return code;
+    }
+
+    private static string PreprocessEditorOnlyCommands(string code)
+    {
+        if (string.IsNullOrWhiteSpace(code))
+        {
+            return code;
+        }
+
+        return EditorShowWindowCommandRegex.Replace(code, string.Empty);
     }
 
     private string PreprocessFileNameCalls(string code)
@@ -1418,6 +1431,7 @@ public sealed class ScriptHost
 
         return false;
     }
+
 
     /// <summary>
     /// Try to open a VST editor by name if already loaded.
